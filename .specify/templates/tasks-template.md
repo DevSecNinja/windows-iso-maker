@@ -49,9 +49,10 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan
-- [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T001 Create PowerShell module scaffold (`.psm1` + versioned `.psd1` manifest) per plan
+- [ ] T002 Pin tool/module versions (PowerShell, Pester v5, PSScriptAnalyzer, Fido/ADK) for local + CI parity
+- [ ] T003 [P] Configure PSScriptAnalyzer rule set and Pester v5 test project
+- [ ] T004 [P] Add CI workflow running PSScriptAnalyzer + Pester on every commit/PR; manual (`workflow_dispatch`) build workflow
 
 ---
 
@@ -63,12 +64,14 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T005 Define the change-catalog data schema (registry/appx/capability/feature entries with `Action`, What / Why / Citation, `EvidenceGrade` 1/2/3, `DefaultEnabled`) and add Pester schema tests that fail on missing Citation/EvidenceGrade and on any `EvidenceGrade=3` entry with `DefaultEnabled=true`
+- [ ] T006 [P] Establish configuration-data files (debloat/registry/appx/feature) consumed by the module — data-driven catalog entries with Action types, no inline definitions and no per-feature parameter switches
+- [ ] T007 [P] Implement architecture handling (`[ValidateSet('amd64','arm64')]`) shared by all stories
+- [ ] T008 Create shared helper functions with strict mode, `[CmdletBinding()]`, `ShouldProcess`, comment-based help
+- [ ] T009 Configure error handling (`try/catch`, `-ErrorAction Stop`) and logging (no secrets) infrastructure
+- [ ] T010 Implement input validation + media integrity (hash) checks for ISO/download/path inputs
+- [ ] T011 [P] Implement supply-chain integrity: SHA256 checksums, build provenance/attestation (e.g. SLSA/GitHub Artifact Attestations), SBOM (tooling/repo) and Image BOM (every applied change with citation + evidence grade, base image version+hash, pinned Fido/ADK versions)
+- [ ] T012 [P] Pin dependencies (PowerShell modules, vendored Fido, ADK) and GitHub Actions by commit SHA; configure automated updates (e.g. Renovate)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 

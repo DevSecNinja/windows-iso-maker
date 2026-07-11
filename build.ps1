@@ -1,0 +1,149 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Thin local entry point for the Windows 11 ISO Builder & Debloater.
+
+.DESCRIPTION
+    build.ps1 is a dispatcher only (Constitution Principle I & V): it enables strict mode,
+    imports the WindowsIsoMaker module, performs the admin/elevation precondition check,
+    and forwards a configuration file (the PRIMARY interface) plus any optional last-mile
+    override parameters to the shipped Invoke-IsoBuild orchestrator. No build logic lives
+    here; local and CI runs share exactly one build path.
+
+    The configuration file is the primary way to drive a build. Point -ConfigPath (alias
+    -Path) at any saved profile, or set the WIM_CONFIG_PATH environment variable, to keep
+    multiple configurations (e.g. config/build.pro.psd1, config/build.arm64.psd1).
+    Precedence: config-file defaults -> WIM_* environment variables -> explicit parameters.
+
+.PARAMETER ConfigPath
+    Path to the build configuration .psd1 file. Defaults to config/build.config.psd1.
+    Alias: -Path. May also be supplied via the WIM_CONFIG_PATH environment variable.
+
+.PARAMETER Architecture
+    Optional last-mile override for the target architecture ('amd64' or 'arm64').
+
+.PARAMETER Edition
+    Optional last-mile override for the Windows edition (e.g. 'Pro').
+
+.PARAMETER Language
+    Optional last-mile override for the display language (e.g. 'en-US').
+
+.PARAMETER Release
+    Optional last-mile override for the Windows release (e.g. 'latest').
+
+.PARAMETER RemoveEdge
+    Opt-in switch to enable the (default-off) Edge removal catalog entry.
+
+.PARAMETER RemoveOneDrive
+    Opt-in switch to enable the (default-off) OneDrive removal catalog entry.
+
+.PARAMETER SkipHeavyBuild
+    Run the preview/light path only (no download/mount/build); still emits a RunReport.
+
+.PARAMETER BootTest
+    Opt-in VM boot validation in addition to the default structural integrity checks.
+
+.EXAMPLE
+    ./build.ps1
+    Builds using config/build.config.psd1 (Windows 11 Pro, en-US, latest, amd64).
+
+.EXAMPLE
+    ./build.ps1 -ConfigPath config/build.arm64.psd1
+    Builds using a saved arm64 profile.
+
+.EXAMPLE
+    ./build.ps1 -Architecture amd64 -RemoveEdge -RemoveOneDrive
+    Uses the default config but overrides the architecture and enables opt-in removals.
+
+.EXAMPLE
+    ./build.ps1 -WhatIf
+    Previews every change that would be made without touching any media.
+
+.NOTES
+    Requires administrative rights and the Windows image-servicing stack (DISM) plus the
+    Windows ADK Deployment Tools (oscdimg). See docs/usage.md.
+#>
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [Parameter()]
+    [Alias('Path')]
+    [string] $ConfigPath,
+
+    [Parameter()]
+    [ValidateSet('amd64', 'arm64')]
+    [string] $Architecture,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string] $Edition,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string] $Language,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string] $Release,
+
+    [Parameter()]
+    [switch] $RemoveEdge,
+
+    [Parameter()]
+    [switch] $RemoveOneDrive,
+
+    [Parameter()]
+    [switch] $SkipHeavyBuild,
+
+    [Parameter()]
+    [switch] $BootTest
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# Resolve the config path precedence for the DISPATCHER only: explicit param wins, else the
+# WIM_CONFIG_PATH env var, else the shipped default. Get-BuildConfiguration re-applies the
+# full precedence chain for every field.
+if (-not $PSBoundParameters.ContainsKey('ConfigPath') -or [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    if ($env:WIM_CONFIG_PATH) {
+        $ConfigPath = $env:WIM_CONFIG_PATH
+    }
+    else {
+        $ConfigPath = Join-Path -Path $PSScriptRoot -ChildPath 'config/build.config.psd1'
+    }
+}
+
+# Import the shipped module (single source of build logic — Principle V).
+$modulePath = Join-Path -Path $PSScriptRoot -ChildPath 'src/WindowsIsoMaker'
+Import-Module -Name $modulePath -Force -ErrorAction Stop
+
+# Fail fast on missing elevation before doing anything expensive (Principle VI / FR-019).
+# Test-IsAdministrator is a private helper, so probe via the module's script scope.
+$isAdmin = & (Get-Module WindowsIsoMaker) { Test-IsAdministrator }
+if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
+    throw 'Administrative privileges are required to service a Windows image. ' +
+        'Re-run this script from an elevated PowerShell session, or use -WhatIf / -SkipHeavyBuild to preview.'
+}
+
+# Assemble the optional last-mile overrides. Only forward parameters the user actually set,
+# so the config file remains authoritative for everything else.
+$buildParams = @{
+    ConfigPath = $ConfigPath
+}
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release') {
+    if ($PSBoundParameters.ContainsKey($name)) {
+        $buildParams[$name] = $PSBoundParameters[$name]
+    }
+}
+foreach ($switchName in 'RemoveEdge', 'RemoveOneDrive', 'SkipHeavyBuild', 'BootTest') {
+    if ($PSBoundParameters.ContainsKey($switchName)) {
+        $buildParams[$switchName] = [switch]$PSBoundParameters[$switchName]
+    }
+}
+
+# Honor -WhatIf from the dispatcher through to the orchestrator (preview path, FR-016).
+if ($WhatIfPreference) {
+    $buildParams['WhatIf'] = $true
+}
+
+Invoke-IsoBuild @buildParams

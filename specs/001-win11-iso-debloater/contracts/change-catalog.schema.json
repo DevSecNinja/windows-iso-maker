@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/DevSecNinja/windows-iso-maker/specs/001-win11-iso-debloater/contracts/change-catalog.schema.json",
+  "title": "ChangeCatalogEntry",
+  "description": "Schema for a single documented system-change entry. Enforces Constitution Principle II v1.1.0 (What/Why/Citation/EvidenceGrade + Action). Mirrors the PSD1 catalog files under config/. Validated by tests/Catalog.Schema.Tests.ps1. The 'Action' field is the primary dispatch key consumed by Invoke-CatalogEntry; adding a new feature means adding an entry, not new code paths (FR-024, SC-011).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Id",
+    "Action",
+    "Target",
+    "Description",
+    "Rationale",
+    "Citation",
+    "EvidenceGrade",
+    "Reversible",
+    "DefaultEnabled",
+    "Arch"
+  ],
+  "properties": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Unique, stable identifier (e.g. 'appx-clipchamp', 'reg-disable-recall')."
+    },
+    "Type": {
+      "type": "string",
+      "enum": ["Appx", "Capability", "Registry", "OptionalFeature"],
+      "description": "OPTIONAL, derived category of change (kept for authoring ergonomics/back-compat). The authoritative dispatch key is 'Action'."
+    },
+    "Action": {
+      "type": "string",
+      "enum": [
+        "RemoveAppx",
+        "RemoveCapability",
+        "SetRegistry",
+        "EnableOptionalFeature",
+        "AddCapability"
+      ],
+      "description": "Primary dispatch key. Invoke-CatalogEntry routes each entry to the handler for its Action. The set is intentionally extensible: new Action values are added alongside a new handler branch, but existing features/entries never require new per-feature parameters or switches (FR-024/FR-025)."
+    },
+    "Target": {
+      "description": "For RemoveAppx: the provisioned package name (string). For RemoveCapability/EnableOptionalFeature/AddCapability: the capability/feature name (string, e.g. 'Microsoft-Windows-Subsystem-Linux'). For SetRegistry: an object with Hive/Path/Name/Kind/Value.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Hive", "Path", "Name"],
+          "properties": {
+            "Hive": { "type": "string", "enum": ["SOFTWARE", "SYSTEM", "DEFAULT"] },
+            "Path": { "type": "string", "minLength": 1 },
+            "Name": { "type": "string", "minLength": 1 },
+            "Kind": {
+              "type": "string",
+              "enum": ["DWord", "QWord", "String", "ExpandString", "MultiString", "Binary"]
+            },
+            "Value": {}
+          }
+        }
+      ]
+    },
+    "Description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "WHAT the change does (Principle II)."
+    },
+    "Rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "WHY it is safe and desirable (Principle II)."
+    },
+    "Citation": {
+      "type": "string",
+      "minLength": 1,
+      "description": "URL to an authoritative source, or the literal 'Unverified' (Principle II).",
+      "anyOf": [
+        { "format": "uri", "pattern": "^https?://" },
+        { "const": "Unverified" }
+      ]
+    },
+    "EvidenceGrade": {
+      "type": "integer",
+      "enum": [1, 2, 3],
+      "description": "Confidence rating for the Citation (Principle II v1.1.0). 1 = official Microsoft documentation; 2 = reputable third-party website/vendor; 3 = community/forum. A grade-3 entry MUST NOT be DefaultEnabled (see allOf). Missing EvidenceGrade fails CI (FR-026, SC-010)."
+    },
+    "Reversible": {
+      "type": "boolean",
+      "description": "Whether the change can be undone (FR-018)."
+    },
+    "Reversal": {
+      "type": "string",
+      "description": "How to undo the change (recommended when Reversible=true)."
+    },
+    "DefaultEnabled": {
+      "type": "boolean",
+      "description": "Whether this entry is in the default profile. Edge/OneDrive removal MUST be false."
+    },
+    "Arch": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["amd64", "arm64"] },
+      "description": "Applicable architectures (Principle IV / FR-021)."
+    },
+    "Editions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional edition restriction."
+    },
+    "Unverified": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, entry lacks an authoritative source and DefaultEnabled MUST be false."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "Unverified": { "const": true } },
+        "required": ["Unverified"]
+      },
+      "then": {
+        "properties": { "DefaultEnabled": { "const": false } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "Citation": { "const": "Unverified" } }
+      },
+      "then": {
+        "properties": { "DefaultEnabled": { "const": false } }
+      }
+    },
+    {
+      "comment": "Evidence-grade gate (Principle II v1.1.0 / FR-026): a grade-3 (community/forum) entry MUST be opt-in.",
+      "if": {
+        "properties": { "EvidenceGrade": { "const": 3 } },
+        "required": ["EvidenceGrade"]
+      },
+      "then": {
+        "properties": { "DefaultEnabled": { "const": false } }
+      }
+    }
+  ]
+}

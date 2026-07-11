@@ -40,7 +40,31 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Verify this plan against the Windows ISO Maker Constitution (v1.1.0). Mark each gate
+PASS / FAIL / N/A with a one-line justification:
+
+- [ ] **I. Modularity & PowerShell Best Practices**: New logic is functions in the module
+  (`.psm1`/`.psd1`), approved verbs + PascalCase, comment-based help, `[CmdletBinding()]`,
+  parameter validation, `ShouldProcess`/`-WhatIf` for mutations, strict mode, no aliases.
+- [ ] **II. Documentation-Backed System Changes**: Every registry/appx/capability/feature
+  change is a data-driven catalog entry with an `Action`, What / Why / Citation, and an
+  `EvidenceGrade` (1/2/3); grade-3 entries have `DefaultEnabled=false`; new tweaks are
+  catalog entries, not new per-feature parameters/switches.
+- [ ] **III. Testing Discipline**: Pester v5 tests + PSScriptAnalyzer planned; catalog schema
+  test asserts Citation + EvidenceGrade and fails grade-3 `DefaultEnabled=true`; CI runs on
+  every commit/PR; test-first where practical.
+- [ ] **IV. Cross-Architecture Support**: amd64 and arm64 covered from one code base; arm64 on
+  native `windows-11-arm` runners; architecture is validated config, not hardcoded.
+- [ ] **V. Reproducibility & Local Parity**: Config-driven (no hardcoded paths/magic values);
+  tool/module versions pinned; local and CI invoke the same module functions.
+- [ ] **VI. Safety & Reversibility**: Dry-run (`-WhatIf`), idempotent, scoped to target; impactful
+  component removal (Edge/OneDrive/Recall/Widgets) is opt-in and defaults OFF.
+- [ ] **VII. Security & Input Validation**: No secrets in code/logs; ISO/download/path inputs
+  validated; media integrity-checked (hashes) where available; OWASP guidance applied.
+  Releases emit provenance/attestation + SHA256 checksums + SBOM + Image BOM; dependencies
+  (incl. vendored Fido) pinned and auto-updated; GitHub Actions pinned by commit SHA.
+
+Any FAIL that cannot be resolved MUST be recorded in **Complexity Tracking** with justification.
 
 ## Project Structure
 

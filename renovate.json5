@@ -1,0 +1,34 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "github>DevSecNinja/.github//.renovate/autoMerge.json5",
+    "github>DevSecNinja/.github//.renovate/base.json5",
+    "github>DevSecNinja/.github//.renovate/customManagers.json5",
+    "github>DevSecNinja/.github//.renovate/groups.json5",
+    "github>DevSecNinja/.github//.renovate/labels.json5",
+    "github>DevSecNinja/.github//.renovate/packageRules.json5",
+    "github>DevSecNinja/.github//.renovate/semanticCommits.json5",
+  ],
+  // Repo-local custom manager: track the vendored, pinned Fido dependency.
+  // Fido.ps1 is vendored (GPLv3, arm's-length invocation) and pinned by tag in
+  // vendor/fido/VERSION. Renovate opens a PR when pbatard/Fido publishes a new
+  // release so a maintainer can re-vendor the script (see vendor/fido/VERSION
+  // "Updating" section). The .ps1 itself is re-fetched manually as part of that PR.
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Bump pinned pbatard/Fido tag recorded in vendor/fido/VERSION",
+      managerFilePatterns: ["/^vendor/fido/VERSION$/"],
+      matchStrings: [
+        "Pinned tag\\s*:\\s*(?<currentValue>v[0-9]+(?:\\.[0-9]+)*)",
+      ],
+      depNameTemplate: "pbatard/Fido",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver-coerced",
+    },
+  ],
+}

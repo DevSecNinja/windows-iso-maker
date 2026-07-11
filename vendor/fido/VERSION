@@ -1,0 +1,25 @@
+Fido — vendored, pinned dependency
+====================================
+
+Upstream project : pbatard/Fido
+Upstream URL      : https://github.com/pbatard/Fido
+Pinned tag        : v1.55
+Pinned commit     : 4e6f25f35112c82ee554bb8c602ce85bdccdfeb7
+Retrieved file    : Fido.ps1
+License           : GNU General Public License v3.0 (see LICENSE)
+
+Why pinned
+----------
+Reproducibility (Constitution Principle V) and supply-chain hygiene
+(Principle VII) require a fixed, auditable version of the ISO URL resolver.
+Fetching "latest" Fido at build time would break pinning and make builds
+non-deterministic, so the exact script is vendored here and invoked as a
+separate, unmodified GPLv3 program (see NOTICE for the licensing boundary).
+
+Updating
+--------
+1. Download Fido.ps1 for the new upstream tag.
+2. Update the Pinned tag / Pinned commit fields above.
+3. Re-run the local build and CI (build-image.yml) to confirm the new
+   version still resolves the expected Windows 11 media.
+4. Record the change in docs/change-rationale.md if behavior changes.
