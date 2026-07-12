@@ -178,15 +178,25 @@ function ConvertTo-FidoLanguage {
 function Invoke-FidoUrlResolver {
     <#
     .SYNOPSIS
-        Invoke the vendored Fido.ps1 as a separate process to resolve a download URL.
+        Invoke the vendored Fido.ps1 as a separate process to resolve a download URL, with retries.
     .DESCRIPTION
         Private helper and the single GPLv3 boundary: Fido is executed as an independent
         external script in a child pwsh process (never dot-sourced/embedded). Returns the
         resolved URL string (last non-empty output line).
+
+        Microsoft's download endpoint is fronted by an anti-bot system ("Sentinel") that
+        intermittently rejects otherwise-valid requests based on client IP/reputation. A
+        single rejection is usually transient, so this resolver retries a few times with a
+        back-off before giving up — mirroring the proven headless approach from the earlier
+        windows-iso-debloater workflow. Retries also cover Fido's own transient network hiccups.
     .PARAMETER FidoPath
         Path to Fido.ps1.
     .PARAMETER Arguments
         Fido arguments as an array.
+    .PARAMETER MaxAttempts
+        Maximum number of Fido invocations before giving up (default 3).
+    .PARAMETER RetryDelaySeconds
+        Seconds to wait between attempts (default 15).
     .OUTPUTS
         System.String (the resolved URL), or $null.
     #>
@@ -194,12 +204,65 @@ function Invoke-FidoUrlResolver {
     [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)][string] $FidoPath,
-        [Parameter(Mandatory = $true)][string[]] $Arguments
+        [Parameter(Mandatory = $true)][string[]] $Arguments,
+        [Parameter()][int] $MaxAttempts = 3,
+        [Parameter()][int] $RetryDelaySeconds = 15
     )
 
     if (-not (Test-Path -LiteralPath $FidoPath)) {
         throw "Vendored Fido script not found at '$FidoPath'. See vendor/fido/VERSION."
     }
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $result = Invoke-FidoProcess -FidoPath $FidoPath -Arguments $Arguments
+        if ($result.Url) {
+            return $result.Url
+        }
+
+        # Distinguish Microsoft's anti-bot rejection from a genuinely unavailable combination so
+        # logs are actionable; both are retried in case the rejection was a transient IP throttle.
+        $reason = if ($result.Output -match 'Sentinel marked this request as rejected') {
+            "Microsoft's anti-bot check (Sentinel) rejected the request"
+        }
+        else {
+            'Fido returned no download URL'
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Write-BuildLog -Level Warning -Component 'Get-Windows11Iso' `
+                -Message "Fido attempt $attempt/$MaxAttempts failed ($reason); retrying in ${RetryDelaySeconds}s."
+            if ($RetryDelaySeconds -gt 0) { Start-Sleep -Seconds $RetryDelaySeconds }
+        }
+        else {
+            Write-BuildLog -Level Warning -Component 'Get-Windows11Iso' `
+                -Message "Fido attempt $attempt/$MaxAttempts failed ($reason); no attempts remaining."
+        }
+    }
+
+    return $null
+}
+
+function Invoke-FidoProcess {
+    <#
+    .SYNOPSIS
+        Run the vendored Fido.ps1 once in a child process and extract any resolved URL.
+    .DESCRIPTION
+        Private helper (mockable seam for the retry loop in Invoke-FidoUrlResolver). Executes
+        Fido as a separate program (arm's-length GPLv3 invocation) and returns both the parsed
+        URL (if any) and the raw combined output so the caller can classify failures.
+    .PARAMETER FidoPath
+        Path to Fido.ps1.
+    .PARAMETER Arguments
+        Fido arguments as an array.
+    .OUTPUTS
+        PSCustomObject with Url (string or $null) and Output (string).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string] $FidoPath,
+        [Parameter(Mandatory = $true)][string[]] $Arguments
+    )
 
     $pwshExe = (Get-Process -Id $PID -ErrorAction SilentlyContinue).Path
     if (-not $pwshExe) { $pwshExe = 'pwsh' }
@@ -208,7 +271,11 @@ function Invoke-FidoUrlResolver {
     $output = & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $FidoPath @Arguments 2>&1
     $lines = @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
     $url = $lines | Where-Object { $_ -match '^https?://' } | Select-Object -Last 1
-    return $url
+
+    return [pscustomobject]@{
+        Url    = $url
+        Output = ($lines -join "`n")
+    }
 }
 
 function Invoke-IsoDownload {

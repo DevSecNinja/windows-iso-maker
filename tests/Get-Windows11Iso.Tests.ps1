@@ -71,4 +71,37 @@ Describe 'Get-Windows11Iso' {
             }
         }
     }
+
+    Context 'Fido resolver retry behaviour' {
+        It 'retries after a transient Sentinel rejection and returns the URL on a later attempt' {
+            InModuleScope WindowsIsoMaker -Parameters @{ FidoPath = (Join-Path $script:RepoRoot 'vendor/fido/Fido.ps1') } {
+                param($FidoPath)
+                $script:fidoCall = 0
+                Mock Invoke-FidoProcess {
+                    $script:fidoCall++
+                    if ($script:fidoCall -lt 3) {
+                        return [pscustomobject]@{ Url = $null; Output = 'Error: Sentinel marked this request as rejected.' }
+                    }
+                    return [pscustomobject]@{ Url = 'https://software.download.microsoft.com/fake/win11.iso'; Output = 'https://software.download.microsoft.com/fake/win11.iso' }
+                }
+
+                $url = Invoke-FidoUrlResolver -FidoPath $FidoPath -Arguments @('11') -RetryDelaySeconds 0
+
+                $url | Should -Be 'https://software.download.microsoft.com/fake/win11.iso'
+                Should -Invoke Invoke-FidoProcess -Times 3
+            }
+        }
+
+        It 'gives up and returns $null after exhausting all attempts' {
+            InModuleScope WindowsIsoMaker -Parameters @{ FidoPath = (Join-Path $script:RepoRoot 'vendor/fido/Fido.ps1') } {
+                param($FidoPath)
+                Mock Invoke-FidoProcess { [pscustomobject]@{ Url = $null; Output = 'Error: Sentinel marked this request as rejected.' } }
+
+                $url = Invoke-FidoUrlResolver -FidoPath $FidoPath -Arguments @('11') -MaxAttempts 3 -RetryDelaySeconds 0
+
+                $url | Should -BeNullOrEmpty
+                Should -Invoke Invoke-FidoProcess -Times 3
+            }
+        }
+    }
 }
