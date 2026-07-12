@@ -1,0 +1,171 @@
+name: Build Windows 11 Image
+
+# Release image build. Runs MANUALLY only (workflow_dispatch) — NEVER on push/PR
+# (FR-012, US2 scenario 4). Builds amd64 and arm64 in a matrix using the SAME
+# shipped build path as local runs (build.ps1 -> Invoke-IsoBuild; FR-010,
+# Principle V). Produces a compressed ISO artifact, SHA256SUMS, a RunReport, an
+# Image BOM, and SLSA build provenance, then publishes to Azure Blob (optional,
+# OIDC) or falls back to a workflow artifact.
+#
+# Supply-chain (constitution v1.1.0, Principle VII): every `uses:` is pinned by
+# commit SHA; renovate.json5 keeps the digests current.
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: 'Windows edition (e.g. Pro, Home, Enterprise)'
+        type: string
+        default: 'Pro'
+      language:
+        description: 'Display language (e.g. en-US)'
+        type: string
+        default: 'en-US'
+      release:
+        description: 'Windows release (e.g. latest, 24H2)'
+        type: string
+        default: 'latest'
+      profile:
+        description: 'Catalog profile subset'
+        type: choice
+        options:
+          - minimal
+          - default
+          - aggressive
+        default: 'default'
+      enable_catalog_id:
+        description: 'Comma-separated catalog ids to force-enable (e.g. remove-edge,remove-onedrive,feature-wsl)'
+        type: string
+        default: ''
+      disable_catalog_id:
+        description: 'Comma-separated catalog ids to force-disable'
+        type: string
+        default: ''
+      skip_heavy_build:
+        description: 'Preview only: resolve config + report changes, do NOT download/build the ISO'
+        type: boolean
+        default: false
+      boot_test:
+        description: 'Run the opt-in VM boot validation (requires nested virtualization)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write        # OIDC for provenance attestation + azure/login
+  attestations: write    # actions/attest-build-provenance
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runs-on: windows-latest
+          - arch: arm64
+            runs-on: windows-11-arm   # native Windows-on-ARM runner (FR-004, Principle IV)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Windows ADK Deployment Tools (provides oscdimg)
+        if: ${{ inputs.skip_heavy_build == false }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # ADK 'Deployment Tools' feature installs oscdimg for amd64 and arm64. On the
+          # windows-11-arm runner adksetup runs under x64/x86 emulation. See docs/ci.md.
+          $adkUrl = 'https://go.microsoft.com/fwlink/?linkid=2289980'  # Windows ADK (latest)
+          $installer = Join-Path $env:RUNNER_TEMP 'adksetup.exe'
+          Write-Host "Downloading Windows ADK installer..."
+          Invoke-WebRequest -Uri $adkUrl -OutFile $installer -UseBasicParsing
+          Write-Host "Installing ADK Deployment Tools (quiet)..."
+          $p = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList @(
+            '/quiet', '/norestart', '/features', 'OptionId.DeploymentTools'
+          )
+          if ($p.ExitCode -ne 0) { throw "ADK install failed with exit code $($p.ExitCode)." }
+
+      - name: Verify free disk space (fail fast; FR-019)
+        if: ${{ inputs.skip_heavy_build == false }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $drive = (Get-Item -LiteralPath (Get-Location)).PSDrive.Name
+          $free = (Get-PSDrive -Name $drive).Free
+          $freeGb = [math]::Round($free / 1GB, 1)
+          Write-Host "Free space on ${drive}: ${freeGb} GB"
+          # A full build needs the base ISO (~5-7 GB) + extracted media + mounted image +
+          # output ISO. Require a conservative floor; use skip_heavy_build when impractical.
+          if ($free -lt 25GB) {
+              throw "Insufficient free disk space (${freeGb} GB < 25 GB). Re-run with skip_heavy_build=true or use a larger runner."
+          }
+
+      - name: Build the image (build.ps1 runs the same Invoke-IsoBuild path as local)
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $params = @{
+              Architecture = '${{ matrix.arch }}'
+              Edition      = '${{ inputs.edition }}'
+              Language     = '${{ inputs.language }}'
+              Release      = '${{ inputs.release }}'
+              Profile      = '${{ inputs.profile }}'
+          }
+          if ('${{ inputs.enable_catalog_id }}'.Trim())  { $params['EnableCatalogId']  = '${{ inputs.enable_catalog_id }}'  -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+          if ('${{ inputs.disable_catalog_id }}'.Trim()) { $params['DisableCatalogId'] = '${{ inputs.disable_catalog_id }}' -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+          if ('${{ inputs.skip_heavy_build }}' -eq 'true') { $params['SkipHeavyBuild'] = $true }
+          if ('${{ inputs.boot_test }}' -eq 'true')        { $params['BootTest']       = $true }
+
+          ./build.ps1 @params
+
+          # Surface the produced artifact(s) for later steps.
+          $out = Join-Path (Get-Location) 'out'
+          if (Test-Path $out) {
+              $files = Get-ChildItem -Path $out -File | ForEach-Object { $_.FullName }
+              "artifact_dir=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+              Write-Host "Produced:`n$($files -join "`n")"
+          }
+
+      - name: Attest build provenance (SLSA) for produced images
+        if: ${{ inputs.skip_heavy_build == false && hashFiles('out/*.zip', 'out/*.7z', 'out/*.iso') != '' }}
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            out/*.zip
+            out/*.7z
+            out/*.iso
+
+      - name: Azure login (federated OIDC; only when storage vars are configured)
+        if: ${{ inputs.skip_heavy_build == false && vars.AZURE_STORAGE_ACCOUNT != '' && vars.AZURE_STORAGE_CONTAINER != '' }}
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload artifacts to Azure Blob (durable off-box storage)
+        if: ${{ inputs.skip_heavy_build == false && vars.AZURE_STORAGE_ACCOUNT != '' && vars.AZURE_STORAGE_CONTAINER != '' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $prefix = "windows11/${{ matrix.arch }}/${{ github.run_id }}"
+          az storage blob upload-batch `
+            --account-name '${{ vars.AZURE_STORAGE_ACCOUNT }}' `
+            --destination '${{ vars.AZURE_STORAGE_CONTAINER }}' `
+            --destination-path $prefix `
+            --source out `
+            --auth-mode login `
+            --overwrite true
+
+      - name: Upload workflow artifact (fallback when Azure is not configured)
+        if: ${{ always() && (vars.AZURE_STORAGE_ACCOUNT == '' || vars.AZURE_STORAGE_CONTAINER == '') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Windows11-${{ inputs.edition }}-${{ matrix.arch }}-${{ inputs.release }}
+          path: |
+            out/**
+          if-no-files-found: warn
