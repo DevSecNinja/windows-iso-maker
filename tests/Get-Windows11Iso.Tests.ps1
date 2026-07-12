@@ -63,6 +63,57 @@ Describe 'Get-Windows11Iso' {
         }
     }
 
+    Context 'ISO cache reuse' {
+        It 'reuses an existing ISO and skips both Fido and download' {
+            InModuleScope WindowsIsoMaker {
+                Mock Invoke-FidoUrlResolver { throw 'Fido should not be called' }
+                Mock Invoke-IsoDownload { throw 'Download should not happen' }
+                $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-cache-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+                New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+                $cached = Join-Path $tmp 'Windows11-Pro-amd64-latest.iso'
+                'cached-iso' | Set-Content -LiteralPath $cached
+
+                $result = Get-Windows11Iso -Architecture amd64 -OutputPath $tmp
+
+                $result.Verified | Should -BeTrue
+                $result.Path | Should -Be ((Resolve-Path $cached).Path)
+                $result.Sha256 | Should -Not -BeNullOrEmpty
+                Should -Invoke Invoke-FidoUrlResolver -Times 0
+                Should -Invoke Invoke-IsoDownload -Times 0
+                Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 're-downloads when -Force is set even if a cached ISO exists' {
+            InModuleScope WindowsIsoMaker {
+                Mock Invoke-FidoUrlResolver { 'https://software.download.microsoft.com/fake/win11.iso' }
+                Mock Invoke-IsoDownload { param($Url, $Destination) 'fresh' | Set-Content -LiteralPath $Destination }
+                $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-cache-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+                New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+                'stale' | Set-Content -LiteralPath (Join-Path $tmp 'Windows11-Pro-amd64-latest.iso')
+
+                Get-Windows11Iso -Architecture amd64 -OutputPath $tmp -Force | Out-Null
+
+                Should -Invoke Invoke-FidoUrlResolver -Times 1
+                Should -Invoke Invoke-IsoDownload -Times 1
+                Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'throws when a cached ISO fails -ExpectedSha256 verification' {
+            InModuleScope WindowsIsoMaker {
+                Mock Invoke-FidoUrlResolver { throw 'Fido should not be called' }
+                $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-cache-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+                New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+                'cached-iso' | Set-Content -LiteralPath (Join-Path $tmp 'Windows11-Pro-amd64-latest.iso')
+
+                { Get-Windows11Iso -Architecture amd64 -OutputPath $tmp -ExpectedSha256 'DEADBEEF' } |
+                    Should -Throw '*hash mismatch*'
+                Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     Context 'Unavailable combination' {
         It 'throws a terminating error when Fido returns no URL' {
             InModuleScope WindowsIsoMaker {

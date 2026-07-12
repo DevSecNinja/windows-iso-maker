@@ -23,6 +23,11 @@ function Get-Windows11Iso {
         Optional path to an already-downloaded ISO; when set, skips the download.
     .PARAMETER FidoPath
         Path to the vendored Fido.ps1. Defaults to vendor/fido/Fido.ps1.
+    .PARAMETER Force
+        Re-download even if a matching ISO already exists in OutputPath (bypass the cache).
+    .PARAMETER ExpectedSha256
+        Optional known-good SHA-256. When supplied, the reused-or-downloaded ISO is verified
+        against it and a mismatch fails the build; when omitted the hash is recorded only.
     .EXAMPLE
         Get-Windows11Iso -Edition Pro -Language en-US -Release latest -Architecture amd64 -OutputPath C:\work
     .OUTPUTS
@@ -55,7 +60,14 @@ function Get-Windows11Iso {
         [string] $IsoPath,
 
         [Parameter()]
-        [string] $FidoPath = 'vendor/fido/Fido.ps1'
+        [string] $FidoPath = 'vendor/fido/Fido.ps1',
+
+        [Parameter()]
+        [switch] $Force,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $ExpectedSha256
     )
 
     # --- Fast path: use a caller-provided ISO instead of downloading. ---
@@ -64,7 +76,7 @@ function Get-Windows11Iso {
             throw "Provided IsoPath does not exist: '$IsoPath'."
         }
         Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Using provided ISO '$IsoPath' (skipping download)."
-        $hash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
+        $hash = Assert-IsoHash -Path $IsoPath -ExpectedSha256 $ExpectedSha256
         return [pscustomobject]@{
             PSTypeName   = 'WindowsIsoMaker.BaseImage'
             Path         = (Resolve-Path -LiteralPath $IsoPath).Path
@@ -80,6 +92,30 @@ function Get-Windows11Iso {
 
     if (-not (Test-Path -LiteralPath $OutputPath)) {
         New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+    }
+
+    $fileName = "Windows11-$Edition-$Architecture-$Release.iso" -replace '\s', ''
+    $targetIso = Join-Path -Path $OutputPath -ChildPath $fileName
+
+    # --- Cache path: reuse a previously downloaded ISO. ---
+    # Downloads are atomic (see Invoke-IsoDownload), so a fully written target file is known to
+    # be complete. Reusing it skips both the multi-GB transfer and the Fido/Sentinel round-trip
+    # on repeat runs. Pass -Force to always re-download.
+    if (-not $Force -and (Test-Path -LiteralPath $targetIso) -and ((Get-Item -LiteralPath $targetIso).Length -gt 0)) {
+        Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Reusing existing ISO '$targetIso' (skipping Fido and download); pass -Force to re-download."
+        $hash = Assert-IsoHash -Path $targetIso -ExpectedSha256 $ExpectedSha256
+        Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Existing ISO SHA256=$hash."
+        return [pscustomobject]@{
+            PSTypeName   = 'WindowsIsoMaker.BaseImage'
+            Path         = (Resolve-Path -LiteralPath $targetIso).Path
+            Edition      = $Edition
+            Language     = $Language
+            Release      = $Release
+            Architecture = $Architecture
+            Sha256       = $hash
+            SourceUrl    = $null
+            Verified     = $true
+        }
     }
 
     # Map our normalized values onto Fido's expected argument vocabulary.
@@ -124,7 +160,7 @@ function Get-Windows11Iso {
         }
     }
 
-    $hash = (Get-FileHash -LiteralPath $targetIso -Algorithm SHA256).Hash
+    $hash = Assert-IsoHash -Path $targetIso -ExpectedSha256 $ExpectedSha256
     Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Downloaded ISO to '$targetIso' (SHA256=$hash)."
 
     return [pscustomobject]@{
@@ -278,6 +314,35 @@ function Invoke-FidoProcess {
     }
 }
 
+function Assert-IsoHash {
+    <#
+    .SYNOPSIS
+        Compute an ISO's SHA-256 and, when a known-good value is supplied, verify against it.
+    .DESCRIPTION
+        Private helper. Always returns the computed SHA-256 (integrity recording, FR-020). When
+        ExpectedSha256 is provided, a mismatch throws so a corrupt or wrong ISO never reaches
+        servicing (Principle VII). Comparison is case-insensitive.
+    .PARAMETER Path
+        Path to the ISO file.
+    .PARAMETER ExpectedSha256
+        Optional known-good SHA-256 to verify against.
+    .OUTPUTS
+        System.String (the computed SHA-256 hash).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter()][string] $ExpectedSha256
+    )
+
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and ($hash -ne $ExpectedSha256.Trim())) {
+        throw "ISO hash mismatch for '$Path': expected '$($ExpectedSha256.Trim())' but computed '$hash'. Delete the file or pass -Force to re-download."
+    }
+    return $hash
+}
+
 function Invoke-IsoDownload {
     <#
     .SYNOPSIS
@@ -305,15 +370,25 @@ function Invoke-IsoDownload {
     }
 
     Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Downloading '$Url' -> '$Destination'."
+    # Download to a sibling .part file and rename on success so an interrupted transfer never
+    # leaves a truncated ISO at the final path (which the cache-reuse check would trust).
+    $tempFile = "$Destination.part"
+    if (Test-Path -LiteralPath $tempFile) { Remove-Item -LiteralPath $tempFile -Force }
+
     $previousProgress = $ProgressPreference
     try {
         $ProgressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri $Url -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
     }
     finally {
         $ProgressPreference = $previousProgress
     }
 
+    if (-not (Test-Path -LiteralPath $tempFile)) {
+        throw "Download completed but the file is missing: '$tempFile'."
+    }
+
+    Move-Item -LiteralPath $tempFile -Destination $Destination -Force
     if (-not (Test-Path -LiteralPath $Destination)) {
         throw "Download completed but the file is missing: '$Destination'."
     }
