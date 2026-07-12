@@ -3,8 +3,8 @@ Fido — vendored, pinned dependency
 
 Upstream project : pbatard/Fido
 Upstream URL      : https://github.com/pbatard/Fido
-Pinned tag        : v1.55
-Pinned commit     : 4e6f25f35112c82ee554bb8c602ce85bdccdfeb7
+Pinned tag        : v1.70
+Pinned commit     : 3d47260b8915385c58e20c73e24b36e9a9536f3f
 Retrieved file    : Fido.ps1
 License           : GNU General Public License v3.0 (see LICENSE)
 

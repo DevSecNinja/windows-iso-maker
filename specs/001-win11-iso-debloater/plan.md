@@ -33,7 +33,7 @@ compatibility validated for DISM-dependent paths. `Set-StrictMode -Version Lates
   `Enable-WindowsOptionalFeature`, `Dismount-WindowsImage`) with `dism.exe` fallback where
   module coverage is incomplete.
 - `oscdimg.exe` from Windows ADK **Deployment Tools** (bootable UEFI ISO authoring).
-- Vendored `pbatard/Fido` `Fido.ps1` (pinned tag `v1.55`, recorded in `vendor/fido/VERSION`)
+- Vendored `pbatard/Fido` `Fido.ps1` (pinned tag `v1.70`, recorded in `vendor/fido/VERSION`)
   for ISO URL resolution/download.
 - Pester v5, PSScriptAnalyzer (pinned minimum versions via manifest / CI).
 - CI-only (SHA-pinned) actions: `actions/checkout`, `actions/upload-artifact`,
