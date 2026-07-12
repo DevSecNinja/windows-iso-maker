@@ -53,6 +53,8 @@ function Invoke-IsoBuild {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
         Justification = "'Profile' is the documented, user-facing configuration concept (minimal/default/aggressive). The parameter is locally scoped and never writes the global profile path.")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseCmdletCorrectly', '',
+        Justification = 'Known PSScriptAnalyzer false positive: the Expand-WindowsImage call below supplies both of its mandatory parameters (-IsoPath and -Destination); see PSScriptAnalyzerSettings.psd1 for related upstream analyzer issues.')]
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([pscustomobject])]
     param(

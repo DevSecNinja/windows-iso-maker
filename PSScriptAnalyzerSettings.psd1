@@ -25,7 +25,14 @@
         # Noisy with our Pester v5 InModuleScope -Parameters pattern (script-block params are
         # used indirectly) and with pipeline functions that accept a -Config object purely for
         # context/logging/interface consistency. Genuine dead code is caught in review.
-        'PSReviewUnusedParameter'
+        'PSReviewUnusedParameter',
+
+        # Upstream PSScriptAnalyzer bug (as of 1.25.0): UseCorrectCasing.AnalyzeScript throws an
+        # unhandled NullReferenceException in System.Management.Automation.CommandInfo.get_Parameters()
+        # when a command's CommandInfo has no backing parameter set, crashing the ENTIRE analyzer run
+        # for the whole -Recurse scan (not just this one finding). Reproduced consistently on fresh CI
+        # runners; see https://stackoverflow.com/q/76440271. Re-enable once fixed upstream.
+        'PSUseCorrectCasing'
     )
 
     Rules = @{
@@ -47,11 +54,6 @@
         PSAvoidUsingCmdletAliases = @{
             Enable    = $true
             AllowList = @()
-        }
-
-        # Correct casing of cmdlets/parameters (PascalCase discipline).
-        PSUseCorrectCasing = @{
-            Enable = $true
         }
 
         # ShouldProcess must be honored where declared (Principle VI: -WhatIf safety).
