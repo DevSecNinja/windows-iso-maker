@@ -66,7 +66,8 @@ function Compress-BuildArtifact {
 
         if ($Format -eq 'zip') {
             # Streaming ZipFile API — Compress-Archive throws "Stream was too long." on ISOs > ~2 GB.
-            New-ZipArchiveFromFile -SourceFile $IsoPath -DestinationArchive $archivePath -EntryName ([System.IO.Path]::GetFileName($IsoPath)) -CompressionLevel Optimal
+            # Fastest: a Windows ISO's install.wim is already compressed, so Optimal costs minutes for ~no gain.
+            New-ZipArchiveFromFile -SourceFile $IsoPath -DestinationArchive $archivePath -EntryName ([System.IO.Path]::GetFileName($IsoPath)) -CompressionLevel Fastest
         }
         else {
             $sevenZip = Get-Command -Name '7z', '7z.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
