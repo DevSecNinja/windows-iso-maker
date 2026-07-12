@@ -65,7 +65,8 @@ function Compress-BuildArtifact {
         }
 
         if ($Format -eq 'zip') {
-            Compress-Archive -LiteralPath $IsoPath -DestinationPath $archivePath -CompressionLevel Optimal -Force -ErrorAction Stop
+            # Streaming ZipFile API — Compress-Archive throws "Stream was too long." on ISOs > ~2 GB.
+            New-ZipArchiveFromFile -SourceFile $IsoPath -DestinationArchive $archivePath -EntryName ([System.IO.Path]::GetFileName($IsoPath)) -CompressionLevel Optimal
         }
         else {
             $sevenZip = Get-Command -Name '7z', '7z.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
