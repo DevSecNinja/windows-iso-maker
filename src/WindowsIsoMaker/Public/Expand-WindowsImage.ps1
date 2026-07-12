@@ -95,6 +95,14 @@ function Copy-IsoContent {
         $sourceRoot = "$driveLetter`:\"
         Write-BuildLog -Level Verbose -Component 'Expand-WindowsImage' -Message "Copying media from '$sourceRoot' to '$Destination'."
         Copy-Item -Path (Join-Path -Path $sourceRoot -ChildPath '*') -Destination $Destination -Recurse -Force -ErrorAction Stop
+
+        # Files copied off a read-only ISO volume inherit the ReadOnly attribute. DISM then
+        # refuses to mount install.wim for modification ("You do not have permissions to mount
+        # and modify this image"), and re-packaging cannot rewrite boot.wim. Clear it across the
+        # extracted media so servicing and repackaging can write.
+        Get-ChildItem -LiteralPath $Destination -Recurse -File -Force |
+            Where-Object { $_.IsReadOnly } |
+            ForEach-Object { $_.IsReadOnly = $false }
     }
     finally {
         if ($diskImage) {

@@ -67,6 +67,15 @@ function Mount-WindowsBuildImage {
     }
 
     if ($PSCmdlet.ShouldProcess($MountPath, "Mount image index $resolvedIndex from '$ImagePath'")) {
+        # Defensive: a read-only image file makes DISM fail with "You do not have permissions to
+        # mount and modify this image." Ensure the WIM/ESD is writable before a read/write mount
+        # (covers images extracted off a read-only ISO or supplied via other paths).
+        $imageItem = Get-Item -LiteralPath $ImagePath -Force
+        if ($imageItem.IsReadOnly) {
+            $imageItem.IsReadOnly = $false
+            Write-BuildLog -Level Verbose -Component 'Mount-WindowsBuildImage' -Message "Cleared read-only attribute on '$ImagePath' before mounting."
+        }
+
         try {
             Mount-BuildImage -ImagePath $ImagePath -Index $resolvedIndex -Path $MountPath
         }
