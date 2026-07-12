@@ -168,6 +168,9 @@ function Invoke-IsoBuild {
 
         # 4c. Extract media and mount the requested edition.
         $media = Expand-WindowsImage -IsoPath $baseImage.Path -Destination $mediaDir
+        # Recover from a prior hard-killed run that may have stranded a mount here; a single
+        # Ctrl+C is handled by the finally block below, but a hard kill/power loss is not.
+        Clear-StaleImageMount -MountPath $mountDir
         $mounted = Mount-WindowsBuildImage -ImagePath $media.ImagePath -MountPath $mountDir -Edition $Config.Edition
 
         # 4d. Apply every selected catalog entry through the Action dispatcher (FR-024/FR-025).
@@ -219,17 +222,9 @@ function Invoke-IsoBuild {
         return $report
     }
     catch {
-        # Failure cleanup: never leave a mounted image / hive behind; never claim success.
+        # Never claim success on failure; record an auditable failure report. The actual
+        # dismount lives in the finally block so it also runs on Ctrl+C (see below).
         Write-BuildLog -Level Error -Component 'Invoke-IsoBuild' -Message "Build failed: $($_.Exception.Message)"
-        if ($mounted -and $mounted.IsMounted) {
-            try {
-                Dismount-BuildImage -Path $mounted.MountPath -Discard
-                Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message 'Discarded mounted image after failure.'
-            }
-            catch {
-                Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message "Cleanup dismount failed: $($_.Exception.Message)"
-            }
-        }
         # Best-effort failure report for the audit trail.
         try {
             New-RunReport -ResolvedConfig $Config -BaseImage $baseImage -Applied $applied.ToArray() `
@@ -241,6 +236,21 @@ function Invoke-IsoBuild {
             Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message "Could not write failure report: $($_.Exception.Message)"
         }
         throw
+    }
+    finally {
+        # Guaranteed cleanup: runs on success (a no-op after the commit at 4e set IsMounted=$false),
+        # on error, AND on Ctrl+C. A plain catch does NOT execute on Ctrl+C / pipeline-stop, so the
+        # dismount MUST live here to avoid stranding a mounted image (FR-005 / Principle VI).
+        if ($mounted -and $mounted.IsMounted) {
+            try {
+                Dismount-BuildImage -Path $mounted.MountPath -Discard
+                $mounted.IsMounted = $false
+                Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message 'Discarded mounted image during cleanup (uncommitted changes).'
+            }
+            catch {
+                Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message "Cleanup dismount failed: $($_.Exception.Message). If a stale mount remains, run 'dism /Cleanup-Mountpoints'."
+            }
+        }
     }
 }
 

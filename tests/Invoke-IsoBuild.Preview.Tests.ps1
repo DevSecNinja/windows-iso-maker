@@ -66,6 +66,7 @@ Describe 'Invoke-IsoBuild preview & safety (US5)' {
             Mock Get-Windows11Iso { [pscustomobject]@{ Path = 'x.iso'; Verified = $true } }
             Mock Expand-WindowsImage { [pscustomobject]@{ MediaRoot = 'm'; ImagePath = 'm\sources\install.wim' } }
             Mock Mount-WindowsBuildImage { [pscustomobject]@{ MountPath = 'mnt'; IsMounted = $true } }
+            Mock Clear-StaleImageMount { }
             Mock Invoke-CatalogEntry { throw 'simulated servicing failure' }
             Mock Dismount-BuildImage { }
             Mock New-RunReport { param($Outcome) [pscustomobject]@{ Outcome = $Outcome } }

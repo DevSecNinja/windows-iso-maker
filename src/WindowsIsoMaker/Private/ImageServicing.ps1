@@ -282,3 +282,58 @@ function Dismount-BuildImage {
         Dismount-WindowsImage -Path $Path -Discard -ErrorAction Stop | Out-Null
     }
 }
+
+function Get-MountedBuildImage {
+    <#
+    .SYNOPSIS
+        Return images currently mounted for offline servicing (Get-WindowsImage -Mounted).
+    .DESCRIPTION
+        Private wrapper / mockable seam. Best-effort: returns an empty set rather than throwing
+        when the query is unavailable (e.g. non-elevated) so callers can treat it as advisory.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param()
+    try {
+        return @(Get-WindowsImage -Mounted -ErrorAction Stop)
+    }
+    catch {
+        # Best-effort/advisory: querying mounts can fail (e.g. not elevated). Never let stale-mount
+        # detection abort a build — just report nothing to clean.
+        return @()
+    }
+}
+
+function Clear-StaleImageMount {
+    <#
+    .SYNOPSIS
+        Discard any image left mounted at the given path by a previously crashed run.
+    .DESCRIPTION
+        The orchestrator's finally block dismounts on normal failure and on Ctrl+C, but a hard
+        kill or power loss can strand a mounted image at our mount directory — which then makes
+        the next Mount-WindowsImage fail. This best-effort helper discards such a stale mount so
+        re-runs are self-healing (Principle VI).
+    .PARAMETER MountPath
+        The mount directory to check.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory = $true)][string] $MountPath)
+
+    $target = try { [System.IO.Path]::GetFullPath($MountPath).TrimEnd('\') } catch { $MountPath }
+    foreach ($img in @(Get-MountedBuildImage)) {
+        $mp = if ($img.PSObject.Properties['MountPath']) { $img.MountPath } else { $null }
+        if (-not $mp) { continue }
+        $normalized = try { [System.IO.Path]::GetFullPath($mp).TrimEnd('\') } catch { $mp }
+        if ($normalized -ieq $target) {
+            Write-BuildLog -Level Warning -Component 'Clear-StaleImageMount' -Message "Found a stale mounted image at '$mp' from a previous run; discarding it."
+            try {
+                Dismount-BuildImage -Path $mp -Discard
+            }
+            catch {
+                Write-BuildLog -Level Warning -Component 'Clear-StaleImageMount' -Message "Failed to discard stale mount '$mp': $($_.Exception.Message). Run 'dism /Cleanup-Mountpoints' manually."
+            }
+        }
+    }
+}

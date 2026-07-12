@@ -38,6 +38,7 @@ Describe 'Invoke-IsoBuild orchestration' {
             Mock Test-BuildPrerequisite { $script:CallOrder.Add('prereq'); [pscustomobject]@{ OscdimgPath = 'x'; DismPath = 'x' } }
             Mock Get-Windows11Iso { $script:CallOrder.Add('download'); [pscustomobject]@{ Path = 'C:\work\win11.iso'; Verified = $true } }
             Mock Expand-WindowsImage { $script:CallOrder.Add('expand'); [pscustomobject]@{ MediaRoot = 'C:\work\media'; ImagePath = 'C:\work\media\sources\install.wim' } }
+            Mock Clear-StaleImageMount { }
             Mock Mount-WindowsBuildImage { $script:CallOrder.Add('mount'); [pscustomobject]@{ MountPath = 'C:\work\mount'; IsMounted = $true } }
             Mock Invoke-CatalogEntry { $script:CallOrder.Add('apply'); [pscustomobject]@{ Id = 'x'; Status = 'Applied' } }
             Mock Dismount-BuildImage { $script:CallOrder.Add('dismount-save') }
@@ -82,6 +83,34 @@ Describe 'Invoke-IsoBuild orchestration' {
 
             { Invoke-IsoBuild -Config $Cfg } | Should -Throw
             Should -Invoke Expand-WindowsImage -Times 0
+        }
+    }
+}
+
+Describe 'Clear-StaleImageMount' {
+    It 'discards a mount that matches the target path' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-MountedBuildImage {
+                @([pscustomobject]@{ MountPath = 'C:\work\mount'; ImagePath = 'C:\work\media\sources\install.wim' })
+            }
+            Mock Dismount-BuildImage { }
+
+            Clear-StaleImageMount -MountPath 'C:\work\mount\'
+
+            Should -Invoke Dismount-BuildImage -Times 1 -ParameterFilter { $Discard.IsPresent -and $Path -eq 'C:\work\mount' }
+        }
+    }
+
+    It 'does nothing when no mounted image matches the target path' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-MountedBuildImage {
+                @([pscustomobject]@{ MountPath = 'C:\other\mount'; ImagePath = 'x' })
+            }
+            Mock Dismount-BuildImage { }
+
+            Clear-StaleImageMount -MountPath 'C:\work\mount'
+
+            Should -Invoke Dismount-BuildImage -Times 0
         }
     }
 }
