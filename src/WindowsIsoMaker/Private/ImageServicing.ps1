@@ -122,6 +122,82 @@ function Remove-ImageProvisionedAppx {
     }
 }
 
+function ConvertFrom-DismCapabilities {
+    <#
+    .SYNOPSIS
+        Parse `dism.exe /Get-Capabilities` output into Name/State objects.
+    .DESCRIPTION
+        Private, pure helper (unit-testable without dism.exe). Each capability appears as a
+        block of "Key : Value" lines; we pair each "Capability Identity" with the "State"
+        that follows it. Property names (Name/State) match the shape the servicing callers
+        expect from Get-WindowsCapability.
+    .PARAMETER Output
+        The raw dism.exe output lines.
+    .OUTPUTS
+        System.Object[] of objects with Name and State.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]] $Output)
+
+    $capabilities = [System.Collections.Generic.List[object]]::new()
+    $currentName = $null
+    foreach ($line in $Output) {
+        if ($line -match '^\s*Capability Identity\s*:\s*(.*?)\s*$') {
+            $currentName = $Matches[1]
+        }
+        elseif ($line -match '^\s*State\s*:\s*(.*?)\s*$') {
+            if ($currentName) {
+                $capabilities.Add([pscustomobject]@{
+                        Name  = $currentName
+                        State = $Matches[1]
+                    })
+            }
+            $currentName = $null
+        }
+    }
+    return $capabilities.ToArray()
+}
+
+function ConvertFrom-DismFeatures {
+    <#
+    .SYNOPSIS
+        Parse `dism.exe /Get-Features` output into FeatureName/State objects.
+    .DESCRIPTION
+        Private, pure helper (unit-testable without dism.exe). Each feature appears as a block
+        of "Key : Value" lines; we pair each "Feature Name" with the "State" that follows it.
+        Property names (FeatureName/State) match the shape the servicing callers expect from
+        Get-WindowsOptionalFeature.
+    .PARAMETER Output
+        The raw dism.exe output lines.
+    .OUTPUTS
+        System.Object[] of objects with FeatureName and State.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]] $Output)
+
+    $features = [System.Collections.Generic.List[object]]::new()
+    $currentName = $null
+    foreach ($line in $Output) {
+        if ($line -match '^\s*Feature Name\s*:\s*(.*?)\s*$') {
+            $currentName = $Matches[1]
+        }
+        elseif ($line -match '^\s*State\s*:\s*(.*?)\s*$') {
+            if ($currentName) {
+                $features.Add([pscustomobject]@{
+                        FeatureName = $currentName
+                        State       = $Matches[1]
+                    })
+            }
+            $currentName = $null
+        }
+    }
+    return $features.ToArray()
+}
+
 function Get-ImageCapability {
     <#
     .SYNOPSIS
@@ -132,7 +208,13 @@ function Get-ImageCapability {
     [CmdletBinding()]
     [OutputType([object[]])]
     param([Parameter(Mandatory = $true)][string] $Path)
-    return @(Get-WindowsCapability -Path $Path)
+    # Uses dism.exe (not Get-WindowsCapability) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', "/Image:$Path", '/Get-Capabilities')
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to list capabilities for '$Path' (exit $($dism.ExitCode)): $tail"
+    }
+    return ConvertFrom-DismCapabilities -Output @($dism.Output)
 }
 
 function Remove-ImageCapability {
@@ -151,7 +233,12 @@ function Remove-ImageCapability {
         [Parameter(Mandatory = $true)][string] $Path,
         [Parameter(Mandatory = $true)][string] $Name
     )
-    Remove-WindowsCapability -Path $Path -Name $Name -ErrorAction Stop | Out-Null
+    # Uses dism.exe (not Remove-WindowsCapability) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', "/Image:$Path", '/Remove-Capability', "/CapabilityName:$Name")
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to remove capability '$Name' (exit $($dism.ExitCode)): $tail"
+    }
 }
 
 function Get-ImageOptionalFeature {
@@ -169,10 +256,17 @@ function Get-ImageOptionalFeature {
         [Parameter(Mandatory = $true)][string] $Path,
         [Parameter()][string] $FeatureName
     )
+    # Uses dism.exe (not Get-WindowsOptionalFeature) — see Invoke-DismExe for why.
+    $arguments = @('/English', "/Image:$Path", '/Get-Features')
     if ($PSBoundParameters.ContainsKey('FeatureName') -and $FeatureName) {
-        return @(Get-WindowsOptionalFeature -Path $Path -FeatureName $FeatureName)
+        $arguments += "/FeatureName:$FeatureName"
     }
-    return @(Get-WindowsOptionalFeature -Path $Path)
+    $dism = Invoke-DismExe -Arguments $arguments
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to list optional features for '$Path' (exit $($dism.ExitCode)): $tail"
+    }
+    return ConvertFrom-DismFeatures -Output @($dism.Output)
 }
 
 function Enable-ImageOptionalFeature {
@@ -191,7 +285,12 @@ function Enable-ImageOptionalFeature {
         [Parameter(Mandatory = $true)][string] $Path,
         [Parameter(Mandatory = $true)][string] $FeatureName
     )
-    Enable-WindowsOptionalFeature -Path $Path -FeatureName $FeatureName -All -ErrorAction Stop | Out-Null
+    # Uses dism.exe (not Enable-WindowsOptionalFeature) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', "/Image:$Path", '/Enable-Feature', "/FeatureName:$FeatureName", '/All')
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to enable optional feature '$FeatureName' (exit $($dism.ExitCode)): $tail"
+    }
 }
 
 function Add-ImageCapability {
@@ -210,7 +309,12 @@ function Add-ImageCapability {
         [Parameter(Mandatory = $true)][string] $Path,
         [Parameter(Mandatory = $true)][string] $Name
     )
-    Add-WindowsCapability -Path $Path -Name $Name -ErrorAction Stop | Out-Null
+    # Uses dism.exe (not Add-WindowsCapability) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', "/Image:$Path", '/Add-Capability', "/CapabilityName:$Name")
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to add capability '$Name' (exit $($dism.ExitCode)): $tail"
+    }
 }
 
 function Get-BuildImageInfo {
