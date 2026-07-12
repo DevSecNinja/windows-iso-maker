@@ -15,7 +15,17 @@
 
         # Fido.ps1 is a vendored third-party GPLv3 script (see vendor/fido/NOTICE) and
         # is intentionally excluded from our style rules; excluded via path below too.
-        'PSAvoidUsingWriteHost'
+        'PSAvoidUsingWriteHost',
+
+        # This project standardizes on UTF-8 WITHOUT a BOM for cross-platform (Linux CI +
+        # Windows runners) consistency. Comments contain a few non-ASCII glyphs (em dashes),
+        # which would otherwise trip this rule. UTF-8 no-BOM is a deliberate encoding choice.
+        'PSUseBOMForUnicodeEncodedFile',
+
+        # Noisy with our Pester v5 InModuleScope -Parameters pattern (script-block params are
+        # used indirectly) and with pipeline functions that accept a -Config object purely for
+        # context/logging/interface consistency. Genuine dead code is caught in review.
+        'PSReviewUnusedParameter'
     )
 
     Rules = @{

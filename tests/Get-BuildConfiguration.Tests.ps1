@@ -26,10 +26,9 @@ BeforeAll {
     Release = 'latest'
     Architecture = 'amd64'
     Profile = 'default'
-    IncludeCatalogId = @()
-    ExcludeCatalogId = @()
-    RemoveEdge = `$false
-    RemoveOneDrive = `$false
+    Toggles = @{}
+    EnableCatalogId = @()
+    DisableCatalogId = @()
     WorkingDirectory = ''
     OutputDirectory = './out'
     IsoPath = ''
@@ -106,10 +105,10 @@ Describe 'Get-BuildConfiguration' {
             $cfg.Architecture | Should -Be 'amd64'
         }
 
-        It 'applies WIM_REMOVE_EDGE=true as a boolean override' {
-            $env:WIM_REMOVE_EDGE = 'true'
+        It 'applies WIM_ENABLE_CATALOG_ID to force-enable an opt-in entry' {
+            $env:WIM_ENABLE_CATALOG_ID = 'remove-edge'
             $cfg = Get-BuildConfiguration -Path $script:DefaultConfig
-            $cfg.RemoveEdge | Should -BeTrue
+            ($cfg.SelectedCatalog | ForEach-Object { $_.Id }) | Should -Contain 'remove-edge'
         }
     }
 
@@ -127,8 +126,8 @@ Describe 'Get-BuildConfiguration' {
             { Get-BuildConfiguration -Path (Join-Path $script:TempRoot 'nope.psd1') } | Should -Throw
         }
 
-        It 'throws when an ExcludeCatalogId does not exist in the catalog' {
-            { Get-BuildConfiguration -Path $script:DefaultConfig -ExcludeCatalogId 'does-not-exist' } | Should -Throw
+        It 'throws when a DisableCatalogId does not exist in the catalog' {
+            { Get-BuildConfiguration -Path $script:DefaultConfig -DisableCatalogId 'does-not-exist' } | Should -Throw
         }
     }
 
@@ -148,20 +147,20 @@ Describe 'Get-BuildConfiguration' {
         }
 
         It 'enables ONLY the opt-in removals that were flagged' {
-            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -RemoveEdge
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -EnableCatalogId 'remove-edge'
             $ids = $cfg.SelectedCatalog | ForEach-Object { $_.Id }
             $ids | Should -Contain 'remove-edge'
             $ids | Should -Not -Contain 'remove-onedrive'
         }
 
-        It 'excludes a specifically excluded catalog id' {
-            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -ExcludeCatalogId 'reg-disable-cortana'
+        It 'excludes a specifically disabled catalog id' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -DisableCatalogId 'reg-disable-widgets'
             $ids = $cfg.SelectedCatalog | ForEach-Object { $_.Id }
-            $ids | Should -Not -Contain 'reg-disable-cortana'
+            $ids | Should -Not -Contain 'reg-disable-widgets'
         }
 
-        It 'includes a normally-off entry when explicitly included' {
-            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -IncludeCatalogId 'cap-media-player-legacy'
+        It 'includes a normally-off entry when explicitly enabled' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -EnableCatalogId 'cap-media-player-legacy'
             $ids = $cfg.SelectedCatalog | ForEach-Object { $_.Id }
             $ids | Should -Contain 'cap-media-player-legacy'
         }

@@ -8,18 +8,19 @@ BeforeAll {
     $script:RepoRoot = Split-Path -Parent $PSScriptRoot
     Import-Module (Join-Path $script:RepoRoot 'src/WindowsIsoMaker') -Force
 
-    function New-FakeConfig {
+    function Get-FakeConfig {
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-prev-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
         [pscustomobject]@{
             PSTypeName        = 'WindowsIsoMaker.BuildConfiguration'
             Edition           = 'Pro'; Language = 'en-US'; Release = 'latest'; Architecture = 'amd64'
-            Profile           = 'default'; RemoveEdge = $false; RemoveOneDrive = $false
-            IncludeCatalogId  = @(); ExcludeCatalogId = @()
+            Profile           = 'default'; Toggles = @{}
+            EnableCatalogId   = @(); DisableCatalogId = @()
+            Autounattend      = $null; AzureUpload = $null
             WorkingDirectory  = (Join-Path $tmp 'work'); OutputDirectory = (Join-Path $tmp 'out')
             IsoPath           = ''; BootTest = $false; CompressionFormat = 'zip'
             FidoPath          = 'vendor/fido/Fido.ps1'; OscdimgPath = ''
             SelectedCatalog   = @(
-                [pscustomobject]@{ Id = 'reg-disable-recall'; Type = 'Registry'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64') }
+                [pscustomobject]@{ Id = 'reg-disable-recall'; Type = 'Registry'; Action = 'SetRegistry'; Target = @{ Hive = 'SOFTWARE'; Path = 'P'; Name = 'N'; Kind = 'DWord'; Value = 1 }; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64') }
             )
         }
     }
@@ -28,7 +29,7 @@ BeforeAll {
 Describe 'Invoke-IsoBuild preview & safety (US5)' {
 
     It 'produces a Preview RunReport and touches no media under -WhatIf' {
-        $cfg = New-FakeConfig
+        $cfg = Get-FakeConfig
         InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
             param($Cfg)
             Mock Test-BuildPrerequisite { [pscustomobject]@{ } }
@@ -44,7 +45,7 @@ Describe 'Invoke-IsoBuild preview & safety (US5)' {
     }
 
     It 'runs preview-only under -SkipHeavyBuild' {
-        $cfg = New-FakeConfig
+        $cfg = Get-FakeConfig
         InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
             param($Cfg)
             Mock Test-BuildPrerequisite { [pscustomobject]@{ } }
@@ -58,14 +59,14 @@ Describe 'Invoke-IsoBuild preview & safety (US5)' {
     }
 
     It 'discards the mounted image and rethrows when a mid-build step fails (FR-005)' {
-        $cfg = New-FakeConfig
+        $cfg = Get-FakeConfig
         InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
             param($Cfg)
             Mock Test-BuildPrerequisite { [pscustomobject]@{ } }
             Mock Get-Windows11Iso { [pscustomobject]@{ Path = 'x.iso'; Verified = $true } }
             Mock Expand-WindowsImage { [pscustomobject]@{ MediaRoot = 'm'; ImagePath = 'm\sources\install.wim' } }
             Mock Mount-WindowsBuildImage { [pscustomobject]@{ MountPath = 'mnt'; IsMounted = $true } }
-            Mock Remove-Bloatware { throw 'simulated servicing failure' }
+            Mock Invoke-CatalogEntry { throw 'simulated servicing failure' }
             Mock Dismount-BuildImage { }
             Mock New-RunReport { param($Outcome) [pscustomobject]@{ Outcome = $Outcome } }
 

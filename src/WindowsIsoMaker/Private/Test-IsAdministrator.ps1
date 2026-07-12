@@ -18,12 +18,14 @@ function Test-IsAdministrator {
 
     # Offline Windows image servicing is only supported on Windows. On other platforms
     # there is no Administrators role to check, so report not-elevated.
-    $isWindows = $true
+    # NOTE: use a distinctly-named local ($onWindows), never $isWindows — PowerShell variable
+    # names are case-insensitive, so $isWindows would clobber the read-only automatic $IsWindows.
+    $onWindows = $true
     if (Get-Variable -Name 'IsWindows' -ErrorAction SilentlyContinue) {
-        $isWindows = $IsWindows
+        $onWindows = $IsWindows
     }
 
-    if (-not $isWindows) {
+    if (-not $onWindows) {
         return $false
     }
 

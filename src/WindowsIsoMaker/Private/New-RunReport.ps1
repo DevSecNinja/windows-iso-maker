@@ -56,6 +56,15 @@ function New-RunReport {
         [Parameter()]
         [hashtable] $ToolVersions = @{},
 
+        [Parameter()]
+        [object] $Autounattend,
+
+        [Parameter()]
+        [object] $Bom,
+
+        [Parameter()]
+        [object] $Provenance,
+
         [Parameter(Mandatory = $true)]
         [ValidateSet('Succeeded', 'Failed', 'Preview')]
         [string] $Outcome,
@@ -75,6 +84,9 @@ function New-RunReport {
         Artifact       = $Artifact
         Integrity      = $Integrity
         ToolVersions   = $ToolVersions
+        Autounattend   = $Autounattend
+        Bom            = $Bom
+        Provenance     = $Provenance
         Outcome        = $Outcome
     }
 

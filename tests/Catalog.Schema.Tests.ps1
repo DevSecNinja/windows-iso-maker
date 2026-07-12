@@ -71,12 +71,24 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
                 Should -BeTrue -Because "Citation must be an http(s) URL or 'Unverified', got '$($Entry.Citation)'"
         }
 
-        It 'has a valid Type' {
-            $Entry.Type | Should -BeIn @('Appx', 'Capability', 'Registry')
+        It 'has a valid Type (optional, derived category)' {
+            if ($Entry.ContainsKey('Type') -and $null -ne $Entry.Type) {
+                $Entry.Type | Should -BeIn @('Appx', 'Capability', 'Registry', 'OptionalFeature')
+            }
         }
 
-        It 'has a valid Action' {
-            $Entry.Action | Should -BeIn @('Remove', 'Add', 'Set', 'Delete', 'Disable')
+        It 'has a valid Action (dispatch key)' {
+            $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
+        }
+
+        It 'has an EvidenceGrade of 1, 2, or 3' {
+            $Entry.EvidenceGrade | Should -BeIn @(1, 2, 3) -Because 'Principle II v1.1.0 requires an evidence grade for every change (FR-026)'
+        }
+
+        It 'is opt-in (DefaultEnabled=false) when EvidenceGrade is 3 (community/forum)' {
+            if ($Entry.EvidenceGrade -eq 3) {
+                $Entry.DefaultEnabled | Should -BeFalse -Because 'grade-3 (community/forum) changes must not be enabled by default (FR-026)'
+            }
         }
 
         It 'has a non-empty Target' {
@@ -101,15 +113,13 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             }
         }
 
-        It 'has a well-formed registry Target when Type=Registry' {
-            if ($Entry.Type -eq 'Registry') {
+        It 'has a well-formed registry Target when Action=SetRegistry' {
+            if ($Entry.Action -eq 'SetRegistry') {
                 $Entry.Target | Should -BeOfType [hashtable]
                 $Entry.Target.Hive | Should -BeIn @('SOFTWARE', 'SYSTEM', 'DEFAULT')
                 $Entry.Target.Path | Should -Not -BeNullOrEmpty
                 $Entry.Target.Name | Should -Not -BeNullOrEmpty
-                if ($Entry.Action -in @('Set', 'Disable')) {
-                    $Entry.Target.Kind | Should -BeIn @('DWord', 'QWord', 'String', 'ExpandString', 'MultiString', 'Binary')
-                }
+                $Entry.Target.Kind | Should -BeIn @('DWord', 'QWord', 'String', 'ExpandString', 'MultiString', 'Binary')
             }
         }
     }
@@ -180,6 +190,19 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
         It 'rejects a non-URL, non-Unverified Citation' {
             $bad = @{ Description = 'x'; Rationale = 'y'; Citation = 'see the wiki' }
             (& $script:TestEntry $bad) | Should -BeFalse
+        }
+
+        It 'rejects a grade-3 (community/forum) entry that is DefaultEnabled (FR-026)' {
+            # Evidence-grade gate: a grade-3 citation must be opt-in. This proves the gate
+            # would REJECT a default-on grade-3 entry rather than silently allow it.
+            $gradeGate = {
+                param($Entry)
+                if ($Entry.EvidenceGrade -eq 3) { return (-not $Entry.DefaultEnabled) }
+                return $true
+            }
+            (& $gradeGate @{ EvidenceGrade = 3; DefaultEnabled = $true }) | Should -BeFalse
+            (& $gradeGate @{ EvidenceGrade = 3; DefaultEnabled = $false }) | Should -BeTrue
+            (& $gradeGate @{ EvidenceGrade = 1; DefaultEnabled = $true }) | Should -BeTrue
         }
     }
 }

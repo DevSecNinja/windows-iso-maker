@@ -9,9 +9,9 @@ BeforeAll {
     Import-Module (Join-Path $script:RepoRoot 'src/WindowsIsoMaker') -Force
 
     $script:AppxCatalog = @(
-        [pscustomobject]@{ Id = 'appx-a'; Type = 'Appx'; Action = 'Remove'; Target = 'Microsoft.AppA'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64') }
-        [pscustomobject]@{ Id = 'appx-b'; Type = 'Appx'; Action = 'Remove'; Target = 'Microsoft.AppB'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64') }
-        [pscustomobject]@{ Id = 'appx-arm-only'; Type = 'Appx'; Action = 'Remove'; Target = 'Microsoft.ArmApp'; Citation = 'https://learn.microsoft.com/'; Arch = @('arm64') }
+        [pscustomobject]@{ Id = 'appx-a'; Type = 'Appx'; Action = 'RemoveAppx'; Target = 'Microsoft.AppA'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64') }
+        [pscustomobject]@{ Id = 'appx-b'; Type = 'Appx'; Action = 'RemoveAppx'; Target = 'Microsoft.AppB'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64') }
+        [pscustomobject]@{ Id = 'appx-arm-only'; Type = 'Appx'; Action = 'RemoveAppx'; Target = 'Microsoft.ArmApp'; Citation = 'https://learn.microsoft.com/'; Arch = @('arm64') }
     )
 }
 

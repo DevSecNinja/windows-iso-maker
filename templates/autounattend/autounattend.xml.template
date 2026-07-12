@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Autounattend.xml TEMPLATE for WindowsIsoMaker (FR-027).
+
+  Rendered per-architecture by New-AutounattendXml. Do NOT edit the {{TOKENS}} by hand — they
+  are substituted at build time from the resolved Autounattend sub-config:
+    {{PROCESSOR_ARCHITECTURE}}  amd64 | arm64
+    {{LOCALE}}                  UI/system/user locale (e.g. en-US)
+    {{KEYBOARD}}                input locale id (e.g. 0409:00000409)
+    {{TIMEZONE}}                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
+    {{DISK_ID}}                 target disk id for the default single-partition layout
+    {{OOBE_FRAGMENT}}           OOBE-skip settings (empty when SkipOobe = $false)
+    {{USERACCOUNTS_FRAGMENT}}   local-account creation (empty when CreateLocalAccount = $false)
+    {{FIRSTLOGON_FRAGMENT}}     FirstLogonCommands (empty when none configured)
+
+  No password or secret is ever written into this file.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>{{LOCALE}}</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>{{KEYBOARD}}</InputLocale>
+      <SystemLocale>{{LOCALE}}</SystemLocale>
+      <UILanguage>{{LOCALE}}</UILanguage>
+      <UserLocale>{{LOCALE}}</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Setup" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <DiskConfiguration>
+        <Disk wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <DiskID>{{DISK_ID}}</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>260</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>128</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+        </Disk>
+      </DiskConfiguration>
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>{{KEYBOARD}}</InputLocale>
+      <SystemLocale>{{LOCALE}}</SystemLocale>
+      <UILanguage>{{LOCALE}}</UILanguage>
+      <UserLocale>{{LOCALE}}</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <TimeZone>{{TIMEZONE}}</TimeZone>
+{{OOBE_FRAGMENT}}
+{{USERACCOUNTS_FRAGMENT}}
+{{FIRSTLOGON_FRAGMENT}}
+    </component>
+  </settings>
+
+</unattend>

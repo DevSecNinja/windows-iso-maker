@@ -10,11 +10,11 @@ BeforeAll {
 
     $script:RegCatalog = @(
         [pscustomobject]@{
-            Id = 'reg-disable-recall'; Type = 'Registry'; Action = 'Set'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64')
+            Id = 'reg-disable-recall'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64')
             Target = @{ Hive = 'SOFTWARE'; Path = 'Policies\Microsoft\Windows\WindowsAI'; Name = 'DisableAIDataAnalysis'; Kind = 'DWord'; Value = 1 }
         }
         [pscustomobject]@{
-            Id = 'reg-disable-widgets'; Type = 'Registry'; Action = 'Set'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64')
+            Id = 'reg-disable-widgets'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64', 'arm64')
             Target = @{ Hive = 'SOFTWARE'; Path = 'Policies\Microsoft\Dsh'; Name = 'AllowNewsAndInterests'; Kind = 'DWord'; Value = 0 }
         }
     )

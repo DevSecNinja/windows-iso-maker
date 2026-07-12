@@ -78,6 +78,65 @@ function Remove-ImageCapability {
     Remove-WindowsCapability -Path $Path -Name $Name -ErrorAction Stop | Out-Null
 }
 
+function Get-ImageOptionalFeature {
+    <#
+    .SYNOPSIS
+        Return the optional features (and their state) in a mounted offline image.
+    .PARAMETER Path
+        Mount path of the offline image.
+    .PARAMETER FeatureName
+        Optional specific feature name to query.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter()][string] $FeatureName
+    )
+    if ($PSBoundParameters.ContainsKey('FeatureName') -and $FeatureName) {
+        return @(Get-WindowsOptionalFeature -Path $Path -FeatureName $FeatureName)
+    }
+    return @(Get-WindowsOptionalFeature -Path $Path)
+}
+
+function Enable-ImageOptionalFeature {
+    <#
+    .SYNOPSIS
+        Enable a Windows optional feature on a mounted offline image.
+    .PARAMETER Path
+        Mount path of the offline image.
+    .PARAMETER FeatureName
+        The optional feature to enable (e.g. 'Microsoft-Windows-Subsystem-Linux').
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][string] $FeatureName
+    )
+    Enable-WindowsOptionalFeature -Path $Path -FeatureName $FeatureName -All -ErrorAction Stop | Out-Null
+}
+
+function Add-ImageCapability {
+    <#
+    .SYNOPSIS
+        Add a Windows capability to a mounted offline image.
+    .PARAMETER Path
+        Mount path of the offline image.
+    .PARAMETER Name
+        The capability Name to add.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][string] $Name
+    )
+    Add-WindowsCapability -Path $Path -Name $Name -ErrorAction Stop | Out-Null
+}
+
 function Get-BuildImageInfo {
     <#
     .SYNOPSIS

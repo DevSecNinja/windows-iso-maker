@@ -48,7 +48,7 @@ function Remove-Bloatware {
     $results = [System.Collections.Generic.List[object]]::new()
 
     $applicable = @($Catalog) | Where-Object {
-        $_.Type -in @('Appx', 'Capability') -and (@($_.Arch) -contains $Architecture)
+        $_.Action -in @('RemoveAppx', 'RemoveCapability') -and (@($_.Arch) -contains $Architecture)
     }
 
     # Cache the image inventory once (avoids repeated DISM calls).
@@ -66,13 +66,13 @@ function Remove-Bloatware {
         }
 
         try {
-            if ($entry.Type -eq 'Appx') {
+            if ($entry.Action -eq 'RemoveAppx') {
                 if ($null -eq $provisioned) {
                     $provisioned = if ($WhatIfPreference) { @() } else { @(Get-ImageProvisionedAppx -Path $MountPath) }
                 }
-                $matches = @($provisioned | Where-Object { $_.DisplayName -like $entry.Target })
+                $matched = @($provisioned | Where-Object { $_.DisplayName -like $entry.Target })
 
-                if ($matches.Count -eq 0) {
+                if ($matched.Count -eq 0) {
                     $result.Status = 'NotApplicable'
                     $result.Reason = "No provisioned package matching '$($entry.Target)' is present in the image."
                 }
@@ -81,23 +81,23 @@ function Remove-Bloatware {
                     $result.Reason = 'Preview (-WhatIf): would remove provisioned package.'
                 }
                 else {
-                    foreach ($pkg in $matches) {
+                    foreach ($pkg in $matched) {
                         if ($PSCmdlet.ShouldProcess($pkg.PackageName, 'Remove-AppxProvisionedPackage')) {
                             Remove-ImageProvisionedAppx -Path $MountPath -PackageName $pkg.PackageName
                         }
                     }
                     $result.Status = 'Applied'
-                    $result.Reason = "Removed $($matches.Count) provisioned package(s)."
+                    $result.Reason = "Removed $($matched.Count) provisioned package(s)."
                 }
             }
-            elseif ($entry.Type -eq 'Capability') {
+            elseif ($entry.Action -eq 'RemoveCapability') {
                 if ($null -eq $capabilities) {
                     $capabilities = if ($WhatIfPreference) { @() } else { @(Get-ImageCapability -Path $MountPath) }
                 }
-                $matches = @($capabilities | Where-Object { $_.Name -like "$($entry.Target)*" })
-                $installed = @($matches | Where-Object { "$($_.State)" -eq 'Installed' })
+                $matched = @($capabilities | Where-Object { $_.Name -like "$($entry.Target)*" })
+                $installed = @($matched | Where-Object { "$($_.State)" -eq 'Installed' })
 
-                if ($matches.Count -eq 0) {
+                if ($matched.Count -eq 0) {
                     $result.Status = 'NotApplicable'
                     $result.Reason = "Capability '$($entry.Target)' is not present in the image."
                 }

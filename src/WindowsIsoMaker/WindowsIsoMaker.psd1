@@ -11,17 +11,21 @@
     # PowerShell 7+ is primary; 5.1 compatibility is validated for DISM-dependent paths.
     PowerShellVersion = '5.1'
 
-    # Public surface: the 10 exported functions (Constitution Principle I).
+    # Public surface: the 14 exported functions (Constitution Principle I).
     FunctionsToExport = @(
         'Get-BuildConfiguration',
         'Get-Windows11Iso',
         'Expand-WindowsImage',
         'Mount-WindowsBuildImage',
+        'Invoke-CatalogEntry',
         'Remove-Bloatware',
         'Set-RegistryTweaks',
+        'Enable-WindowsFeature',
+        'New-AutounattendXml',
         'New-BootableIso',
         'Compress-BuildArtifact',
         'Test-ImageIntegrity',
+        'Export-ImageBom',
         'Invoke-IsoBuild'
     )
     CmdletsToExport   = @()

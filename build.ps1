@@ -31,11 +31,14 @@
 .PARAMETER Release
     Optional last-mile override for the Windows release (e.g. 'latest').
 
-.PARAMETER RemoveEdge
-    Opt-in switch to enable the (default-off) Edge removal catalog entry.
+.PARAMETER Profile
+    Optional last-mile override for the catalog profile ('minimal' | 'default' | 'aggressive').
 
-.PARAMETER RemoveOneDrive
-    Opt-in switch to enable the (default-off) OneDrive removal catalog entry.
+.PARAMETER EnableCatalogId
+    Opt-in catalog ids to enable (data-driven; e.g. 'remove-edge','remove-onedrive','feature-wsl').
+
+.PARAMETER DisableCatalogId
+    Catalog ids to force-disable (explicit ids win).
 
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
@@ -52,8 +55,8 @@
     Builds using a saved arm64 profile.
 
 .EXAMPLE
-    ./build.ps1 -Architecture amd64 -RemoveEdge -RemoveOneDrive
-    Uses the default config but overrides the architecture and enables opt-in removals.
+    ./build.ps1 -Architecture amd64 -EnableCatalogId remove-edge,remove-onedrive,feature-wsl
+    Uses the default config but overrides the architecture and opts into Edge/OneDrive/WSL.
 
 .EXAMPLE
     ./build.ps1 -WhatIf
@@ -63,6 +66,8 @@
     Requires administrative rights and the Windows image-servicing stack (DISM) plus the
     Windows ADK Deployment Tools (oscdimg). See docs/usage.md.
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
+    Justification = "'Profile' is the documented, user-facing configuration concept (minimal/default/aggressive). The parameter is locally scoped and never writes the global profile path.")]
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter()]
@@ -86,10 +91,14 @@ param(
     [string] $Release,
 
     [Parameter()]
-    [switch] $RemoveEdge,
+    [ValidateSet('minimal', 'default', 'aggressive')]
+    [string] $Profile,
 
     [Parameter()]
-    [switch] $RemoveOneDrive,
+    [string[]] $EnableCatalogId,
+
+    [Parameter()]
+    [string[]] $DisableCatalogId,
 
     [Parameter()]
     [switch] $SkipHeavyBuild,
@@ -130,12 +139,12 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }
 }
-foreach ($switchName in 'RemoveEdge', 'RemoveOneDrive', 'SkipHeavyBuild', 'BootTest') {
+foreach ($switchName in 'SkipHeavyBuild', 'BootTest') {
     if ($PSBoundParameters.ContainsKey($switchName)) {
         $buildParams[$switchName] = [switch]$PSBoundParameters[$switchName]
     }

@@ -42,6 +42,8 @@ function Write-BuildLog {
         'Verbose'     { Write-Verbose -Message $line }
         'Information' { Write-Information -MessageData $line -InformationAction Continue }
         'Warning'     { Write-Warning -Message $line }
-        'Error'       { Write-Error -Message $line }
+        # Logging must never terminate control flow (e.g. inside a catch/cleanup block), even
+        # when the module runs under $ErrorActionPreference = 'Stop'. Force non-terminating.
+        'Error'       { Write-Error -Message $line -ErrorAction Continue }
     }
 }

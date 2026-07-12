@@ -23,6 +23,8 @@ function Set-RegistryTweaks {
     .OUTPUTS
         System.Object[] of ChangeResult objects.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Set-RegistryTweaks applies a set of registry tweaks; the plural noun is the established public command name referenced across config, tests and docs.')]
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([object[]])]
     param(
@@ -47,7 +49,7 @@ function Set-RegistryTweaks {
     }
 
     $registryEntries = @($Catalog) | Where-Object {
-        $_.Type -eq 'Registry' -and (@($_.Arch) -contains $Architecture)
+        $_.Action -eq 'SetRegistry' -and (@($_.Arch) -contains $Architecture)
     }
 
     $results = [System.Collections.Generic.List[object]]::new()
@@ -82,7 +84,15 @@ function Set-RegistryTweaks {
 
                 try {
                     $target = $entry.Target
-                    if ($entry.Action -eq 'Delete') {
+                    # 'Operation' is an optional Target key (default = Set). Access it in a
+                    # StrictMode-safe way: a hashtable missing key must not throw.
+                    $operation = if ($target -is [hashtable] -and $target.ContainsKey('Operation')) {
+                        $target['Operation']
+                    }
+                    else {
+                        $null
+                    }
+                    if ($operation -eq 'Delete') {
                         if ($WhatIfPreference) {
                             $result.Status = 'Skipped'
                             $result.Reason = "Preview (-WhatIf): would delete $hiveName\$($target.Path)\$($target.Name)."

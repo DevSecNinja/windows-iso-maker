@@ -6,9 +6,15 @@ function Invoke-IsoBuild {
     .DESCRIPTION
         Resolves configuration (the config file is the primary interface), verifies
         preconditions (fail fast — FR-019), then runs the pipeline: download the base ISO ->
-        verify integrity (FR-020) -> extract media -> mount the image -> remove bloatware ->
-        apply registry tweaks -> commit (dismount -Save) -> author a bootable ISO ->
-        compress the artifact -> validate integrity -> emit an auditable RunReport (FR-022).
+        verify integrity (FR-020) -> extract media -> mount the image -> apply every selected
+        catalog entry through the Action dispatcher (Invoke-CatalogEntry) -> commit
+        (dismount -Save) -> render a per-arch Autounattend.xml -> author a bootable ISO with
+        the Autounattend at its root + a SHA256SUMS manifest (FR-027/FR-028) -> compress the
+        artifact -> validate integrity -> emit an auditable RunReport (FR-022) -> derive the
+        Image BOM (FR-029).
+
+        Selection is DATA-DRIVEN (FR-024): there are NO per-feature switches. Edge/OneDrive/WSL
+        are opt-in catalog entries chosen via Profile / Toggles / EnableCatalogId.
 
         Safety (Principle VI): every mutating step supports -WhatIf and is idempotent
         (FR-016/FR-017). -WhatIf or -SkipHeavyBuild produces a preview RunReport
@@ -27,10 +33,12 @@ function Invoke-IsoBuild {
         Optional language override.
     .PARAMETER Release
         Optional release override.
-    .PARAMETER RemoveEdge
-        Opt-in: enable the Edge removal catalog entry.
-    .PARAMETER RemoveOneDrive
-        Opt-in: enable the OneDrive removal catalog entry.
+    .PARAMETER Profile
+        Optional profile override ('minimal' | 'default' | 'aggressive').
+    .PARAMETER EnableCatalogId
+        Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
+    .PARAMETER DisableCatalogId
+        Optional force-disable catalog ids.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -43,6 +51,8 @@ function Invoke-IsoBuild {
     .OUTPUTS
         PSCustomObject (RunReport).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
+        Justification = "'Profile' is the documented, user-facing configuration concept (minimal/default/aggressive). The parameter is locally scoped and never writes the global profile path.")]
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([pscustomobject])]
     param(
@@ -67,10 +77,14 @@ function Invoke-IsoBuild {
         [string] $Release,
 
         [Parameter()]
-        [switch] $RemoveEdge,
+        [ValidateSet('minimal', 'default', 'aggressive')]
+        [string] $Profile,
 
         [Parameter()]
-        [switch] $RemoveOneDrive,
+        [string[]] $EnableCatalogId,
+
+        [Parameter()]
+        [string[]] $DisableCatalogId,
 
         [Parameter()]
         [switch] $SkipHeavyBuild,
@@ -83,11 +97,9 @@ function Invoke-IsoBuild {
     if (-not $Config) {
         $cfgParams = @{}
         if ($PSBoundParameters.ContainsKey('ConfigPath')) { $cfgParams['Path'] = $ConfigPath }
-        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release') {
+        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
             if ($PSBoundParameters.ContainsKey($n)) { $cfgParams[$n] = $PSBoundParameters[$n] }
         }
-        if ($PSBoundParameters.ContainsKey('RemoveEdge')) { $cfgParams['RemoveEdge'] = $RemoveEdge }
-        if ($PSBoundParameters.ContainsKey('RemoveOneDrive')) { $cfgParams['RemoveOneDrive'] = $RemoveOneDrive }
         $Config = Get-BuildConfiguration @cfgParams
     }
 
@@ -95,10 +107,10 @@ function Invoke-IsoBuild {
     $wantBootTest = $BootTest.IsPresent -or [bool]$Config.BootTest
     $toolVersions = Get-BuildToolVersion -Config $Config
 
-    Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message "Starting build (Arch=$($Config.Architecture), Edition=$($Config.Edition), Preview=$isPreview)."
+    Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message "Starting build (Arch=$($Config.Architecture), Edition=$($Config.Edition), Profile=$($Config.Profile), Preview=$isPreview)."
 
     # --- 2. Preconditions gate (fail fast; relaxed in preview). ---
-    $prereq = Test-BuildPrerequisite -WorkingDirectory $Config.WorkingDirectory `
+    $null = Test-BuildPrerequisite -WorkingDirectory $Config.WorkingDirectory `
         -OscdimgPath $Config.OscdimgPath -PreviewOnly:$isPreview
 
     # --- 3. Preview path: report intended changes, touch no media (FR-014/FR-016). ---
@@ -115,7 +127,7 @@ function Invoke-IsoBuild {
         }
         Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message 'Preview complete; no media modified.'
         return New-RunReport -ResolvedConfig $Config -Applied @($previewResults) -Skipped @() `
-            -ToolVersions $toolVersions -Outcome 'Preview' `
+            -ToolVersions $toolVersions -Autounattend $Config.Autounattend -Outcome 'Preview' `
             -OutputPath (Join-Path $Config.OutputDirectory 'run-report.preview.json')
     }
 
@@ -126,6 +138,7 @@ function Invoke-IsoBuild {
     $baseImage = $null
     $artifact = $null
     $integrity = $null
+    $report = $null
 
     try {
         foreach ($dir in @($Config.WorkingDirectory, $Config.OutputDirectory)) {
@@ -155,32 +168,50 @@ function Invoke-IsoBuild {
         $media = Expand-WindowsImage -IsoPath $baseImage.Path -Destination $mediaDir
         $mounted = Mount-WindowsBuildImage -ImagePath $media.ImagePath -MountPath $mountDir -Edition $Config.Edition
 
-        # 4d. Apply the documented changes.
-        $applied.AddRange(@(Remove-Bloatware -MountPath $mounted.MountPath -Catalog $Config.SelectedCatalog -Architecture $Config.Architecture -Config $Config))
-        $applied.AddRange(@(Set-RegistryTweaks -MountPath $mounted.MountPath -Catalog $Config.SelectedCatalog -Architecture $Config.Architecture -Config $Config))
+        # 4d. Apply every selected catalog entry through the Action dispatcher (FR-024/FR-025).
+        foreach ($entry in @($Config.SelectedCatalog)) {
+            $applied.Add((Invoke-CatalogEntry -Entry $entry -MountPath $mounted.MountPath -Architecture $Config.Architecture -Config $Config))
+        }
 
         # 4e. Commit changes back to the image.
         Dismount-BuildImage -Path $mounted.MountPath -Save
         $mounted.IsMounted = $false
 
-        # 4f. Author a bootable ISO and compress it.
+        # 4f. Render a per-arch Autounattend.xml (FR-027).
+        $unattendPath = $null
+        if ($Config.Autounattend -and (& { $au = $Config.Autounattend; if ($au -is [hashtable]) { -not $au.ContainsKey('Enabled') -or $au['Enabled'] } else { $true } })) {
+            $unattendPath = Join-Path $Config.WorkingDirectory 'Autounattend.xml'
+            $null = New-AutounattendXml -Config $Config -Architecture $Config.Architecture -OutputPath $unattendPath
+        }
+
+        # 4g. Author a bootable ISO (Autounattend at root + SHA256SUMS) and compress it.
         $outIso = Join-Path $Config.WorkingDirectory ("Windows11-$($Config.Edition)-$($Config.Architecture)-$($Config.Release).iso" -replace '\s', '')
-        $null = New-BootableIso -MediaRoot $media.MediaRoot -Architecture $Config.Architecture -OutputIsoPath $outIso -OscdimgPath $Config.OscdimgPath
+        $isoParams2 = @{
+            MediaRoot     = $media.MediaRoot
+            Architecture  = $Config.Architecture
+            OutputIsoPath = $outIso
+            OscdimgPath   = $Config.OscdimgPath
+        }
+        if ($unattendPath) { $isoParams2['AutounattendPath'] = $unattendPath }
+        $null = New-BootableIso @isoParams2
         $artifact = Compress-BuildArtifact -IsoPath $outIso -OutputDirectory $Config.OutputDirectory `
             -Format $Config.CompressionFormat -Edition $Config.Edition -Architecture $Config.Architecture -Release $Config.Release
 
-        # 4g. Validate the produced ISO.
+        # 4h. Validate the produced ISO.
         $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest
         $artifact | Add-Member -NotePropertyName 'IntegrityResult' -NotePropertyValue $integrity -Force
         if (-not $integrity.Passed) {
             throw "Produced image failed integrity validation; not presenting it as a successful build (FR-005/FR-023)."
         }
 
-        # 4h. Emit the success RunReport.
+        # 4i. Emit the success RunReport, then derive the Image BOM from it (FR-029).
         $report = New-RunReport -ResolvedConfig $Config -BaseImage $baseImage `
             -Applied $applied.ToArray() -Skipped $skipped.ToArray() -Artifact $artifact -Integrity $integrity `
-            -ToolVersions $toolVersions -Outcome 'Succeeded' `
+            -ToolVersions $toolVersions -Autounattend $Config.Autounattend -Outcome 'Succeeded' `
             -OutputPath (Join-Path $Config.OutputDirectory 'run-report.json')
+
+        $bom = Export-ImageBom -RunReport $report -OutputDirectory $Config.OutputDirectory
+        $report | Add-Member -NotePropertyName 'Bom' -NotePropertyValue $bom -Force
 
         Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message "Build succeeded: $($artifact.ArchivePath)."
         return $report
@@ -201,7 +232,7 @@ function Invoke-IsoBuild {
         try {
             New-RunReport -ResolvedConfig $Config -BaseImage $baseImage -Applied $applied.ToArray() `
                 -Skipped $skipped.ToArray() -Artifact $artifact -Integrity $integrity `
-                -ToolVersions $toolVersions -Outcome 'Failed' `
+                -ToolVersions $toolVersions -Autounattend $Config.Autounattend -Outcome 'Failed' `
                 -OutputPath (Join-Path $Config.OutputDirectory 'run-report.failed.json') | Out-Null
         }
         catch {
