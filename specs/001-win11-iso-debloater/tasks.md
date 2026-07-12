@@ -39,12 +39,15 @@ testing. All paths are repository-root relative per the plan's single-project la
 the local entry point — everything the rest of the work loads or is analyzed by.
 
 - [ ] T001 Create the repository directory structure per plan (`src/WindowsIsoMaker/Public/`,
-  `src/WindowsIsoMaker/Private/`, `config/`, `tests/`, `docs/`, `vendor/fido/`,
-  `.github/workflows/`)
+  `src/WindowsIsoMaker/Private/`, `config/`, `templates/autounattend/`, `tests/`, `docs/`,
+  `vendor/fido/`, `.github/workflows/`)
 - [ ] T002 [P] Create the pinned module manifest `src/WindowsIsoMaker/WindowsIsoMaker.psd1`
   (fixed `ModuleVersion`, `PowerShellVersion` floor, `RootModule = 'WindowsIsoMaker.psm1'`,
-  and `FunctionsToExport` listing all 10 public functions; pin `RequiredModules`/documented
-  minimums for Pester v5 + PSScriptAnalyzer)
+  and `FunctionsToExport` listing all 14 public functions — `Get-BuildConfiguration`,
+  `Get-Windows11Iso`, `Expand-WindowsImage`, `Mount-WindowsBuildImage`, `Invoke-CatalogEntry`,
+  `Remove-Bloatware`, `Set-RegistryTweaks`, `Enable-WindowsFeature`, `New-AutounattendXml`,
+  `New-BootableIso`, `Compress-BuildArtifact`, `Test-ImageIntegrity`, `Export-ImageBom`,
+  `Invoke-IsoBuild`; pin `RequiredModules`/documented minimums for Pester v5 + PSScriptAnalyzer)
 - [ ] T003 [P] Create the module loader `src/WindowsIsoMaker/WindowsIsoMaker.psm1` that sets
   `Set-StrictMode -Version Latest`, dot-sources every `Private/*.ps1` then `Public/*.ps1`,
   and exports only the public functions
@@ -67,8 +70,9 @@ the local entry point — everything the rest of the work loads or is analyzed b
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Shared private helpers, the change-catalog data + schema tests, and the
-configuration loader that EVERY user story depends on.
+**Purpose**: Shared private helpers, the data-driven change-catalog (schema v2 with
+`Action` + `EvidenceGrade`), the catalog-selection resolver, and the v2 configuration loader
+that EVERY user story depends on.
 
 **⚠️ CRITICAL**: No user-story phase can begin until this phase is complete.
 
@@ -89,181 +93,290 @@ configuration loader that EVERY user story depends on.
   retry; unload guaranteed by callers in `finally`)
 - [ ] T013 [P] Implement run-report writer
   `src/WindowsIsoMaker/Private/New-RunReport.ps1` (assemble/serialize the `RunReport` object:
-  `ResolvedConfig`, `Applied[]`, `Skipped[]`, `Artifact`, `Integrity`, `ToolVersions`,
-  `Outcome`) per data-model
+  `ResolvedConfig`, `BaseImage`, `Applied[]`, `Skipped[]`, `Artifact`, `Integrity`,
+  `ToolVersions`, resolved `Autounattend`, `Bom`, optional `Provenance`, `Outcome`) per
+  data-model — FR-022/FR-027/FR-028/FR-029
 - [ ] T014 Implement preconditions gate
   `src/WindowsIsoMaker/Private/Test-BuildPrerequisite.ps1` (admin rights, `dism`/`oscdimg`
   tooling, free disk space, valid config; throws actionable errors — FR-019). Depends on
   T009, T010
-- [ ] T015 Write change-catalog schema tests FIRST in `tests/Catalog.Schema.Tests.ps1`:
-  assert every entry across all catalog files has non-empty `Description`, `Rationale`, and a
-  `Citation` (URL or explicit `Unverified`); `Unverified` ⇒ `DefaultEnabled=$false`; unique
-  `Id`; non-empty `Arch` subset of `{amd64,arm64}`; registry `Target` shape — validate
-  against [contracts/change-catalog.schema.json](./contracts/change-catalog.schema.json)
-  (FR-009, SC-004)
-- [ ] T016 [P] Create provisioned-appx removal catalog `config/catalog.appx.psd1` (default
+- [ ] T015 [P] Implement catalog-selection resolver
+  `src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1` (compute the effective enabled
+  catalog-id set from `Profile` baseline → config `Toggles` (`Id→bool`) →
+  `EnableCatalogId`/`DisableCatalogId`, explicit ids win; unknown id → terminating error;
+  returns the filtered `ChangeCatalogEntry[]`) — FR-024
+- [ ] T016 [P] Write resolver tests FIRST in `tests/Resolve-CatalogSelection.Tests.ps1`
+  (profile baseline selects `DefaultEnabled=$true` entries; `Toggles` override on/off;
+  `EnableCatalogId` opt-in (e.g. `remove-edge`, `feature-wsl`); `DisableCatalogId` removal;
+  explicit ids win over profile/toggles; unknown id → terminating error) — FR-024/SC-011
+- [ ] T017 Write change-catalog **schema v2** tests FIRST in `tests/Catalog.Schema.Tests.ps1`:
+  assert every entry across all catalog files has a non-empty `Action`
+  (`RemoveAppx`/`RemoveCapability`/`SetRegistry`/`EnableOptionalFeature`/`AddCapability`), an
+  `EvidenceGrade` (`1`/`2`/`3`), non-empty `Description`, `Rationale`, and a `Citation` (URL
+  or explicit `Unverified`); every `EvidenceGrade=3` (or `Unverified`) entry has
+  `DefaultEnabled=$false`; unique `Id`; non-empty `Arch` subset of `{amd64,arm64}`;
+  `SetRegistry` `Target` shape (Hive/Path/Name/Kind/Value) — validate against
+  [contracts/change-catalog.schema.json](./contracts/change-catalog.schema.json)
+  (FR-009/FR-026, SC-004/SC-010)
+- [ ] T018 [P] Create provisioned-appx removal catalog `config/catalog.appx.psd1` (default
   bloatware — Clipchamp, Bing News/Weather, Solitaire, Xbox extras, consumer Teams,
-  King/Candy-Crush titles — each with `Description`/`Rationale`/`Citation`,
-  `DefaultEnabled=$true`, `Reversible`, `Arch`) — FR-006
-- [ ] T017 [P] Create Windows-capability catalog `config/catalog.capabilities.psd1`
-  (arch-scoped capability entries, each with What/Why/Citation) — FR-021/Principle IV
-- [ ] T018 [P] Create registry-tweak catalog `config/catalog.registry.psd1` including
-  `reg-disable-recall` (Recall) and `reg-disable-widgets` (Widgets) as `DefaultEnabled=$true`
-  reversible tweaks, plus cited privacy/telemetry safe tweaks — each with What/Why/Citation
-  and full `Target` (Hive/Path/Name/Kind/Value) — FR-007
-- [ ] T019 [P] Create the default build config `config/build.config.psd1` (Edition=`Pro`,
-  Language=`en-US`, Release=`latest`, Architecture=`amd64`, Profile=`default`,
-  `RemoveEdge=$false`, `RemoveOneDrive=$false`, working/output dirs, `CompressionFormat`,
-  pinned `FidoPath`) per [contracts/build-config.schema.md](./contracts/build-config.schema.md)
-- [ ] T020 Write config loader tests FIRST in `tests/Get-BuildConfiguration.Tests.ps1`
+  King/Candy-Crush titles — each with `Action=RemoveAppx`, `EvidenceGrade` (1–2),
+  `Description`/`Rationale`/`Citation`, `DefaultEnabled=$true`, `Reversible`, `Arch`) — FR-006
+- [ ] T019 [P] Create Windows-capability/optional-feature catalog
+  `config/catalog.capabilities.psd1` (arch-scoped capability entries with
+  `Action=RemoveCapability`, each with What/Why/Citation + `EvidenceGrade`; PLUS the opt-in
+  **WSL** entries `feature-wsl` (`Action=EnableOptionalFeature`,
+  `Target='Microsoft-Windows-Subsystem-Linux'`) and `feature-vmplatform`
+  (`Target='VirtualMachinePlatform'`), both `DefaultEnabled=$false`, cited + graded, with a
+  Rationale/Reversal note that the WSL kernel + distro install online on first boot) —
+  FR-021/FR-025
+- [ ] T020 [P] Create registry-tweak catalog `config/catalog.registry.psd1` (every entry
+  `Action=SetRegistry` + `EvidenceGrade`) including `reg-disable-recall` (Recall) and
+  `reg-disable-widgets` (Widgets) as `DefaultEnabled=$true` reversible grade-1 tweaks, plus
+  cited privacy/telemetry safe tweaks — each with What/Why/Citation and full `Target`
+  (Hive/Path/Name/Kind/Value) — FR-007
+- [ ] T021 [P] Create the default build config **v2** `config/build.config.psd1`
+  (Edition=`Pro`, Language=`en-US`, Release=`latest`, Architecture=`amd64`, `Profile='default'`,
+  `Toggles=@{}`, `EnableCatalogId=@()`, `DisableCatalogId=@()`, an `Autounattend` block
+  (SkipOobe/BypassMsAccount/CreateLocalAccount/locale/keyboard/timezone/disk/FirstLogon/
+  SetupComplete), an `AzureUpload=$null` block, working/output dirs, `CompressionFormat`,
+  pinned `FidoPath`/`OscdimgPath`) — **no `RemoveEdge`/`RemoveOneDrive` fields** — per
+  [contracts/build-config.schema.md](./contracts/build-config.schema.md) — FR-024/FR-027/FR-030
+- [ ] T022 Write config loader **v2** tests FIRST in `tests/Get-BuildConfiguration.Tests.ps1`
   (config file is the primary interface; precedence: file defaults ← `WIM_*` env vars ←
   explicit params; `-ConfigPath`/`WIM_CONFIG_PATH` loads an alternate config file; a second
-  saved profile file resolves independently; validation rejects bad arch/edition; env override
-  applied)
-- [ ] T021 Implement `src/WindowsIsoMaker/Public/Get-BuildConfiguration.ps1` (config file is
+  saved profile file resolves independently; `Profile`/`Toggles`/`EnableCatalogId`/
+  `DisableCatalogId` resolve the effective set via `Resolve-CatalogSelection`; `Autounattend`
+  + `AzureUpload` sub-configs parsed; validation rejects bad arch/edition/profile and unknown
+  catalog ids; `WIM_PROFILE`/`WIM_ENABLE_CATALOG_ID`/`WIM_AZURE_*` env overrides applied; **no
+  `RemoveEdge`/`RemoveOneDrive` parameters exist**). Depends on T016
+- [ ] T023 Implement `src/WindowsIsoMaker/Public/Get-BuildConfiguration.ps1` (config file is
   the primary interface: load `config/build.config.psd1` by default or an alternate file via
-  `-Path`/`-ConfigPath` (alias) or `WIM_CONFIG_PATH`, apply `WIM_*` env overrides then
-  explicit params as optional last-mile overrides, validate, return a `BuildConfiguration`
-  object). Depends on T019, T020
+  `-Path`/`-ConfigPath` (alias) or `WIM_CONFIG_PATH`; parameters
+  `Profile`/`EnableCatalogId`/`DisableCatalogId` (no per-feature switches); apply `WIM_*` env
+  overrides then explicit params; call `Resolve-CatalogSelection` to attach the effective
+  enabled catalog-id set + resolved `Autounattend`/`AzureUpload`; validate; return a
+  `BuildConfiguration` object). Depends on T015, T021, T022
 
-**Checkpoint**: Module imports, catalog schema tests pass, config loads — user stories can
-begin.
+**Checkpoint**: Module imports, catalog schema v2 tests pass, resolver + config load — user
+stories can begin.
 
 ---
 
 ## Phase 3: User Story 1 - Produce a debloated Windows 11 image locally (Priority: P1) 🎯 MVP
 
-**Goal**: A single documented local command downloads Windows 11 Pro/en-US/latest, removes
-the default bloatware, disables Recall + Widgets, leaves Edge/OneDrive present, and produces
-a bootable amd64 ISO + compressed artifact with an auditable RunReport.
+**Goal**: A single documented local command downloads Windows 11 Pro/en-US/latest, applies
+the default catalog via the `Action` dispatcher (removes bloatware, disables Recall +
+Widgets), generates a per-arch `Autounattend.xml`, and produces a bootable amd64 ISO +
+`SHA256SUMS` + compressed artifact with an auditable RunReport and Image BOM. Edge/OneDrive/WSL
+stay absent from the default set (opt-in only).
 
 **Independent Test**: On a clean Windows admin machine run `./build.ps1 -Architecture amd64`
 (quickstart Scenario C); verify a bootable image is produced, default apps are absent, the
-configured tweaks are present, and the RunReport lists each change with citations.
+configured tweaks are present, `Autounattend.xml` is at the ISO root, `SHA256SUMS` + Image BOM
+are emitted, and the RunReport lists each change with citation + evidence grade.
 
 ### Tests for User Story 1 (write first, ensure they FAIL) ⚠️
 
-- [ ] T022 [P] [US1] Write `tests/Get-Windows11Iso.Tests.ps1` (mocked Fido: arg mapping,
+- [ ] T024 [P] [US1] Write `tests/Get-Windows11Iso.Tests.ps1` (mocked Fido: arg mapping,
   `IsoPath` override path, unavailable edition/lang/release combo → terminating error)
-- [ ] T023 [P] [US1] Write `tests/Remove-Bloatware.Tests.ps1` (mocked
-  `Get-`/`Remove-AppxProvisionedPackage`: applies default entries, `NotApplicable` skip when
-  absent, `-WhatIf` no-op, arch filtering)
-- [ ] T024 [P] [US1] Write `tests/Set-RegistryTweaks.Tests.ps1` (mocked hive load/unload +
+- [ ] T025 [P] [US1] Write `tests/Remove-Bloatware.Tests.ps1` (mocked
+  `Get-`/`Remove-AppxProvisionedPackage`: applies `RemoveAppx`/`RemoveCapability` entries,
+  `NotApplicable` skip when absent, `-WhatIf` no-op, arch filtering)
+- [ ] T026 [P] [US1] Write `tests/Set-RegistryTweaks.Tests.ps1` (mocked hive load/unload +
   `Set-ItemProperty`: Recall+Widgets applied, `-WhatIf` reports only, hives always unloaded
   on failure)
-- [ ] T025 [P] [US1] Write `tests/Invoke-IsoBuild.Tests.ps1` (mocked pipeline: preconditions
-  gate blocks on failure, correct call order, RunReport emitted)
-- [ ] T026 [P] [US1] Write `tests/Test-ImageIntegrity.Tests.ps1` (missing boot file → fail;
+- [ ] T027 [P] [US1] Write `tests/Enable-WindowsFeature.Tests.ps1` (mocked
+  `Enable-WindowsOptionalFeature`/`Add-WindowsCapability -Path`: enables optional features/
+  capabilities, `AlreadyApplied` idempotency, `-WhatIf` no-op, arch filtering, WSL entry is
+  opt-in) — FR-025
+- [ ] T028 [P] [US1] Write `tests/Invoke-CatalogEntry.Tests.ps1` (Action routing:
+  `RemoveAppx`/`RemoveCapability`→`Remove-Bloatware`, `SetRegistry`→`Set-RegistryTweaks`,
+  `EnableOptionalFeature`/`AddCapability`→`Enable-WindowsFeature` (mocked handlers); unknown
+  `Action` throws; arch/idempotency/`-WhatIf` behavior is Action-agnostic) — FR-024/FR-025
+- [ ] T029 [P] [US1] Write `tests/New-AutounattendXml.Tests.ps1` (`processorArchitecture`
+  differs amd64 vs arm64; OOBE-skip present; MS-account bypass + local-account default on and
+  toggleable; locale/keyboard/timezone/disk applied; template-driven; no secret written) —
+  FR-027
+- [ ] T030 [P] [US1] Write `tests/Export-ImageBom.Tests.ps1` (BOM enumerates every `Applied`
+  change with `Citation` + `EvidenceGrade`; includes base image version/hash and pinned tool
+  versions; both CycloneDX + Markdown produced; derived solely from the RunReport) —
+  FR-029/SC-012
+- [ ] T031 [P] [US1] Write `tests/Invoke-IsoBuild.Tests.ps1` (mocked pipeline: preconditions
+  gate blocks on failure; changes are driven per selected entry through `Invoke-CatalogEntry`;
+  `New-AutounattendXml` + `New-BootableIso` (Autounattend at root + SHA256SUMS) +
+  `Export-ImageBom` invoked; RunReport emitted)
+- [ ] T032 [P] [US1] Write `tests/Test-ImageIntegrity.Tests.ps1` (missing boot file → fail;
   structural checks; `BootTest` off by default)
 
 ### Implementation for User Story 1
 
-- [ ] T027 [P] [US1] Implement `src/WindowsIsoMaker/Public/Get-Windows11Iso.ps1` (Fido
+- [ ] T033 [P] [US1] Implement `src/WindowsIsoMaker/Public/Get-Windows11Iso.ps1` (Fido
   wrapper: array-built args, `IsoPath` override, hash/integrity recording, returns
   `BaseImage`) — FR-001/FR-002/FR-020
-- [ ] T028 [P] [US1] Implement `src/WindowsIsoMaker/Public/Expand-WindowsImage.ps1` (extract
+- [ ] T034 [P] [US1] Implement `src/WindowsIsoMaker/Public/Expand-WindowsImage.ps1` (extract
   ISO media to working dir, locate `sources/install.wim|.esd`)
-- [ ] T029 [P] [US1] Implement `src/WindowsIsoMaker/Public/Mount-WindowsBuildImage.ps1`
+- [ ] T035 [P] [US1] Implement `src/WindowsIsoMaker/Public/Mount-WindowsBuildImage.ps1`
   (resolve edition→index, mount via DISM, return `MountedImage`, guard cleanup)
-- [ ] T030 [US1] Implement `src/WindowsIsoMaker/Public/Remove-Bloatware.ps1`
-  (`SupportsShouldProcess`, apply appx/capability catalog entries filtered by arch/profile,
-  record `ChangeResult[]`). Depends on T010, T016, T017
-- [ ] T031 [US1] Implement `src/WindowsIsoMaker/Public/Set-RegistryTweaks.ps1`
-  (`SupportsShouldProcess`, load offline hives, apply registry entries incl. Recall+Widgets,
-  unload in `finally`, record `ChangeResult[]`). Depends on T011, T012, T018
-- [ ] T032 [P] [US1] Implement `src/WindowsIsoMaker/Public/New-BootableIso.ps1` (oscdimg
-  invocation with amd64 BIOS+UEFI boot data `etfsboot.com`+`efisys.bin`; fail fast if
-  `oscdimg` missing)
-- [ ] T033 [P] [US1] Implement `src/WindowsIsoMaker/Public/Compress-BuildArtifact.ps1`
+- [ ] T036 [US1] Implement `src/WindowsIsoMaker/Public/Remove-Bloatware.ps1` (handler for
+  `Action=RemoveAppx`/`RemoveCapability`: `SupportsShouldProcess`, apply catalog entries
+  filtered by arch, record `ChangeResult[]`). Depends on T010, T018, T019
+- [ ] T037 [US1] Implement `src/WindowsIsoMaker/Public/Set-RegistryTweaks.ps1` (handler for
+  `Action=SetRegistry`: `SupportsShouldProcess`, load offline hives, apply registry entries
+  incl. Recall+Widgets, unload in `finally`, record `ChangeResult[]`). Depends on T011, T012,
+  T020
+- [ ] T038 [US1] Implement `src/WindowsIsoMaker/Public/Enable-WindowsFeature.ps1` (handler for
+  `Action=EnableOptionalFeature`/`AddCapability`: `SupportsShouldProcess`, enable optional
+  features/add capabilities via `Enable-WindowsOptionalFeature -Path`/`Add-WindowsCapability
+  -Path`, `AlreadyApplied` idempotency, arch filtering, record `ChangeResult[]`). Depends on
+  T010, T019 — FR-025
+- [ ] T039 [US1] Implement `src/WindowsIsoMaker/Public/Invoke-CatalogEntry.ps1` (Action
+  dispatcher: route each `ChangeCatalogEntry` by `Action` to `Remove-Bloatware` /
+  `Set-RegistryTweaks` / `Enable-WindowsFeature`; unknown `Action` → terminating error;
+  applies arch filtering, idempotency, `-WhatIf` uniformly; returns a `ChangeResult`). Depends
+  on T036, T037, T038 — FR-024/FR-025
+- [ ] T040 [P] [US1] Create the per-arch Autounattend template(s) under
+  `templates/autounattend/` (e.g. `autounattend.xml.template` with tokenized
+  `processorArchitecture`, OOBE-skip, MS-account bypass + local-account, locale/keyboard/
+  timezone, disk layout, FirstLogon/SetupComplete placeholders) — FR-027
+- [ ] T041 [P] [US1] Implement `src/WindowsIsoMaker/Public/New-AutounattendXml.ps1` (render
+  `Autounattend.xml` per architecture from `templates/autounattend/` + the `Autounattend`
+  sub-config: correct `processorArchitecture`, skip OOBE, MS-account bypass + local account
+  (default on, toggleable), locale/keyboard/timezone, disk, FirstLogon/SetupComplete; no
+  secret written; idempotent). Depends on T040 — FR-027
+- [ ] T042 [P] [US1] Implement `src/WindowsIsoMaker/Public/New-BootableIso.ps1` (oscdimg
+  invocation with amd64 BIOS+UEFI boot data `etfsboot.com`+`efisys.bin`; place the generated
+  `Autounattend.xml` at the ISO root; emit a `SHA256SUMS` manifest beside the ISO; fail fast
+  if `oscdimg` missing) — FR-027/FR-028
+- [ ] T043 [P] [US1] Implement `src/WindowsIsoMaker/Public/Compress-BuildArtifact.ps1`
   (compress ISO, name `Windows11-<edition>-<arch>-<release>.<ext>`, compute sha256, return
   `OutputImageArtifact`)
-- [ ] T034 [P] [US1] Implement `src/WindowsIsoMaker/Public/Test-ImageIntegrity.ps1`
+- [ ] T044 [P] [US1] Implement `src/WindowsIsoMaker/Public/Test-ImageIntegrity.ps1`
   (structural checks: media readable, `sources/install.*` + DISM index integrity, required
   amd64 boot files present) — FR-023 default path
-- [ ] T035 [US1] Implement `src/WindowsIsoMaker/Public/Invoke-IsoBuild.ps1` orchestrator
+- [ ] T045 [P] [US1] Implement `src/WindowsIsoMaker/Public/Export-ImageBom.ps1` (derive the
+  Image BOM from the RunReport: base image version + hash, pinned Fido/ADK/PowerShell/Pester/
+  PSSA versions, every applied change with its `Citation` + `EvidenceGrade`; emit CycloneDX
+  JSON + human-readable Markdown; read solely from the RunReport). Depends on T013 — FR-029
+- [ ] T046 [US1] Implement `src/WindowsIsoMaker/Public/Invoke-IsoBuild.ps1` orchestrator
   (`SupportsShouldProcess`: `Test-BuildPrerequisite` → `Get-Windows11Iso` → integrity →
-  `Expand-WindowsImage` → `Mount-WindowsBuildImage` → `Remove-Bloatware` →
-  `Set-RegistryTweaks` → dismount `-Save` → `New-BootableIso` → `Compress-BuildArtifact` →
-  `Test-ImageIntegrity` → `New-RunReport`). Depends on T014, T021, T027–T034
-- [ ] T036 [US1] Verify `FunctionsToExport` in `src/WindowsIsoMaker/WindowsIsoMaker.psd1`
-  covers all US1 public functions and that `Import-Module ./src/WindowsIsoMaker` succeeds
+  `Expand-WindowsImage` → `Mount-WindowsBuildImage` → `Resolve-CatalogSelection` → for each
+  selected entry `Invoke-CatalogEntry` (dispatches Remove/Set/Enable) → dismount `-Save` →
+  `New-AutounattendXml` (per-arch) → `New-BootableIso` (Autounattend at root + `SHA256SUMS`) →
+  `Compress-BuildArtifact` → `Test-ImageIntegrity` → `New-RunReport` → `Export-ImageBom`).
+  Depends on T014, T023, T033–T045 — FR-010/FR-024/FR-027/FR-028/FR-029
+- [ ] T047 [US1] Verify `FunctionsToExport` in `src/WindowsIsoMaker/WindowsIsoMaker.psd1`
+  covers all 14 public functions and that `Import-Module ./src/WindowsIsoMaker` succeeds
 
-**Checkpoint**: Scenario C (default local amd64 build) works end-to-end; US1 is independently
-demonstrable.
+**Checkpoint**: Scenario C (default local amd64 build) works end-to-end via the dispatcher;
+US1 is independently demonstrable with Autounattend + SHA256SUMS + Image BOM.
 
 ---
 
 ## Phase 4: User Story 2 - Build both amd64 and arm64 images in GitHub Actions (Priority: P1)
 
-**Goal**: A manually dispatched workflow produces compressed amd64 and arm64 artifacts, the
-arm64 leg on a native `windows-11-arm` runner, using the same shipped `Invoke-IsoBuild`.
+**Goal**: A manually dispatched workflow produces compressed amd64 and arm64 artifacts (the
+arm64 leg on a native `windows-11-arm` runner) via the same shipped `Invoke-IsoBuild`, each
+with SLSA provenance + a `SHA256SUMS` manifest, optionally uploaded to Azure Blob (OIDC).
 
-**Independent Test**: Manually dispatch `build-image.yml` (quickstart Scenario F); confirm
-two named compressed artifacts (one per arch), arm64 built natively, and that a plain push
-does NOT trigger it.
+**Independent Test**: Manually dispatch `build-image.yml` (quickstart Scenario F); confirm two
+named compressed artifacts (one per arch), arm64 built natively, per-ISO provenance +
+`SHA256SUMS`, and that a plain push does NOT trigger it.
 
-- [ ] T037 [P] [US2] Add arm64 boot-data selection to
+- [ ] T048 [P] [US2] Add arm64 boot-data selection to
   `src/WindowsIsoMaker/Public/New-BootableIso.ps1` (UEFI-only `bootaa64.efi` layout when
-  `Architecture=arm64`). Depends on T032
-- [ ] T038 [P] [US2] Add `tests/New-BootableIso.Tests.ps1` (mocked oscdimg: arch→boot-arg
-  selection for amd64 vs arm64; missing oscdimg → actionable terminating error)
-- [ ] T039 [US2] Create `docs/ci.md` (runner disk/time limits, ADK Deployment Tools install,
-  arm64 tooling verification, documented skip-heavy-build path)
-- [ ] T040 [US2] Create `.github/workflows/build-image.yml` (`workflow_dispatch` ONLY; inputs
-  edition/language/release/remove_edge/remove_onedrive/skip_heavy_build/boot_test; matrix
-  `amd64`=`windows-latest`, `arm64`=`windows-11-arm`; steps: checkout → install ADK
+  `Architecture=arm64`; Autounattend placement + `SHA256SUMS` behavior unchanged). Depends on
+  T042
+- [ ] T049 [P] [US2] Add `tests/New-BootableIso.Tests.ps1` (mocked oscdimg: arch→boot-arg
+  selection for amd64 vs arm64; `Autounattend.xml` placed at ISO root; `SHA256SUMS` written;
+  missing oscdimg → actionable terminating error) — FR-027/FR-028
+- [ ] T050 [US2] Create `docs/ci.md` (runner disk/time limits, ADK Deployment Tools install,
+  arm64 tooling verification, documented skip-heavy-build path, provenance/SBOM/Azure-upload
+  overview + artifact-size rationale)
+- [ ] T051 [US2] Create `.github/workflows/build-image.yml` (`workflow_dispatch` ONLY; inputs
+  `edition`/`language`/`release`/`profile`/`enable_catalog_id`/`disable_catalog_id`/
+  `skip_heavy_build`/`boot_test` — **no `remove_edge`/`remove_onedrive` inputs**; matrix
+  `amd64`=`windows-latest`, `arm64`=`windows-11-arm`; `permissions: contents:read,
+  id-token:write, attestations:write`; SHA-pinned actions; steps: checkout → install ADK
   Deployment Tools → disk check/fail-fast → `./build.ps1`/`Invoke-IsoBuild` with matrix arch
-  → `upload-artifact` one named artifact per arch + RunReport; `skip_heavy_build=true` runs
-  preview-only). Depends on T035, T037, T039 — FR-004/FR-012/FR-014/FR-015
+  → `upload-artifact` one named artifact per arch + RunReport + Image BOM; `skip_heavy_build=
+  true` runs preview-only). Depends on T046, T048, T050 — FR-004/FR-012/FR-014/FR-015/FR-024
+- [ ] T052 [US2] Add build provenance to `.github/workflows/build-image.yml`: publish the
+  `SHA256SUMS` manifest and attest each produced ISO with `actions/attest-build-provenance`
+  (SHA-pinned action) so consumers can `gh attestation verify`. Depends on T051 —
+  FR-028/SC-009
+- [ ] T053 [US2] Add an optional Azure Blob upload job/step to
+  `.github/workflows/build-image.yml`: when `vars.AZURE_STORAGE_ACCOUNT` +
+  `vars.AZURE_STORAGE_CONTAINER` are set, OIDC `azure/login` (SHA-pinned; `AZURE_CLIENT_ID`/
+  `AZURE_TENANT_ID`/`AZURE_SUBSCRIPTION_ID` repo vars, **no stored secrets**) then
+  `az storage blob upload` of the compressed image + `SHA256SUMS` + BOM; otherwise fall back
+  to `actions/upload-artifact`; document the ~5–7 GB ISO artifact-size rationale in
+  `docs/ci.md`. Depends on T051 — FR-030
 
-**Checkpoint**: Manual dispatch yields per-arch artifacts; no auto-trigger on push/PR.
+**Checkpoint**: Manual dispatch yields per-arch artifacts with provenance + checksums (and
+optional Azure upload); no auto-trigger on push/PR.
 
 ---
 
 ## Phase 5: User Story 3 - Automated quality gates on every change (Priority: P1)
 
-**Goal**: PSScriptAnalyzer + Pester v5 (including catalog schema tests) run on every push/PR
-and gate merges; undocumented catalog entries fail CI.
+**Goal**: PSScriptAnalyzer + Pester v5 (including the catalog schema v2 gate) plus a repo SBOM
+run on every push/PR and gate merges; undocumented / ungraded catalog entries and grade-3
+default-enabled entries fail CI; all Actions stay SHA-pinned via Renovate.
 
-**Independent Test**: Push a commit deleting a `Citation` (or breaking a test/lint rule);
-confirm the check fails (quickstart Scenario A). Push a compliant commit; confirm it passes.
+**Independent Test**: Push a commit deleting a `Citation`/`EvidenceGrade` (or marking a
+grade-3 entry `DefaultEnabled=$true`, or breaking a test/lint rule); confirm the check fails
+(quickstart Scenario A). Push a compliant commit; confirm it passes.
 
-- [ ] T041 [US3] Create `.github/workflows/ci.yml` (triggers `push` + `pull_request` on
-  `windows-latest`; install pinned Pester v5 + PSScriptAnalyzer; run
+- [ ] T054 [US3] Create `.github/workflows/ci.yml` (triggers `push` + `pull_request` on
+  `windows-latest`; SHA-pinned actions; install pinned Pester v5 + PSScriptAnalyzer; run
   `Invoke-ScriptAnalyzer -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse`; run Pester with
   NUnit output; publish results; fail job on any lint error or test failure) — FR-013/SC-005
-- [ ] T042 [US3] Add a negative-path assertion to `tests/Catalog.Schema.Tests.ps1` proving a
-  catalog entry missing `Citation`/`Description`/`Rationale` fails the suite (documents the
-  merge-blocking gate — FR-009/SC-004). Depends on T015
+- [ ] T055 [US3] Add a repository/tooling SBOM step to `.github/workflows/ci.yml` using
+  `anchore/sbom-action` (SHA-pinned) producing a CycloneDX SBOM and uploading it as an
+  artifact. Depends on T054 — FR-029
+- [ ] T056 [US3] Add negative-path assertions to `tests/Catalog.Schema.Tests.ps1` proving a
+  catalog entry missing `Action`/`EvidenceGrade`/`Citation`/`Description`/`Rationale` fails
+  the suite, AND that a grade-3 entry with `DefaultEnabled=$true` fails (documents the
+  merge-blocking evidence gate — FR-009/FR-026/SC-004/SC-010). Depends on T017
+- [ ] T057 [US3] Verify `renovate.json5` at repo root governs dependency updates: extends the
+  shared `github>DevSecNinja/.github//.renovate/*` presets + `helpers:pinGitHubActionDigests`
+  (all GitHub Actions SHA-pinned) and a repo-local `customManager` (regex) tracking the pinned
+  pbatard/Fido tag in `vendor/fido/VERSION` via the `github-releases` datasource — FR-031
 
-**Checkpoint**: CI runs lint + tests on every change and blocks on failure; heavy build never
-runs here.
+**Checkpoint**: CI runs lint + tests + evidence gate + SBOM on every change and blocks on
+failure; heavy build never runs here; dependencies stay pinned.
 
 ---
 
 ## Phase 6: User Story 4 - Customize edition, language, release, architecture, and change set (Priority: P2)
 
-**Goal**: Configuration overrides (edition/language/release/arch, include/exclude catalog
-ids) and opt-in Edge/OneDrive removal (OFF by default) are honored exactly.
+**Goal**: Data-driven configuration (edition/language/release/arch, `Profile`, `Toggles`,
+`EnableCatalogId`/`DisableCatalogId`) is honored exactly, and opt-in Edge/OneDrive/WSL removal
+or enablement (OFF by default) works with zero new code — pure catalog selection (FR-024).
 
-**Independent Test**: Run `./build.ps1 -Architecture amd64 -Language nl-NL -RemoveEdge
--RemoveOneDrive` (quickstart Scenario D); confirm the image reflects those choices and nothing
-more, and each opt-in removal is recorded with citation + reversibility.
+**Independent Test**: Run a build with `EnableCatalogId = 'remove-edge','remove-onedrive',
+'feature-wsl'` (quickstart Scenario D); confirm the image reflects exactly those opt-in
+choices and nothing more, each recorded with citation + evidence grade + reversibility.
 
-- [ ] T043 [P] [US4] Add opt-in removal catalog entries `remove-edge` and `remove-onedrive`
-  (`DefaultEnabled=$false`, `Citation`, `Reversible`+`Reversal`) to
-  `config/catalog.appx.psd1` and/or `config/catalog.registry.psd1` — FR-008
-- [ ] T044 [US4] Implement `IncludeCatalogId`/`ExcludeCatalogId` + `RemoveEdge`/`RemoveOneDrive`
-  catalog selection logic in `src/WindowsIsoMaker/Public/Get-BuildConfiguration.ps1` (enable
-  opt-in entries only when flagged). Depends on T021, T043
-- [ ] T045 [US4] Wire resolved edition/language/release/arch pass-through from
+- [ ] T058 [P] [US4] Add the opt-in removal catalog entries `remove-edge` and `remove-onedrive`
+  (`Action=RemoveAppx`/`RemoveCapability`, `DefaultEnabled=$false`, `Citation`, `EvidenceGrade`,
+  `Reversible`+`Reversal`) to `config/catalog.appx.psd1` / `config/catalog.capabilities.psd1`
+  — FR-008/FR-024
+- [ ] T059 [US4] Verify end-to-end opt-in enablement of `remove-edge`/`remove-onedrive`/
+  `feature-wsl` (and `feature-vmplatform`) via `Profile`/`Toggles`/`EnableCatalogId`, and that
+  the WSL entries carry the online-first-boot Rationale/Reversal note (no new
+  parameter/switch/code path — SC-011). Depends on T015, T019, T058 — FR-024/FR-025
+- [ ] T060 [US4] Wire resolved edition/language/release/arch pass-through from
   `Get-BuildConfiguration` through `src/WindowsIsoMaker/Public/Invoke-IsoBuild.ps1` into
-  `Get-Windows11Iso`/`New-BootableIso`. Depends on T035, T044
-- [ ] T046 [P] [US4] Extend `tests/Get-BuildConfiguration.Tests.ps1` with customization cases
-  (non-default arch/language; include/exclude ids; `-RemoveEdge`/`-RemoveOneDrive` enable
-  only the opt-in entries; defaults keep Edge/OneDrive present)
+  `Get-Windows11Iso`/`New-AutounattendXml`/`New-BootableIso`. Depends on T046 — FR-002/FR-003
+- [ ] T061 [P] [US4] Extend `tests/Get-BuildConfiguration.Tests.ps1` with customization cases
+  (non-default arch/language/release; `Profile=minimal|aggressive`; `Toggles` on/off;
+  `EnableCatalogId` enables only opt-in entries; defaults keep Edge/OneDrive/WSL absent from
+  the effective set; unknown catalog id → terminating error) — FR-024
 
-**Checkpoint**: Non-default configs and opt-in removals produce exactly the requested image.
+**Checkpoint**: Non-default configs and opt-in Edge/OneDrive/WSL selection produce exactly the
+requested image with no new switches.
 
 ---
 
@@ -276,20 +389,22 @@ documented.
 **Independent Test**: Run Scenario B (`-WhatIf`) → Preview RunReport, no media changed; run
 Scenario C twice → second run reports `AlreadyApplied` and applies nothing new (Scenario E).
 
-- [ ] T047 [US5] Implement `-WhatIf`/preview path in
+- [ ] T062 [US5] Implement `-WhatIf`/preview path in
   `src/WindowsIsoMaker/Public/Invoke-IsoBuild.ps1` producing a RunReport with
-  `Outcome=Preview` and zero media changes (also drives `skip_heavy_build`). Depends on T035
-- [ ] T048 [US5] Implement idempotency detection (read current state → mark `AlreadyApplied`)
-  in `src/WindowsIsoMaker/Public/Remove-Bloatware.ps1` and
-  `src/WindowsIsoMaker/Public/Set-RegistryTweaks.ps1`. Depends on T030, T031 — FR-017/SC-007
-- [ ] T049 [US5] Add failure-path cleanup to
+  `Outcome=Preview` and zero media changes (also drives `skip_heavy_build`). Depends on T046
+- [ ] T063 [US5] Implement idempotency detection (read current state → mark `AlreadyApplied`)
+  in `src/WindowsIsoMaker/Public/Remove-Bloatware.ps1`,
+  `src/WindowsIsoMaker/Public/Set-RegistryTweaks.ps1`, and
+  `src/WindowsIsoMaker/Public/Enable-WindowsFeature.ps1`. Depends on T036, T037, T038 —
+  FR-017/SC-007
+- [ ] T064 [US5] Add failure-path cleanup to
   `src/WindowsIsoMaker/Public/Invoke-IsoBuild.ps1` (`finally`: dismount `-Discard`, unload
-  hives, surface terminating error, never present corrupt output as success). Depends on T035
+  hives, surface terminating error, never present corrupt output as success). Depends on T046
   — FR-005
-- [ ] T050 [P] [US5] Add `Reversal` notes to every reversible entry across
+- [ ] T065 [P] [US5] Add `Reversal` notes to every reversible entry across
   `config/catalog.registry.psd1`, `config/catalog.appx.psd1`,
   `config/catalog.capabilities.psd1` — FR-018
-- [ ] T051 [P] [US5] Add `tests/Invoke-IsoBuild.Preview.Tests.ps1` (preview modifies nothing;
+- [ ] T066 [P] [US5] Add `tests/Invoke-IsoBuild.Preview.Tests.ps1` (preview modifies nothing;
   idempotent re-run applies zero changes; mid-build failure triggers cleanup)
 
 **Checkpoint**: Preview, idempotency, and safe-failure guarantees are demonstrable.
@@ -298,18 +413,34 @@ Scenario C twice → second run reports `AlreadyApplied` and applies nothing new
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-**Purpose**: Documentation and end-to-end validation across all stories.
+**Purpose**: Documentation (evidence grading, WSL, Autounattend, provenance/BOM, Azure upload)
+and end-to-end validation across all stories.
 
-- [ ] T052 [P] Create `docs/usage.md` (quick-start, parameters, single-command local build)
-  — SC-008
-- [ ] T053 [P] Create `docs/change-rationale.md` (human-readable rendering of every catalog
-  entry's What/Why/Citation/Reversal) — Principle II
-- [ ] T054 Run a clean `Invoke-ScriptAnalyzer -Settings ./PSScriptAnalyzerSettings.psd1
+- [ ] T067 [P] Create `docs/usage.md` (quick-start, config-file-first interface, single-command
+  local build, `Profile`/`EnableCatalogId` examples) — SC-008
+- [ ] T068 [P] Create `docs/change-rationale.md` (human-readable rendering of every catalog
+  entry's What/Why/Citation/**EvidenceGrade**/Reversal) — Principle II
+- [ ] T069 [P] Create `docs/evidence-grading.md` (the 1/2/3 grading rubric — MS official /
+  reputable vendor / community — and the grade-3-may-not-be-DefaultEnabled gate) —
+  FR-026/SC-010
+- [ ] T070 [P] Create `docs/wsl.md` (WSL as an opt-in catalog entry; offline enables
+  `Microsoft-Windows-Subsystem-Linux` + `VirtualMachinePlatform`; kernel + distro install
+  online on first boot) — FR-025
+- [ ] T071 [P] Create `docs/autounattend.md` (per-arch `processorArchitecture`; OOBE skip;
+  MS-account bypass + local account default-on/toggleable; locale/keyboard/timezone; disk;
+  FirstLogon/SetupComplete) — FR-027
+- [ ] T072 [P] Create `docs/provenance-bom.md` (verify `SHA256SUMS`; `gh attestation verify`
+  the SLSA provenance; read the Image BOM; locate the repo CycloneDX SBOM) — FR-028/FR-029
+- [ ] T073 [P] Create `docs/azure-upload.md` (optional OIDC Azure Blob upload: required repo
+  vars, no stored secrets, fallback to workflow artifact, ~5–7 GB artifact-size rationale) —
+  FR-030
+- [ ] T074 Run a clean `Invoke-ScriptAnalyzer -Settings ./PSScriptAnalyzerSettings.psd1
   -Recurse` pass and resolve all findings across `src/`, `tests/`, `build.ps1`
-- [ ] T055 Execute quickstart validation Scenarios A–F from
-  [quickstart.md](./quickstart.md) and confirm each expected outcome (SC-001…SC-008)
-- [ ] T056 [P] Update root `README.md` with a project overview and pointer to `docs/usage.md`
-  and `docs/ci.md`
+- [ ] T075 Execute quickstart validation Scenarios A–G from
+  [quickstart.md](./quickstart.md) (incl. data-driven selection, provenance/BOM, and
+  Autounattend) and confirm each expected outcome (SC-001…SC-012)
+- [ ] T076 [P] Update root `README.md` with a project overview and pointers to `docs/usage.md`,
+  `docs/ci.md`, `docs/evidence-grading.md`, and `docs/provenance-bom.md`
 
 ---
 
@@ -320,39 +451,48 @@ Scenario C twice → second run reports `AlreadyApplied` and applies nothing new
 - **Setup (Phase 1)**: No dependencies — start immediately.
 - **Foundational (Phase 2)**: Depends on Setup — BLOCKS all user stories.
 - **User Stories (Phase 3–7)**: All depend on Foundational.
-  - US1 (P1) is the MVP and should complete first.
-  - US2 (P1) depends on US1's `Invoke-IsoBuild` + `New-BootableIso` (T035, T032).
-  - US3 (P1) depends only on Foundational (schema tests) + Setup (lint config); can run in
+  - US1 (P1) is the MVP and should complete first (now includes the Action dispatcher,
+    Autounattend, SHA256SUMS, and Image BOM).
+  - US2 (P1) depends on US1's `Invoke-IsoBuild` + `New-BootableIso` (T046, T042).
+  - US3 (P1) depends only on Foundational (schema v2 tests) + Setup (lint config); can run in
     parallel with US1/US2.
-  - US4 (P2) depends on US1's `Invoke-IsoBuild` and Foundational config loader.
-  - US5 (P2) depends on US1's mutating functions and orchestrator.
+  - US4 (P2) depends on Foundational's `Resolve-CatalogSelection`/config loader and US1's
+    orchestrator.
+  - US5 (P2) depends on US1's mutating handlers and orchestrator.
 - **Polish (Phase 8)**: Depends on all targeted stories being complete.
 
 ### Key Cross-Task Dependencies
 
-- T014 → T009, T010 · T021 → T019, T020
-- T030 → T010, T016, T017 · T031 → T011, T012, T018
-- T035 → T014, T021, T027–T034 · T036 → T035
-- T037 → T032 · T040 → T035, T037, T039
-- T042 → T015 · T044 → T021, T043 · T045 → T035, T044
-- T047/T049 → T035 · T048 → T030, T031
+- T014 → T009, T010 · T015 → (catalog data T018–T020) · T016 → T015
+- T022 → T016 · T023 → T015, T021, T022
+- T036 → T010, T018, T019 · T037 → T011, T012, T020 · T038 → T010, T019
+- T039 → T036, T037, T038 (dispatcher) · T041 → T040 · T042 → (Autounattend from T041)
+- T045 → T013 · T046 → T014, T023, T033–T045 · T047 → T046
+- T048 → T042 · T051 → T046, T048, T050 · T052 → T051 · T053 → T051
+- T055 → T054 · T056 → T017 · T059 → T015, T019, T058 · T060 → T046
+- T062/T064 → T046 · T063 → T036, T037, T038
 
 ### Within Each User Story
 
 - Tests are written FIRST and must FAIL before implementation.
 - Private helpers/catalog/config (Foundational) before public functions.
-- Public functions before the orchestrator; orchestrator before workflows.
+- Handlers (`Remove-Bloatware`/`Set-RegistryTweaks`/`Enable-WindowsFeature`) before the
+  `Invoke-CatalogEntry` dispatcher; dispatcher before the `Invoke-IsoBuild` orchestrator;
+  orchestrator before workflows.
 
 ---
 
 ## Parallel Opportunities
 
 - **Setup**: T002–T007 run in parallel after T001.
-- **Foundational**: T008–T013 (private helpers) parallel; catalog data T016–T019 parallel
-  after T015.
-- **US1 tests**: T022–T026 parallel; independent public functions T027–T029, T032–T034
-  parallel; T030/T031/T035 sequential on their deps.
-- **Cross-story (after Foundational)**: US3 (T041) can proceed in parallel with US1/US2.
+- **Foundational**: T008–T013 (private helpers) parallel; `Resolve-CatalogSelection` (T015) +
+  its test (T016) parallel with catalog data T018–T021; schema v2 tests T017 gate the catalog
+  data.
+- **US1 tests**: T024–T032 parallel; independent public functions T033–T035, T040–T045
+  parallel; handlers T036–T038 → dispatcher T039 → orchestrator T046 sequential on their deps.
+- **US2**: provenance (T052) and Azure upload (T053) both extend `build-image.yml` (T051) and
+  should be sequenced after it.
+- **Cross-story (after Foundational)**: US3 (T054–T057) can proceed in parallel with US1/US2.
 
 ### Parallel Example: User Story 1
 
@@ -361,6 +501,10 @@ Scenario C twice → second run reports `AlreadyApplied` and applies nothing new
 Task: tests/Get-Windows11Iso.Tests.ps1
 Task: tests/Remove-Bloatware.Tests.ps1
 Task: tests/Set-RegistryTweaks.Tests.ps1
+Task: tests/Enable-WindowsFeature.Tests.ps1
+Task: tests/Invoke-CatalogEntry.Tests.ps1
+Task: tests/New-AutounattendXml.Tests.ps1
+Task: tests/Export-ImageBom.Tests.ps1
 Task: tests/Invoke-IsoBuild.Tests.ps1
 Task: tests/Test-ImageIntegrity.Tests.ps1
 
@@ -368,9 +512,11 @@ Task: tests/Test-ImageIntegrity.Tests.ps1
 Task: src/WindowsIsoMaker/Public/Get-Windows11Iso.ps1
 Task: src/WindowsIsoMaker/Public/Expand-WindowsImage.ps1
 Task: src/WindowsIsoMaker/Public/Mount-WindowsBuildImage.ps1
+Task: src/WindowsIsoMaker/Public/New-AutounattendXml.ps1
 Task: src/WindowsIsoMaker/Public/New-BootableIso.ps1
 Task: src/WindowsIsoMaker/Public/Compress-BuildArtifact.ps1
 Task: src/WindowsIsoMaker/Public/Test-ImageIntegrity.ps1
+Task: src/WindowsIsoMaker/Public/Export-ImageBom.ps1
 ```
 
 ---
@@ -381,22 +527,24 @@ Task: src/WindowsIsoMaker/Public/Test-ImageIntegrity.ps1
 
 1. Complete Phase 1 (Setup) + Phase 2 (Foundational).
 2. Complete Phase 3 (US1) → **STOP and VALIDATE** with quickstart Scenario C.
-3. This delivers the core value: a bootable, debloated local amd64 image with an auditable
-   RunReport.
+3. This delivers the core value: a bootable, debloated local amd64 image driven by the
+   data-driven `Action` dispatcher, with a per-arch `Autounattend.xml`, `SHA256SUMS`, an
+   Image BOM, and an auditable RunReport.
 
 ### Incremental Delivery
 
-1. Setup + Foundational → foundation ready.
-2. US1 → MVP (local debloated build).
-3. US3 (CI quality gates) — bring online early to guard all subsequent work.
-4. US2 (CI matrix artifacts amd64 + arm64).
-5. US4 (customization / opt-in removals) → US5 (preview / idempotency / reversibility).
-6. Polish (docs + Scenarios A–F).
+1. Setup + Foundational → foundation ready (catalog schema v2, resolver, v2 config).
+2. US1 → MVP (local debloated build with dispatcher + Autounattend + BOM).
+3. US3 (CI quality gates + evidence gate + SBOM) — bring online early to guard all work.
+4. US2 (CI matrix artifacts amd64 + arm64 + provenance + optional Azure upload).
+5. US4 (data-driven customization / opt-in Edge/OneDrive/WSL) → US5 (preview / idempotency /
+   reversibility).
+6. Polish (docs incl. evidence-grading/WSL/Autounattend/provenance-BOM/Azure + Scenarios A–G).
 
 ### Parallel Team Strategy
 
-After Foundational: Developer A → US1; Developer B → US3 (ci.yml + gate); once US1's
-orchestrator lands, Developer C picks up US2, then US4/US5.
+After Foundational: Developer A → US1; Developer B → US3 (ci.yml + evidence gate + SBOM); once
+US1's orchestrator lands, Developer C picks up US2 (provenance/Azure), then US4/US5.
 
 ---
 
