@@ -40,6 +40,12 @@
         KeyboardLayout   = '0409:00000409' # input locale (en-US)
         TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout
+        # ProductKey: edition selector so unattended non-Home installs skip the product-key page.
+        #   ''      = auto-pick Microsoft's public generic (KMS client) key for Edition (skips the
+        #             "Setup has failed to validate the product key" stop; does NOT activate)
+        #   'none'  = omit entirely (Setup will prompt for a key)
+        #   '<key>' = use a specific product key
+        ProductKey       = ''
         FirstLogonCommands = @()          # optional array of command strings run at first logon
         SetupCompleteCommands = @()       # optional array of SetupComplete.cmd command strings
     }

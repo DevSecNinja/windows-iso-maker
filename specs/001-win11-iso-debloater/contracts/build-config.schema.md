@@ -38,8 +38,11 @@ the config file is the intended, documented way to configure a build.
         BypassMsAccount    = $true      # bypass MS-account requirement (toggleable)
         CreateLocalAccount = $true      # create a local account (default on)
         LocalAccountName   = 'admin'
+        Locale             = 'en-US'    # UI / system language
+        UserLocale         = 'en-US'    # region format (dates/times/numbers); defaults to Locale
         KeyboardLayout     = '0409:00000409'
         TimeZone           = 'UTC'
+        ProductKey         = ''         # '' = auto generic (KMS client) key for Edition; 'none' = omit; or an explicit key
         DiskLayout         = 'default-uefi-gpt'
         FirstLogonCommands    = @()
         SetupCompleteCommands = @()

@@ -31,9 +31,11 @@ Autounattend = @{
     BypassMsAccount    = $true          # bypass the Microsoft-account requirement (default on)
     CreateLocalAccount = $true          # create a local account instead
     LocalAccountName   = 'Admin'        # username (NO password is stored in the file)
-    Locale             = 'en-US'
+    Locale             = 'en-US'        # UI / system language
+    UserLocale         = 'en-US'        # region format (dates/times/numbers); defaults to Locale
     KeyboardLayout     = '0409:00000409'
     TimeZone           = 'UTC'          # e.g. 'W. Europe Standard Time'
+    ProductKey         = ''             # edition selector (see below)
     DiskId             = 0
     FirstLogonCommands    = @()         # optional command strings run at first logon
     SetupCompleteCommands = @()         # optional SetupComplete.cmd command strings
@@ -41,6 +43,21 @@ Autounattend = @{
 ```
 
 Set `Enabled = $false` to skip generation entirely and ship the stock Microsoft OOBE.
+
+## Product key (edition selector)
+
+Windows Setup shows a product-key page for non-Home editions; a **fully unattended** Pro
+install otherwise stops with *"Setup has failed to validate the product key"*. `ProductKey`
+controls the `<ProductKey>` element written into the `windowsPE` pass:
+
+| Value | Behaviour |
+| --- | --- |
+| `''` (default) | Auto-pick Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. This only *selects the edition* and skips the key page — it does **not** activate Windows (activation still happens later via your own key, a digital licence, or KMS). |
+| `'none'` | Omit the element entirely; Setup will prompt for a key. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit key. |
+
+The generic keys are published by Microsoft for exactly this purpose — see
+[KMS client activation and product keys](https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys).
 
 ## Security note
 

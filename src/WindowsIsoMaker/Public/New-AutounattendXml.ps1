@@ -80,6 +80,37 @@ function New-AutounattendXml {
     $localAccountName = [string](& $get 'LocalAccountName' 'Admin')
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
+    # --- ProductKey fragment (edition selector, NOT an activation key). ---
+    # Windows Setup requires a key on the product-key page for non-Home editions; without one
+    # a fully-unattended Pro install stops with "Setup has failed to validate the product key".
+    # Supplying Microsoft's public generic (KMS client setup) key selects the edition and skips
+    # that page — activation still happens later via the user's own key / digital licence / KMS.
+    #   ProductKey not set / '' / whitespace -> auto-pick the generic key for the resolved Edition
+    #   ProductKey = 'none'                  -> omit entirely (Setup will prompt)
+    #   ProductKey = 'XXXXX-...'             -> use that explicit key
+    $productKeyRaw = & $get 'ProductKey' $null
+    $productKey = ''
+    if ($null -ne $productKeyRaw -and [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
+        $productKey = ''
+    }
+    elseif ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw)) {
+        $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
+    }
+    else {
+        $productKey = [string]$productKeyRaw.ToString().Trim()
+    }
+
+    $productKeyFragment = ''
+    if (-not [string]::IsNullOrWhiteSpace($productKey)) {
+        $safeKey = [System.Security.SecurityElement]::Escape($productKey)
+        $productKeyFragment = @"
+        <ProductKey>
+          <Key>$safeKey</Key>
+          <WillShowUI>OnError</WillShowUI>
+        </ProductKey>
+"@
+    }
+
     # --- OOBE fragment (skip screens). ---
     $oobeFragment = ''
     if ($skipOobe) {
@@ -141,6 +172,7 @@ function New-AutounattendXml {
         '{{KEYBOARD}}'               = [System.Security.SecurityElement]::Escape($keyboard)
         '{{TIMEZONE}}'               = [System.Security.SecurityElement]::Escape($timezone)
         '{{DISK_ID}}'                = [string]$diskId
+        '{{PRODUCTKEY_FRAGMENT}}'    = $productKeyFragment.TrimEnd("`r", "`n")
         '{{OOBE_FRAGMENT}}'          = $oobeFragment.TrimEnd("`r", "`n")
         '{{USERACCOUNTS_FRAGMENT}}'  = $userAccountsFragment.TrimEnd("`r", "`n")
         '{{FIRSTLOGON_FRAGMENT}}'    = $firstLogonFragment.TrimEnd("`r", "`n")

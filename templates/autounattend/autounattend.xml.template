@@ -10,6 +10,7 @@
     {{KEYBOARD}}                input locale id (e.g. 0409:00000409)
     {{TIMEZONE}}                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
     {{DISK_ID}}                 target disk id for the default single-partition layout
+    {{PRODUCTKEY_FRAGMENT}}     edition-selecting generic setup key (empty when omitted)
     {{OOBE_FRAGMENT}}           OOBE-skip settings (empty when SkipOobe = $false)
     {{USERACCOUNTS_FRAGMENT}}   local-account creation (empty when CreateLocalAccount = $false)
     {{FIRSTLOGON_FRAGMENT}}     FirstLogonCommands (empty when none configured)
@@ -53,6 +54,7 @@
         </Disk>
       </DiskConfiguration>
       <UserData>
+{{PRODUCTKEY_FRAGMENT}}
         <AcceptEula>true</AcceptEula>
       </UserData>
     </component>
