@@ -253,6 +253,44 @@ Describe 'Invoke-VmBootTest diagnostics harvesting' {
         }
     }
 
+    It 'downgrades a StayedRunning pass to NoInstallProgress when nothing was written to the disk' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            # Runs continuously with no heartbeat -> passes via StayedRunning (MinRunningSeconds=1).
+            Mock Save-BootTestSetupLog { $null }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 1 -MinRunningSeconds 1 -DiagnosticsPath 'C:\out\diag'
+            $r.Method | Should -Be 'NoInstallProgress'
+            $r.Passed | Should -BeFalse
+            $r.InstallProgressed | Should -BeFalse
+            $r.Detail | Should -Match 'did not progress past windowsPE'
+        }
+    }
+
+    It 'keeps a StayedRunning pass when Setup wrote logs to the disk (install progressed)' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Save-BootTestSetupLog {
+                [pscustomobject]@{ Path = 'C:\out\diag\vm'; Files = @('C:\out\diag\vm\D_WINDOWS.~BT_setupact.log'); SetupErrorTail = $null }
+            }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 1 -MinRunningSeconds 1 -DiagnosticsPath 'C:\out\diag'
+            $r.Method | Should -Be 'StayedRunning'
+            $r.Passed | Should -BeTrue
+            $r.InstallProgressed | Should -BeTrue
+        }
+    }
+
+    It 'never downgrades a healthy Heartbeat pass even if the disk was untouched' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = 'OK'; HeartbeatHealthy = $true } }
+            Mock Save-BootTestSetupLog { $null }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 1 -MinRunningSeconds 1 -DiagnosticsPath 'C:\out\diag'
+            $r.Method | Should -Be 'Heartbeat'
+            $r.Passed | Should -BeTrue
+            $r.InstallProgressed | Should -BeFalse
+        }
+    }
+
     It 'stops the VM before harvesting (so the VHDX can be mounted offline)' {
         InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
             param($Iso)

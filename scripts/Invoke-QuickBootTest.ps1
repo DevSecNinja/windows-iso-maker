@@ -129,6 +129,10 @@ Write-Host "[QuickBootTest] Result: $icon" -ForegroundColor $color
 Write-Host "[QuickBootTest]   IsoPath        : $($result.IsoPath)"
 Write-Host "[QuickBootTest]   Architecture   : $($result.Architecture)"
 Write-Host "[QuickBootTest]   Passed         : $($result.Passed)"
+$boot0 = if ($result.PSObject.Properties.Match('Boot').Count) { $result.Boot } else { $null }
+if ($boot0 -and $boot0.PSObject.Properties.Match('InstallProgressed').Count) {
+    Write-Host "[QuickBootTest]   InstallProgress: $($boot0.InstallProgressed)  (Method: $($boot0.Method))"
+}
 if ($result.PSObject.Properties.Match('DiagnosticsPath').Count -and $result.DiagnosticsPath) {
     Write-Host "[QuickBootTest]   DiagnosticsPath: $($result.DiagnosticsPath)" -ForegroundColor Yellow
 }

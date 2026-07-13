@@ -226,11 +226,12 @@ function Invoke-IsoBuild {
             throw "Produced image failed structural integrity validation ($failedNames); not presenting it as a successful build (FR-005/FR-023)."
         }
 
-        # The opt-in VM boot test is a separate signal. Distinguish a REAL boot failure (the image
-        # would not boot: BootReset/Timeout) from an ENVIRONMENTAL one (Hyper-V unavailable or the
-        # test errored: None/Error). Only a real boot failure fails an otherwise-valid build; an
-        # environmental one is a warning so a structurally-sound ISO is not discarded because the
-        # host could not run the boot test.
+        # The opt-in VM boot test is a separate signal. Distinguish a REAL boot/install failure
+        # (the image would not boot or the unattended install never progressed: BootReset/Timeout/
+        # NoInstallProgress) from an ENVIRONMENTAL one (Hyper-V unavailable or the test errored:
+        # None/Error). Only a real failure fails an otherwise-valid build; an environmental one is
+        # a warning so a structurally-sound ISO is not discarded because the host could not run the
+        # boot test.
         $boot = if ($integrity.PSObject.Properties.Match('Boot').Count) { $integrity.Boot } else { $null }
         if ($null -ne $boot -and -not $boot.Passed) {
             if ($boot.Method -in @('None', 'Error')) {

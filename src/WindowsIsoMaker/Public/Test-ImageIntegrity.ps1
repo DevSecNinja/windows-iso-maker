@@ -189,10 +189,14 @@ function Invoke-VmBootTest {
                            firmware and the boot loader without a "no bootable device" reset.
 
         It fails on a boot reset (the VM leaves Running after having started, e.g. firmware could
-        not boot the media) or when the timeout elapses without either pass signal. This is a
-        heavy, opt-in path (FR-023) requiring Hyper-V and is validated on a live host only; all
-        Hyper-V access is behind mockable seams (Get-HyperVReadiness / Get-VmBootStatus) and the
-        single wait is Start-Sleep, so the polling logic is exercised in the unit suite.
+        not boot the media) or when the timeout elapses without either pass signal. As a final
+        check, a StayedRunning pass is downgraded to a failure (Method 'NoInstallProgress') when
+        the harvested VHDX shows Windows Setup wrote nothing to the target disk - i.e. the VM was
+        powered on but the unattended install never progressed past windowsPE (typically stuck at
+        an interactive page). This is a heavy, opt-in path (FR-023) requiring Hyper-V and is
+        validated on a live host only; all Hyper-V access is behind mockable seams
+        (Get-HyperVReadiness / Get-VmBootStatus) and the single wait is Start-Sleep, so the polling
+        logic is exercised in the unit suite.
     .PARAMETER IsoPath
         Path to the ISO.
     .PARAMETER Architecture
@@ -216,7 +220,8 @@ function Invoke-VmBootTest {
         setupapi.dev.log) are copied here so an unattended-install failure can be diagnosed - in
         CI too, where there is no interactive VM. When empty, harvesting is skipped.
     .OUTPUTS
-        PSCustomObject with Passed, Detail, Method, State, and ElapsedSeconds.
+        PSCustomObject with Passed, Detail, Method, State, ElapsedSeconds, and (when a diagnostics
+        harvest runs) InstallProgressed.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -310,7 +315,9 @@ function Invoke-VmBootTest {
                 $safeVmName = ($vmName -replace '[\\/:*?"<>|]', '_')
                 $vmDiagnosticsPath = Join-Path -Path $DiagnosticsPath -ChildPath $safeVmName
                 $diag = Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $vmDiagnosticsPath
+                $installProgressed = $false
                 if ($diag) {
+                    $installProgressed = @($diag.Files).Count -gt 0
                     if ($null -ne $result) {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue $diag -Force
                     }
@@ -329,6 +336,23 @@ function Invoke-VmBootTest {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue ([pscustomobject]@{ Path = $vmDiagnosticsPath; Files = @(); SetupErrorTail = $null }) -Force
                     }
                     Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk (Shift+F10 -> X:\Windows\Panther\setupact.log)."
+                }
+
+                # Extra check: a VM can "stay running" while stuck at an interactive Setup page (e.g.
+                # the product-key screen) - it is powered on but the unattended install never made
+                # progress, so reporting Passed via StayedRunning is misleading. When Setup DOES get
+                # past windowsPE it writes $WINDOWS.~BT\...\Panther logs to the target VHDX; a stuck
+                # install writes nothing there. So if the only pass signal was StayedRunning and the
+                # disk stayed untouched, downgrade to a real failure. A healthy Heartbeat pass means
+                # Windows actually booted, so it is never downgraded.
+                if ($null -ne $result) {
+                    $result | Add-Member -NotePropertyName 'InstallProgressed' -NotePropertyValue $installProgressed -Force
+                    if ($result.Passed -and $result.Method -eq 'StayedRunning' -and -not $installProgressed) {
+                        $result.Passed = $false
+                        $result.Method = 'NoInstallProgress'
+                        $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath' and, on the WinPE RAM disk, X:\Windows\Panther\setupact.log (Shift+F10)."
+                        Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message $result.Detail
+                    }
                 }
             }
             catch {
