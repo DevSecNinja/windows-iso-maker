@@ -21,7 +21,8 @@ function Test-ImageIntegrity {
     .EXAMPLE
         Test-ImageIntegrity -IsoPath C:\out\win11.iso -Architecture amd64
     .OUTPUTS
-        PSCustomObject with Passed, Structural (per-check results), and optional Boot result.
+        PSCustomObject with Passed, Structural (per-check results), an optional Boot result, and
+        DiagnosticsPath (folder where the boot-test Windows Setup logs were harvested, if any).
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -92,11 +93,23 @@ function Test-ImageIntegrity {
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
 
+    # Surface where the boot-test Setup logs were harvested at the top level so it sits alongside
+    # IsoPath/Architecture/Passed and is obvious in the returned object (the exact per-VM folder
+    # when something was captured, otherwise the base folder we looked in, or $null if no boot test).
+    $diagnosticsResultPath = $null
+    if ($bootResult -and $bootResult.PSObject.Properties.Match('Diagnostics').Count -and $bootResult.Diagnostics) {
+        $diagnosticsResultPath = $bootResult.Diagnostics.Path
+    }
+    elseif ($BootTest) {
+        $diagnosticsResultPath = $DiagnosticsPath
+    }
+
     return [pscustomobject]@{
         PSTypeName = 'WindowsIsoMaker.IntegrityResult'
         IsoPath    = (Resolve-Path -LiteralPath $IsoPath).Path
         Architecture = $Architecture
         Passed     = $passed
+        DiagnosticsPath = $diagnosticsResultPath
         Structural = $checks.ToArray()
         Boot       = $bootResult
     }
@@ -306,6 +319,17 @@ function Invoke-VmBootTest {
                         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "setuperr.log tail:`n$($diag.SetupErrorTail)"
                     }
                 }
+                else {
+                    # Nothing on the VHDX to harvest. This is the tell-tale of a windowsPE-phase
+                    # failure (answer file rejected / product-key error) or a boot that never wrote
+                    # to disk: Setup logs to X:\Windows\Panther on the WinPE RAM disk instead, which
+                    # this offline VHDX mount cannot see. Tell the user where we looked so the empty
+                    # folder is not mistaken for a missing feature.
+                    if ($null -ne $result) {
+                        $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue ([pscustomobject]@{ Path = $vmDiagnosticsPath; Files = @(); SetupErrorTail = $null }) -Force
+                    }
+                    Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk (Shift+F10 -> X:\Windows\Panther\setupact.log)."
+                }
             }
             catch {
                 Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "Could not harvest Windows Setup logs: $($_.Exception.Message)"
@@ -342,7 +366,7 @@ function Wait-BootTestInspection {
 
     $state = if ($Result) { $Result.State } else { 'unknown' }
     Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: vmconnect localhost $VmName"
-    $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off and clean up"
+    $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off, harvest the Windows Setup logs, and clean up"
 }
 
 function New-BootTestVm {

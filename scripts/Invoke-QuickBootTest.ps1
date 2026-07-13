@@ -126,12 +126,26 @@ $result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -Boo
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }
 Write-Host "[QuickBootTest] Result: $icon" -ForegroundColor $color
+Write-Host "[QuickBootTest]   IsoPath        : $($result.IsoPath)"
+Write-Host "[QuickBootTest]   Architecture   : $($result.Architecture)"
+Write-Host "[QuickBootTest]   Passed         : $($result.Passed)"
+if ($result.PSObject.Properties.Match('DiagnosticsPath').Count -and $result.DiagnosticsPath) {
+    Write-Host "[QuickBootTest]   DiagnosticsPath: $($result.DiagnosticsPath)" -ForegroundColor Yellow
+}
 $boot = if ($result.PSObject.Properties.Match('Boot').Count) { $result.Boot } else { $null }
 if ($boot -and $boot.PSObject.Properties.Match('Diagnostics').Count -and $boot.Diagnostics) {
-    Write-Host "[QuickBootTest] Harvested $($boot.Diagnostics.Files.Count) Setup log file(s) to '$($boot.Diagnostics.Path)'." -ForegroundColor Yellow
-    if ($boot.Diagnostics.SetupErrorTail) {
-        Write-Host "[QuickBootTest] --- setuperr.log (tail) ---" -ForegroundColor Yellow
-        Write-Host $boot.Diagnostics.SetupErrorTail
+    $files = @($boot.Diagnostics.Files)
+    if ($files.Count -gt 0) {
+        Write-Host "[QuickBootTest] Harvested $($files.Count) Setup log file(s) to '$($boot.Diagnostics.Path)':" -ForegroundColor Yellow
+        foreach ($f in $files) { Write-Host "[QuickBootTest]     $f" }
+        if ($boot.Diagnostics.SetupErrorTail) {
+            Write-Host "[QuickBootTest] --- setuperr.log (tail) ---" -ForegroundColor Yellow
+            Write-Host $boot.Diagnostics.SetupErrorTail
+        }
+    }
+    else {
+        Write-Host "[QuickBootTest] No Setup logs were written to the VHDX (looked in '$($boot.Diagnostics.Path)')." -ForegroundColor Yellow
+        Write-Host "[QuickBootTest] That points to a windowsPE-phase failure (answer-file/product-key rejection) whose logs live on the WinPE RAM disk: Shift+F10 -> X:\Windows\Panther\setupact.log." -ForegroundColor Yellow
     }
 }
 return $result

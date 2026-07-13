@@ -60,15 +60,39 @@ Describe 'Test-ImageIntegrity' {
         }
     }
 
-    It 'does not run the VM boot test by default' {
+    It 'surfaces the boot-test log location as a top-level DiagnosticsPath' {
         InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
             param($Iso)
             Mock Get-IsoStructuralInfo {
                 [pscustomobject]@{ MediaReadable = $true; HasInstallImage = $true; ImageIndexValid = $true; BootFiles = @('boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin') }
             }
-            Mock Invoke-VmBootTest { [pscustomobject]@{ Passed = $true; Detail = 'x' } }
-            Test-ImageIntegrity -IsoPath $Iso -Architecture amd64 | Out-Null
-            Should -Invoke Invoke-VmBootTest -Times 0
+            Mock Invoke-VmBootTest {
+                [pscustomobject]@{ Passed = $false; Detail = 'x'; Diagnostics = [pscustomobject]@{ Path = 'C:\out\diag\wim-boottest-abcd1234'; Files = @(); SetupErrorTail = $null } }
+            }
+            $result = Test-ImageIntegrity -IsoPath $Iso -Architecture amd64 -BootTest
+            $result.DiagnosticsPath | Should -Be 'C:\out\diag\wim-boottest-abcd1234'
+        }
+    }
+
+    It 'falls back to the base diagnostics folder when a boot test harvested nothing' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-IsoStructuralInfo {
+                [pscustomobject]@{ MediaReadable = $true; HasInstallImage = $true; ImageIndexValid = $true; BootFiles = @('boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin') }
+            }
+            Mock Invoke-VmBootTest { [pscustomobject]@{ Passed = $false; Detail = 'x' } }
+            $result = Test-ImageIntegrity -IsoPath $Iso -Architecture amd64 -BootTest -DiagnosticsPath 'C:\out\diag'
+            $result.DiagnosticsPath | Should -Be 'C:\out\diag'
+        }
+    }
+
+    It 'leaves DiagnosticsPath null when no boot test runs' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-IsoStructuralInfo {
+                [pscustomobject]@{ MediaReadable = $true; HasInstallImage = $true; ImageIndexValid = $true; BootFiles = @('boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin') }
+            }
+            (Test-ImageIntegrity -IsoPath $Iso -Architecture amd64).DiagnosticsPath | Should -BeNullOrEmpty
         }
     }
 }
