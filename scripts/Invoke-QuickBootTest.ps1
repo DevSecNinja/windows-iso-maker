@@ -65,6 +65,13 @@
     activating - use it for a fully hands-off Home run (no key prompt). An explicit -ProductKey wins
     over this switch; non-Home generic keys may still fail 24H2 validation.
 
+.PARAMETER Profile
+    Debloat/customization profile(s) to apply for this run, overriding the config's Profile. Accepts
+    a list to combine baselines (e.g. -Profile gaming,opinionated). Because a quick boot test reuses
+    the already-serviced media\ folder, this does NOT re-run debloat; it re-derives the answer file,
+    so profile-driven Autounattend settings (e.g. the opinionated United States-International
+    keyboard) are reflected in the boot test.
+
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
     Auto-discovers everything, rebuilds the ISO, and boot-tests it, pausing for manual inspection.
@@ -81,6 +88,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
     Justification = 'Interactive local helper: coloured status lines are written to the host on purpose.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
+    Justification = "'Profile' is the documented, user-facing configuration concept (minimal/default/aggressive). The parameter is locally scoped and never writes the global profile path.")]
 param(
     [string] $ConfigPath,
     [string] $WorkingDirectory,
@@ -93,7 +102,9 @@ param(
     [switch] $Isolated,
     [string] $Edition,
     [string] $ProductKey,
-    [switch] $UseGenericProductKey
+    [switch] $UseGenericProductKey,
+    [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
+    [string[]] $Profile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,7 +116,12 @@ Import-Module $manifest -Force
 
 if (-not $ConfigPath) { $ConfigPath = Join-Path $repoRoot 'config/build.config.psd1' }
 if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "Config file not found: '$ConfigPath'." }
-$cfg = Get-BuildConfiguration -Path $ConfigPath
+$getConfigParams = @{ Path = $ConfigPath }
+if ($PSBoundParameters.ContainsKey('Profile') -and $Profile) {
+    $getConfigParams['Profile'] = $Profile
+    Write-Host "[QuickBootTest] Profile override: '$($Profile -join ', ')'." -ForegroundColor Cyan
+}
+$cfg = Get-BuildConfiguration @getConfigParams
 
 if (-not $Architecture) { $Architecture = [string]$cfg.Architecture }
 if (-not $Architecture) { $Architecture = 'amd64' }

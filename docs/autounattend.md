@@ -119,9 +119,13 @@ The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericPro
 shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`
 takes precedence). Use it for a fully hands-off **Home** build.
 
-`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, and `-UseGenericProductKey`
-overrides and **requires** a usable key for any non-Home edition, so you can test the hands-off path
-with `-Edition Home -UseGenericProductKey` and do a keyed build with `-ProductKey '<your-key>'`.
+`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
+`-Profile` overrides and **requires** a usable key for any non-Home edition, so you can test the
+hands-off path with `-Edition Home -UseGenericProductKey` and do a keyed build with
+`-ProductKey '<your-key>'`. `-Profile` accepts one or more profiles (e.g. `-Profile gaming,opinionated`);
+because a quick boot test reuses the already-serviced `media\` folder it does **not** re-run debloat,
+but it re-derives the answer file, so profile-driven `Autounattend` settings (such as the opinionated
+United States-International keyboard) are reflected in the boot test.
 
 To boot-test several editions at once, pass `-Isolated` to each parallel window. Isolated runs get a
 uniquely-named `Autounattend-<tag>.xml` and ISO, and ISO authoring is serialized with a named mutex
