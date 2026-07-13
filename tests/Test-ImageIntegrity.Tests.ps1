@@ -202,6 +202,76 @@ Describe 'Invoke-VmBootTest polling' {
     }
 }
 
+Describe 'Invoke-VmBootTest diagnostics harvesting' {
+
+    BeforeEach {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-HyperVReadiness { [pscustomobject]@{ Ready = $true; Reason = 'ok' } }
+            Mock Test-HyperVAvailable { $true }
+            Mock New-BootTestVm { }
+            Mock Remove-BootTestVm { }
+            Mock Stop-BootTestVm { }
+            Mock Start-Sleep { }
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = $null; HeartbeatHealthy = $false } }
+        }
+    }
+
+    It 'harvests Setup logs and attaches Diagnostics when -DiagnosticsPath is set' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Save-BootTestSetupLog {
+                [pscustomobject]@{ Path = 'C:\out\diag'; Files = @('C:\out\diag\a_setuperr.log'); SetupErrorTail = 'Error: 0x1234' }
+            }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000 -DiagnosticsPath 'C:\out\diag'
+            Should -Invoke Save-BootTestSetupLog -Times 1
+            $r.Diagnostics.Path | Should -Be 'C:\out\diag'
+            $r.Diagnostics.SetupErrorTail | Should -Be 'Error: 0x1234'
+        }
+    }
+
+    It 'stops the VM before harvesting (so the VHDX can be mounted offline)' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            $script:order = [System.Collections.Generic.List[string]]::new()
+            Mock Stop-BootTestVm { $script:order.Add('stop') }
+            Mock Save-BootTestSetupLog { $script:order.Add('harvest'); $null }
+            $null = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000 -DiagnosticsPath 'C:\out\diag'
+            $script:order[0] | Should -Be 'stop'
+            $script:order[1] | Should -Be 'harvest'
+        }
+    }
+
+    It 'does not harvest when -DiagnosticsPath is empty' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Save-BootTestSetupLog { }
+            $null = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000
+            Should -Invoke Save-BootTestSetupLog -Times 0
+            Should -Invoke Stop-BootTestVm -Times 0
+        }
+    }
+
+    It 'still tears down the VM when harvesting throws' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Save-BootTestSetupLog { throw 'mount failed' }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000 -DiagnosticsPath 'C:\out\diag'
+            $r.Method | Should -Be 'Timeout'
+            Should -Invoke Remove-BootTestVm -Times 1
+        }
+    }
+}
+
+Describe 'Save-BootTestSetupLog' {
+
+    It 'returns $null when the VHDX does not exist' {
+        InModuleScope WindowsIsoMaker {
+            $missing = Join-Path ([System.IO.Path]::GetTempPath()) ('no-such-' + [guid]::NewGuid().ToString('N') + '.vhdx')
+            Save-BootTestSetupLog -VhdPath $missing -DestinationDirectory ([System.IO.Path]::GetTempPath()) | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Get-HyperVReadiness' {
 
     It 'is Ready when the module, service, and privilege are all present' {

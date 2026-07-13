@@ -38,11 +38,20 @@ function Test-ImageIntegrity {
         [switch] $BootTest,
 
         [Parameter()]
-        [switch] $KeepBootTestVm
+        [switch] $KeepBootTestVm,
+
+        [Parameter()]
+        [string] $DiagnosticsPath
     )
 
     if (-not (Test-Path -LiteralPath $IsoPath)) {
         throw "ISO not found: '$IsoPath'."
+    }
+
+    # Where to drop harvested Windows Setup logs from the boot-test VM. Default next to the ISO so
+    # the caller (and CI) can find and upload them. Only used when -BootTest is set.
+    if ([string]::IsNullOrWhiteSpace($DiagnosticsPath)) {
+        $DiagnosticsPath = Join-Path -Path (Split-Path -Parent (Resolve-Path -LiteralPath $IsoPath).Path) -ChildPath 'boottest-diagnostics'
     }
 
     # Required boot files by architecture (Principle IV).
@@ -78,7 +87,7 @@ function Test-ImageIntegrity {
     $bootResult = $null
     if ($BootTest) {
         Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message 'Opt-in VM boot test requested.'
-        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm
+        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -DiagnosticsPath $DiagnosticsPath
     }
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
@@ -187,6 +196,12 @@ function Invoke-VmBootTest {
         When set, after a pass/fail signal is resolved the VM is left in place and the function
         blocks (via the mockable Wait-BootTestInspection seam) until the user presses Enter, so
         they can attach with vmconnect and test manually before the finally block tears it down.
+    .PARAMETER DiagnosticsPath
+        Directory to harvest Windows Setup logs into. After the VM is stopped (and before it is
+        removed) the throwaway VHDX is mounted offline and any Windows Setup Panther logs
+        (setupact.log / setuperr.log from \$WINDOWS.~BT\Sources\Panther and \Windows\Panther, plus
+        setupapi.dev.log) are copied here so an unattended-install failure can be diagnosed - in
+        CI too, where there is no interactive VM. When empty, harvesting is skipped.
     .OUTPUTS
         PSCustomObject with Passed, Detail, Method, State, and ElapsedSeconds.
     #>
@@ -198,7 +213,8 @@ function Invoke-VmBootTest {
         [Parameter()][int] $TimeoutSeconds = 300,
         [Parameter()][int] $PollIntervalSeconds = 10,
         [Parameter()][int] $MinRunningSeconds = 90,
-        [Parameter()][switch] $KeepBootTestVm
+        [Parameter()][switch] $KeepBootTestVm,
+        [Parameter()][string] $DiagnosticsPath
     )
 
     # Runtime-only: requires Hyper-V (and an ARM64 host for arm64 media). Probe all prerequisites
@@ -269,6 +285,28 @@ function Invoke-VmBootTest {
         return [pscustomobject]@{ Passed = $false; Detail = "VM boot test error: $($_.Exception.Message)"; Method = 'Error'; State = $null; ElapsedSeconds = 0 }
     }
     finally {
+        # Harvest Windows Setup logs before teardown so an unattended-install failure can be
+        # diagnosed (interactively AND in CI). The VHDX can only be mounted offline, so stop the
+        # VM first, mount+copy via the Save-BootTestSetupLog seam, then remove the VM+VHDX. The
+        # harvested diagnostics are attached to the (already-computed) result object by reference.
+        if (-not [string]::IsNullOrWhiteSpace($DiagnosticsPath)) {
+            try {
+                Stop-BootTestVm -VmName $vmName
+                $diag = Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $DiagnosticsPath
+                if ($diag) {
+                    if ($null -ne $result) {
+                        $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue $diag -Force
+                    }
+                    Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "Harvested $($diag.Files.Count) Windows Setup log file(s) to '$($diag.Path)'."
+                    if ($diag.SetupErrorTail) {
+                        Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "setuperr.log tail:`n$($diag.SetupErrorTail)"
+                    }
+                }
+            }
+            catch {
+                Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "Could not harvest Windows Setup logs: $($_.Exception.Message)"
+            }
+        }
         Remove-BootTestVm -VmName $vmName -VhdPath $vhd
     }
 }
@@ -384,6 +422,136 @@ function Remove-BootTestVm {
         }
     }
     if (Test-Path -LiteralPath $VhdPath) { Remove-Item -LiteralPath $VhdPath -Force -ErrorAction SilentlyContinue }
+}
+
+function Stop-BootTestVm {
+    <#
+    .SYNOPSIS
+        Stop (power off) the throwaway boot-test VM without deleting it (runtime-only Hyper-V seam).
+    .DESCRIPTION
+        Private helper for Invoke-VmBootTest. A running VM's VHDX cannot be mounted offline, so the
+        VM must be powered off before Save-BootTestSetupLog can harvest its Windows Setup logs.
+        Isolated behind one function so it is mockable on hosts without the Hyper-V module.
+    .PARAMETER VmName
+        Name of the throwaway VM to power off.
+    .OUTPUTS
+        None.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal runtime-only Hyper-V seam for the opt-in boot test; not a user-facing cmdlet.')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $VmName
+    )
+
+    if (Test-HyperVAvailable) {
+        $existing = Get-VM -Name $VmName -ErrorAction SilentlyContinue
+        if ($existing -and "$($existing.State)" -ne 'Off') {
+            Stop-VM -Name $VmName -TurnOff -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Save-BootTestSetupLog {
+    <#
+    .SYNOPSIS
+        Harvest Windows Setup logs from a stopped boot-test VM's VHDX (runtime-only seam).
+    .DESCRIPTION
+        Private helper for Invoke-VmBootTest. Mounts the throwaway system VHDX offline (read-only)
+        and copies any Windows Setup Panther logs it can find into DestinationDirectory so an
+        unattended-install failure can be diagnosed - including in CI, where there is no
+        interactive VM to attach to. Windows writes these during Setup:
+
+          * \$WINDOWS.~BT\Sources\Panther\setupact.log / setuperr.log  (down-level/offline phase;
+            this is where a failed install before first boot records its error)
+          * \Windows\Panther\setupact.log / setuperr.log               (specialize/oobe phase)
+          * \Windows\INF\setupapi.dev.log                              (driver install)
+          * the matching diagerr.xml / diagwrn.xml / miglog.xml diagnostics
+
+        Every Hyper-V/storage cmdlet (Mount-VHD/Get-Disk/Get-Partition/Get-Volume/Dismount-VHD) is
+        behind this one function so the orchestration is unit-testable by mocking it. The VHDX is
+        always dismounted, even on error. Returns a diagnostics object (Path, Files, and the tail
+        of setuperr.log for at-a-glance visibility), or $null when nothing could be harvested.
+    .PARAMETER VhdPath
+        Path to the stopped VM's system VHDX to mount and read.
+    .PARAMETER DestinationDirectory
+        Directory to copy harvested log files into (created if missing).
+    .OUTPUTS
+        PSCustomObject (Path, Files, SetupErrorTail) or $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string] $VhdPath,
+        [Parameter(Mandatory = $true)][string] $DestinationDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $VhdPath)) { return $null }
+    if (-not (Get-Command -Name 'Mount-VHD' -ErrorAction SilentlyContinue)) { return $null }
+
+    # Setup log locations, relative to each partition root. '$WINDOWS.~BT' is a literal folder name
+    # ($ is not a variable here - single-quoted).
+    $relativePaths = @(
+        '$WINDOWS.~BT\Sources\Panther\setupact.log'
+        '$WINDOWS.~BT\Sources\Panther\setuperr.log'
+        '$WINDOWS.~BT\Sources\Panther\miglog.xml'
+        '$WINDOWS.~BT\Sources\Panther\diagerr.xml'
+        '$WINDOWS.~BT\Sources\Panther\diagwrn.xml'
+        '$WINDOWS.~BT\Sources\Panther\UnattendGC\setupact.log'
+        'Windows\Panther\setupact.log'
+        'Windows\Panther\setuperr.log'
+        'Windows\Panther\UnattendGC\setupact.log'
+        'Windows\INF\setupapi.dev.log'
+    )
+
+    $mounted = $null
+    $collected = [System.Collections.Generic.List[string]]::new()
+    try {
+        $mounted = Mount-VHD -Path $VhdPath -ReadOnly -Passthru -ErrorAction Stop
+        $driveRoots = @(
+            Get-Disk -Number $mounted.DiskNumber -ErrorAction SilentlyContinue |
+                Get-Partition -ErrorAction SilentlyContinue |
+                Get-Volume -ErrorAction SilentlyContinue |
+                Where-Object { $_.DriveLetter } |
+                ForEach-Object { "$($_.DriveLetter):" }
+        )
+
+        if ($driveRoots.Count -gt 0) {
+            if (-not (Test-Path -LiteralPath $DestinationDirectory)) {
+                New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
+            }
+            foreach ($root in $driveRoots) {
+                foreach ($rel in $relativePaths) {
+                    $src = Join-Path -Path $root -ChildPath $rel
+                    if (Test-Path -LiteralPath $src) {
+                        # Flatten to a unique, filesystem-safe name: <drive>_<path with _/no $>.
+                        $flat = ($rel -replace '[\\/]', '_') -replace '\$', ''
+                        $dest = Join-Path -Path $DestinationDirectory -ChildPath "$($root.TrimEnd(':'))_$flat"
+                        Copy-Item -LiteralPath $src -Destination $dest -Force -ErrorAction SilentlyContinue
+                        if (Test-Path -LiteralPath $dest) { $collected.Add($dest) }
+                    }
+                }
+            }
+        }
+    }
+    finally {
+        if ($mounted) { Dismount-VHD -Path $VhdPath -ErrorAction SilentlyContinue }
+    }
+
+    if ($collected.Count -eq 0) { return $null }
+
+    # Surface the tail of setuperr.log (the concise "why it failed") on the result object.
+    $errTail = ''
+    $errFile = $collected | Where-Object { $_ -match 'setuperr' } | Select-Object -First 1
+    if ($errFile) {
+        $errTail = (Get-Content -LiteralPath $errFile -Tail 25 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+    }
+
+    return [pscustomobject]@{
+        Path           = (Resolve-Path -LiteralPath $DestinationDirectory).Path
+        Files          = $collected.ToArray()
+        SetupErrorTail = $errTail
+    }
 }
 
 function Get-HyperVReadiness {

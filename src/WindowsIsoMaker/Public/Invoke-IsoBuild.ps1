@@ -211,8 +211,10 @@ function Invoke-IsoBuild {
         $artifact = Compress-BuildArtifact -IsoPath $outIso -OutputDirectory $Config.OutputDirectory `
             -Format $Config.CompressionFormat -Edition $Config.Edition -Architecture $Config.Architecture -Release $Config.Release
 
-        # 4h. Validate the produced ISO.
-        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest -KeepBootTestVm:$wantKeepBootTestVm
+        # 4h. Validate the produced ISO. Harvest any boot-test Setup logs into the output dir so a
+        # failed unattended install is diagnosable locally and in CI (uploaded with the artifacts).
+        $diagPath = Join-Path $Config.OutputDirectory 'boottest-diagnostics'
+        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest -KeepBootTestVm:$wantKeepBootTestVm -DiagnosticsPath $diagPath
         $artifact | Add-Member -NotePropertyName 'IntegrityResult' -NotePropertyValue $integrity -Force
 
         # Structural checks are authoritative: an image that fails them is bad media -> fatal.
@@ -235,7 +237,8 @@ function Invoke-IsoBuild {
                 Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message "VM boot test could not run ($($boot.Method)): $($boot.Detail) Structural checks passed; continuing."
             }
             else {
-                throw "Produced image failed the VM boot test ($($boot.Method)): $($boot.Detail) (FR-023)."
+                $diag = if ($boot.PSObject.Properties.Match('Diagnostics').Count -and $boot.Diagnostics) { " Windows Setup logs harvested to '$($boot.Diagnostics.Path)'." } else { '' }
+                throw "Produced image failed the VM boot test ($($boot.Method)): $($boot.Detail)$diag (FR-023)."
             }
         }
 

@@ -130,6 +130,15 @@ jobs:
               Write-Host "Produced:`n$($files -join "`n")"
           }
 
+      - name: Upload boot-test diagnostics (Windows Setup logs; always, for failed installs)
+        if: ${{ always() && hashFiles('out/boottest-diagnostics/**') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: boottest-diagnostics-${{ inputs.edition }}-${{ matrix.arch }}-${{ inputs.release }}
+          path: |
+            out/boottest-diagnostics/**
+          if-no-files-found: ignore
+
       - name: Attest build provenance (SLSA) for produced images
         if: ${{ inputs.skip_heavy_build == false && hashFiles('out/*.zip', 'out/*.7z', 'out/*.iso') != '' }}
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0

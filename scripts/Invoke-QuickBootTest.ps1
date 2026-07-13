@@ -118,10 +118,20 @@ if (-not $readiness.Ready) {
 }
 
 $keep = -not $NoKeep
+$diagnostics = Join-Path $WorkingDirectory 'boottest-diagnostics'
 Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
-$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -Verbose
+Write-Host "[QuickBootTest] Windows Setup logs (if any) will be harvested to '$diagnostics'." -ForegroundColor Cyan
+$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -DiagnosticsPath $diagnostics -Verbose
 
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }
 Write-Host "[QuickBootTest] Result: $icon" -ForegroundColor $color
+$boot = if ($result.PSObject.Properties.Match('Boot').Count) { $result.Boot } else { $null }
+if ($boot -and $boot.PSObject.Properties.Match('Diagnostics').Count -and $boot.Diagnostics) {
+    Write-Host "[QuickBootTest] Harvested $($boot.Diagnostics.Files.Count) Setup log file(s) to '$($boot.Diagnostics.Path)'." -ForegroundColor Yellow
+    if ($boot.Diagnostics.SetupErrorTail) {
+        Write-Host "[QuickBootTest] --- setuperr.log (tail) ---" -ForegroundColor Yellow
+        Write-Host $boot.Diagnostics.SetupErrorTail
+    }
+}
 return $result
