@@ -274,5 +274,25 @@ Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
             }
         }
     }
+
+    It 'orders <Label> before <Format> in every ModifyPartition (Setup silently drops an out-of-sequence Format)' {
+        # The Windows unattend parser is XSD-sequence-sensitive: when <Format> appears before
+        # <Label> the format directive is silently dropped, leaving the ESP RAW. Setup then fails
+        # at Finalize with BFSVC ServicingBootFiles 0x800703ED (ERROR_UNRECOGNIZED_VOLUME).
+        # Microsoft's own sample and known-good answer files place Label before Format.
+        $cfg = New-TestConfig
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        foreach ($mp in $xml.SelectNodes('//u:ModifyPartitions/u:ModifyPartition', $ns)) {
+            $names = @($mp.ChildNodes | ForEach-Object { $_.LocalName })
+            $labelIdx = $names.IndexOf('Label')
+            $formatIdx = $names.IndexOf('Format')
+            if ($labelIdx -ge 0 -and $formatIdx -ge 0) {
+                $labelIdx | Should -BeLessThan $formatIdx
+            }
+        }
+    }
 }
 

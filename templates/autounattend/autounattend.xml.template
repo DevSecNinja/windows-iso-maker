@@ -3,21 +3,23 @@
   Autounattend.xml TEMPLATE for WindowsIsoMaker (FR-027).
 
   Rendered per-architecture by New-AutounattendXml. Do NOT edit the {{TOKENS}} by hand — they
-  are substituted at build time from the resolved Autounattend sub-config:
-    {{PROCESSOR_ARCHITECTURE}}  amd64 | arm64
-    {{LOCALE}}                  UI/system locale (e.g. en-US)
-    {{USER_LOCALE}}             user locale / region format for dates, times, numbers (e.g. nl-NL)
-    {{KEYBOARD}}                input locale id (e.g. 0409:00000409)
-    {{TIMEZONE}}                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
-    {{DISK_ID}}                 target disk id for the default single-partition layout
-    {{EDITION_IMAGE_NAME}}      install.wim image name to deploy (e.g. Windows 11 Pro)
-    {{SPECIALIZE_FRAGMENT}}     specialize-pass ProductKey settings block (empty when no key). The
-                                key is applied in `specialize`, NOT `windowsPE`, because Windows 11
-                                24H2 Setup rejects generic keys during windowsPE validation on
-                                multi-edition media ("Setup has failed to validate the product key").
-    {{OOBE_FRAGMENT}}           OOBE-skip settings (empty when SkipOobe = $false)
-    {{USERACCOUNTS_FRAGMENT}}   local-account creation (empty when CreateLocalAccount = $false)
-    {{FIRSTLOGON_FRAGMENT}}     FirstLogonCommands (empty when none configured)
+  are substituted at build time from the resolved Autounattend sub-config. Each token below is
+  written as {{NAME}} in the body (the braces are omitted here so this comment is not itself
+  substituted):
+    PROCESSOR_ARCHITECTURE  amd64 | arm64
+    LOCALE                  UI/system locale (e.g. en-US)
+    USER_LOCALE             user locale / region format for dates, times, numbers (e.g. nl-NL)
+    KEYBOARD                input locale id (e.g. 0409:00000409)
+    TIMEZONE                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
+    DISK_ID                 target disk id for the default single-partition layout
+    EDITION_IMAGE_NAME      install.wim image name to deploy (e.g. Windows 11 Pro)
+    SPECIALIZE_FRAGMENT     specialize-pass ProductKey settings block (empty when no key). The
+                            key is applied in `specialize`, NOT `windowsPE`, because Windows 11
+                            24H2 Setup rejects generic keys during windowsPE validation on
+                            multi-edition media ("Setup has failed to validate the product key").
+    OOBE_FRAGMENT           OOBE-skip settings (empty when SkipOobe = $false)
+    USERACCOUNTS_FRAGMENT   local-account creation (empty when CreateLocalAccount = $false)
+    FIRSTLOGON_FRAGMENT     FirstLogonCommands (empty when none configured)
 
   No password or secret is ever written into this file.
 -->
@@ -59,8 +61,8 @@
             <ModifyPartition wcm:action="add">
               <Order>1</Order>
               <PartitionID>1</PartitionID>
-              <Format>FAT32</Format>
               <Label>System</Label>
+              <Format>FAT32</Format>
             </ModifyPartition>
             <ModifyPartition wcm:action="add">
               <Order>2</Order>
@@ -69,9 +71,9 @@
             <ModifyPartition wcm:action="add">
               <Order>3</Order>
               <PartitionID>3</PartitionID>
-              <Format>NTFS</Format>
               <Label>Windows</Label>
               <Letter>C</Letter>
+              <Format>NTFS</Format>
             </ModifyPartition>
           </ModifyPartitions>
         </Disk>

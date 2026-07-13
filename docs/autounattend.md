@@ -83,7 +83,13 @@ whenever the install phase isn't fully specified:
   (partition 2) is deliberately left unformatted. The FAT32 format on the ESP is required — without it
   Setup installs Windows but then fails at the *Finalize / Update Boot Code* step
   (`BFSVC ServicingBootFiles`, error `0x800703ED` = the volume has no recognized file system), because
-  the bootloader cannot be written to an unformatted system partition.
+  the bootloader cannot be written to an unformatted system partition. **Element order matters:** inside
+  each `<ModifyPartition>` the children must follow the unattend schema sequence — in particular
+  `<Label>` (and `<Letter>`) must come *before* `<Format>`. The Windows unattend parser is
+  sequence-sensitive: an out-of-order `<Format>` is *silently dropped* (Setup neither errors nor
+  formats), leaving the ESP RAW and reproducing the `0x800703ED` Finalize failure even though the
+  answer file "looks" correct. Microsoft's own sample and known-good answer files use
+  `Order, PartitionID, Label, [Letter,] Format`.
 - **Key** — see the *Product key* section below. The key (if any) is applied in the **`specialize`**
   pass, not `windowsPE`, so 24H2's strict windowsPE key validation can't hard-stop the install; the
   edition itself is always chosen by the image metadata above.
