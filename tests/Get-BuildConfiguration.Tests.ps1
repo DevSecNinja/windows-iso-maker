@@ -34,7 +34,7 @@ BeforeAll {
     IsoPath = ''
     BootTest = `$false
     CompressionFormat = 'zip'
-    FidoPath = 'vendor/fido/Fido.ps1'
+    FidoPath = ''
     OscdimgPath = ''
 }
 "@ | Set-Content -LiteralPath $script:DefaultConfig -Encoding UTF8
@@ -49,7 +49,7 @@ BeforeAll {
     Architecture = 'arm64'
     Profile = 'default'
     CompressionFormat = '7z'
-    FidoPath = 'vendor/fido/Fido.ps1'
+    FidoPath = ''
 }
 "@ | Set-Content -LiteralPath $script:Arm64Config -Encoding UTF8
 

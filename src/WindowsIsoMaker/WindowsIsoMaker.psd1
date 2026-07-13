@@ -6,7 +6,7 @@
     Author            = 'DevSecNinja'
     CompanyName       = 'DevSecNinja'
     Copyright         = '(c) DevSecNinja. All rights reserved.'
-    Description       = 'Downloads a Windows 11 base ISO (via vendored Fido), offline-services it with DISM to remove documented, citation-backed bloatware and apply documented registry tweaks, then repackages a bootable, compressed per-architecture ISO artifact.'
+    Description       = 'Downloads a Windows 11 base ISO (via a pinned, runtime-fetched Fido), offline-services it with DISM to remove documented, citation-backed bloatware and apply documented registry tweaks, then repackages a bootable, compressed per-architecture ISO artifact.'
 
     # PowerShell 7+ is primary; 5.1 compatibility is validated for DISM-dependent paths.
     PowerShellVersion = '5.1'

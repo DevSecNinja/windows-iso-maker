@@ -55,7 +55,7 @@ the config file is the intended, documented way to configure a build.
     CompressionFormat = 'zip'   # 'zip' | '7z'
 
     # --- Tooling (pinned; Principle V) ---
-    FidoPath    = 'vendor/fido/Fido.ps1'
+    FidoPath    = ''            # empty = download pinned Fido (manifest commit); else local override
     OscdimgPath = ''            # empty = auto-detect from ADK install
 }
 ```

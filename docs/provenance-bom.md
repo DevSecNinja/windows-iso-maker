@@ -58,3 +58,21 @@ For a given release artifact you can:
 1. `sha256sum -c SHA256SUMS` — integrity.
 2. `gh attestation verify ...` — provenance/authenticity.
 3. Open the Image BOM — full, cited inventory of every modification.
+
+## Fido licensing & attribution
+
+The base ISO URL is resolved by [`pbatard/Fido`](https://github.com/pbatard/Fido), a **GPLv3**
+PowerShell script. To keep this MIT-licensed repository clean of GPLv3 sources, Fido is **not
+vendored**. Instead it is treated as an external tool and invoked at arm's length:
+
+- The exact upstream commit is pinned in the module manifest
+  (`RequiredToolingMinimums.FidoCommit`, with the human-readable `FidoTag`) and kept current by
+  Renovate (`github-tags` datasource, tag + commit digest updated together).
+- At build time `Get-Windows11Iso` downloads that pinned `Fido.ps1` from
+  `https://raw.githubusercontent.com/pbatard/Fido/<commit>/Fido.ps1` and caches it under
+  `<TEMP>\WindowsIsoMaker\fido\Fido-<commit>.ps1`. Pinning to the 40-character commit makes the
+  fetch content-addressed (deterministic, like a SHA-pinned GitHub Action), so no separate hash
+  is stored. Set `FidoPath` to a local copy for offline/air-gapped builds.
+- Fido is executed as a **separate program** in a child `pwsh` process — never dot-sourced or
+  embedded — so this project's code and Fido remain independent works (arm's-length GPLv3
+  invocation). The recorded commit appears in the RunReport and Image BOM for auditability.

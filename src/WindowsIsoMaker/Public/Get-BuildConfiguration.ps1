@@ -115,7 +115,7 @@ function Get-BuildConfiguration {
         IsoPath           = ''
         BootTest          = $false
         CompressionFormat = 'zip'
-        FidoPath          = 'vendor/fido/Fido.ps1'
+        FidoPath          = ''
         OscdimgPath       = ''
     }
     foreach ($key in $fileData.Keys) {

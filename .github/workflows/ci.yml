@@ -34,7 +34,7 @@ jobs:
           Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.9999.0 -Force -SkipPublisherCheck -Scope CurrentUser
           Install-Module PSScriptAnalyzer -MinimumVersion 1.21.0 -Force -Scope CurrentUser
 
-      - name: PSScriptAnalyzer (our code only; vendored Fido excluded)
+      - name: PSScriptAnalyzer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

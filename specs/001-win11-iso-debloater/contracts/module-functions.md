@@ -43,7 +43,7 @@ Load and resolve the effective build configuration.
 
 ## `Get-Windows11Iso`
 
-Wrapper over vendored Fido to resolve and download the base ISO.
+Wrapper over a pinned, runtime-fetched Fido to resolve and download the base ISO.
 
 | Parameter | Type | Validation | Default |
 |-----------|------|-----------|---------|
@@ -53,7 +53,7 @@ Wrapper over vendored Fido to resolve and download the base ISO.
 | `Architecture` | string | `ValidateSet('amd64','arm64')` | required |
 | `OutputPath` | string | writable dir | working dir |
 | `IsoPath` | string | path exists | — (override: skip download) |
-| `FidoPath` | string | file exists | `vendor/fido/Fido.ps1` |
+| `FidoPath` | string | file exists when set | `''` (empty = download pinned Fido) |
 
 - **[Mutating]** downloads to disk (network + FS side effects).
 - **Returns**: `BaseImage` object with resolved `Release`, `Path`, `Sha256`, `Verified`.

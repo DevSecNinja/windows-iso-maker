@@ -9,13 +9,9 @@
     Severity = @('Error', 'Warning', 'Information')
 
     ExcludeRules = @(
-        # We ship a module + a thin build.ps1 dispatcher and vendored Fido; the module
-        # manifest declares exports. This rule mis-fires on dot-sourced module layouts.
+        # We ship a module + a thin build.ps1 dispatcher; the module manifest declares
+        # exports. This rule mis-fires on dot-sourced module layouts.
         'PSUseToExportFieldsInManifest',
-
-        # Fido.ps1 is a vendored third-party GPLv3 script (see vendor/fido/NOTICE) and
-        # is intentionally excluded from our style rules; excluded via path below too.
-        'PSAvoidUsingWriteHost',
 
         # This project standardizes on UTF-8 WITHOUT a BOM for cross-platform (Linux CI +
         # Windows runners) consistency. Comments contain a few non-ASCII glyphs (em dashes),

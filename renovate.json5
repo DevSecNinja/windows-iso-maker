@@ -13,21 +13,22 @@
     "github>DevSecNinja/.github//.renovate/packageRules.json5",
     "github>DevSecNinja/.github//.renovate/semanticCommits.json5",
   ],
-  // Repo-local custom manager: track the vendored, pinned Fido dependency.
-  // Fido.ps1 is vendored (GPLv3, arm's-length invocation) and pinned by tag in
-  // vendor/fido/VERSION. Renovate opens a PR when pbatard/Fido publishes a new
-  // release so a maintainer can re-vendor the script (see vendor/fido/VERSION
-  // "Updating" section). The .ps1 itself is re-fetched manually as part of that PR.
+  // Repo-local custom manager: track the pinned pbatard/Fido dependency.
+  // Fido.ps1 is NOT vendored — it is downloaded at build time from raw.githubusercontent.com
+  // pinned to the exact commit recorded in the module manifest (RequiredToolingMinimums:
+  // FidoTag + FidoCommit). Renovate resolves the github tag to its commit and opens a PR that
+  // bumps both the tag (currentValue) and the 40-char commit SHA (currentDigest) together, so
+  // the pin stays content-addressed and fully automated.
   customManagers: [
     {
       customType: "regex",
-      description: "Bump pinned pbatard/Fido tag recorded in vendor/fido/VERSION",
-      managerFilePatterns: ["/^vendor/fido/VERSION$/"],
+      description: "Bump pinned pbatard/Fido (tag + commit) in the module manifest",
+      managerFilePatterns: ["/WindowsIsoMaker\\.psd1$/"],
       matchStrings: [
-        "Pinned tag\\s*:\\s*(?<currentValue>v[0-9]+(?:\\.[0-9]+)*)",
+        "FidoTag\\s*=\\s*'(?<currentValue>v[0-9]+(?:\\.[0-9]+)*)'[\\s\\S]*?FidoCommit\\s*=\\s*'(?<currentDigest>[0-9a-fA-F]{40})'",
       ],
       depNameTemplate: "pbatard/Fido",
-      datasourceTemplate: "github-releases",
+      datasourceTemplate: "github-tags",
       versioningTemplate: "semver-coerced",
     },
   ],

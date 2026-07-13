@@ -63,6 +63,8 @@
     CompressionFormat = 'zip'     # 'zip' | '7z'
 
     # --- Tooling (pinned; Principle V) ---
-    FidoPath    = 'vendor/fido/Fido.ps1'
+    # FidoPath empty => download the Fido.ps1 pinned in the manifest (RequiredToolingMinimums)
+    # at build time and cache it; set a local path only for offline/air-gapped use.
+    FidoPath    = ''
     OscdimgPath = ''              # empty = auto-detect from a Windows ADK install
 }

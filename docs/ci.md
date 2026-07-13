@@ -9,7 +9,7 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
 - **Triggers**: `push` (all branches) and `pull_request`.
 - **Runner**: `windows-latest`.
 - **Steps**: install Pester v5 + PSScriptAnalyzer → run PSScriptAnalyzer with
-  `PSScriptAnalyzerSettings.psd1` (our code only; the vendored Fido is excluded) → run the
+  `PSScriptAnalyzerSettings.psd1` (scans `./src`, `./tests`, `./build.ps1`) → run the
   Pester v5 suite (NUnit results uploaded) → generate the repository/tooling **CycloneDX SBOM**
   via `anchore/sbom-action`.
 - **Gate**: any lint error/warning or failing test fails the job. The catalog documentation

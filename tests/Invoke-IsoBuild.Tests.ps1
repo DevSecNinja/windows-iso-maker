@@ -18,7 +18,7 @@ BeforeAll {
             Autounattend      = $null; AzureUpload = $null
             WorkingDirectory  = (Join-Path $tmp 'work'); OutputDirectory = (Join-Path $tmp 'out')
             IsoPath           = ''; BootTest = $false; CompressionFormat = 'zip'
-            FidoPath          = 'vendor/fido/Fido.ps1'; OscdimgPath = ''
+            FidoPath          = ''; OscdimgPath = ''
             SelectedCatalog   = @(
                 [pscustomobject]@{ Id = 'appx-a'; Type = 'Appx'; Action = 'RemoveAppx'; Target = 'Microsoft.AppA'; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64') }
                 [pscustomobject]@{ Id = 'reg-disable-recall'; Type = 'Registry'; Action = 'SetRegistry'; Target = @{ Hive = 'SOFTWARE'; Path = 'P'; Name = 'N'; Kind = 'DWord'; Value = 1 }; Citation = 'https://learn.microsoft.com/'; Arch = @('amd64') }

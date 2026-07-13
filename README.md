@@ -63,7 +63,6 @@ config/                       # build.config.psd1 + catalog.*.psd1 (the change c
 src/WindowsIsoMaker/          # The PowerShell module (Public/ + Private/)
 templates/autounattend/       # Autounattend.xml template
 tests/                        # Pester v5 tests (incl. the catalog documentation gate)
-vendor/fido/                  # Vendored, pinned pbatard/Fido (GPLv3) + LICENSE/NOTICE
 .github/workflows/            # ci.yml (lint+test+SBOM) and build-image.yml (manual matrix)
 specs/                        # Spec-Driven Development artifacts (spec, plan, tasks, ...)
 docs/                         # This documentation
@@ -71,7 +70,7 @@ docs/                         # This documentation
 
 ## Building blocks
 
-- **Config-driven** selection via named `Profile`s (`minimal`/`default`/`aggressive`), a
+- **Config-driven** selection via named `Profile`s (`minimal`/`default`/`aggressive`/`gaming`), a
   `Toggles` map, and `EnableCatalogId`/`DisableCatalogId` lists.
 - **Cross-architecture**: amd64 on `windows-latest`, arm64 on native `windows-11-arm` runners.
 - **Verifiable builds**: SHA256 checksums + SLSA build provenance + a CycloneDX SBOM and an
@@ -90,5 +89,7 @@ Both run on Linux (DISM/oscdimg are mocked in tests); the actual image build is 
 
 ## License
 
-This repository is MIT-licensed. The vendored `vendor/fido/Fido.ps1` is a separate GPLv3 work
-invoked as an external program; see [vendor/fido/NOTICE](vendor/fido/NOTICE).
+This repository is MIT-licensed. It invokes `pbatard/Fido` (a separate GPLv3 work) as an
+external program: rather than vendoring it, the pinned `Fido.ps1` (see the commit in the module
+manifest `RequiredToolingMinimums`) is downloaded at build time from `raw.githubusercontent.com`
+and cached. See [docs/provenance-bom.md](docs/provenance-bom.md) for the licensing/attribution note.

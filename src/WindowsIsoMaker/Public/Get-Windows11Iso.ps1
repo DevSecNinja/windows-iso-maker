@@ -1,14 +1,18 @@
 function Get-Windows11Iso {
     <#
     .SYNOPSIS
-        Resolve and download a Windows 11 base ISO using the vendored, pinned Fido script.
+        Resolve and download a Windows 11 base ISO using a pinned, runtime-fetched Fido script.
     .DESCRIPTION
-        Wraps the GPLv3 Fido tool (invoked as a SEPARATE external script — see
-        vendor/fido/NOTICE for the licensing boundary) to resolve the official Microsoft
-        download URL for the requested edition/language/release/architecture, then downloads
-        the ISO and records a SHA-256 hash for integrity (FR-020, Principle VII). If -IsoPath
-        is supplied, that pre-downloaded ISO is validated and used instead of downloading.
-        Fails fast with a terminating error if the requested combination is unavailable.
+        Wraps the GPLv3 Fido tool (invoked as a SEPARATE external script — see the licensing
+        note in docs/provenance-bom.md) to resolve the official Microsoft download URL for the
+        requested edition/language/release/architecture, then downloads the ISO and records a
+        SHA-256 hash for integrity (FR-020, Principle VII). Fido itself is not vendored: a copy
+        pinned to an exact upstream commit (see the manifest RequiredToolingMinimums) is
+        downloaded from raw.githubusercontent.com on first use and cached; the 40-char commit
+        SHA is content-addressed, so this is deterministic in the same way a pinned GitHub
+        Action is. If -IsoPath is supplied, that pre-downloaded ISO is validated and used
+        instead of downloading. Fails fast with a terminating error if the requested
+        combination is unavailable.
     .PARAMETER Edition
         Windows 11 edition (e.g. 'Pro').
     .PARAMETER Language
@@ -22,7 +26,9 @@ function Get-Windows11Iso {
     .PARAMETER IsoPath
         Optional path to an already-downloaded ISO; when set, skips the download.
     .PARAMETER FidoPath
-        Path to the vendored Fido.ps1. Defaults to vendor/fido/Fido.ps1.
+        Optional path to a local Fido.ps1. When empty (the default), the pinned Fido.ps1 is
+        downloaded from raw.githubusercontent.com (by the commit recorded in the manifest) and
+        cached; set this only to use an offline/custom copy.
     .PARAMETER Force
         Re-download even if a matching ISO already exists in OutputPath (bypass the cache).
     .PARAMETER ExpectedSha256
@@ -60,7 +66,7 @@ function Get-Windows11Iso {
         [string] $IsoPath,
 
         [Parameter()]
-        [string] $FidoPath = 'vendor/fido/Fido.ps1',
+        [string] $FidoPath = '',
 
         [Parameter()]
         [switch] $Force,
@@ -133,7 +139,8 @@ function Get-Windows11Iso {
     )
 
     Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Resolving download URL via Fido ($Edition/$Language/$Release/$Architecture)."
-    $sourceUrl = Invoke-FidoUrlResolver -FidoPath $FidoPath -Arguments $fidoArgs
+    $resolvedFido = Resolve-FidoScriptPath -FidoPath $FidoPath
+    $sourceUrl = Invoke-FidoUrlResolver -FidoPath $resolvedFido -Arguments $fidoArgs
 
     if ([string]::IsNullOrWhiteSpace($sourceUrl) -or $sourceUrl -notmatch '^https?://') {
         throw "The requested Windows 11 combination (Edition=$Edition, Language=$Language, Release=$Release, Architecture=$Architecture) is unavailable or Fido returned no URL."
@@ -211,10 +218,145 @@ function ConvertTo-FidoLanguage {
     return $Language
 }
 
+function Get-FidoPin {
+    <#
+    .SYNOPSIS
+        Read the pinned Fido tag and commit from the module manifest.
+    .DESCRIPTION
+        Private helper. RequiredToolingMinimums in WindowsIsoMaker.psd1 is the single source of
+        truth for the Fido pin (Renovate keeps FidoTag/FidoCommit current). Returns both so the
+        downloader can content-address by the 40-char commit while logs name the readable tag.
+    .OUTPUTS
+        PSCustomObject with Tag and Commit.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $manifestPath = Join-Path $script:ModuleRoot 'WindowsIsoMaker.psd1'
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        throw "Module manifest not found at '$manifestPath'; cannot resolve the pinned Fido version."
+    }
+    $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+    $mins = $manifest.PrivateData.PSData.RequiredToolingMinimums
+    $commit = [string]$mins.FidoCommit
+    $tag = [string]$mins.FidoTag
+    if ($commit -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "Manifest FidoCommit ('$commit') is not a full 40-character commit SHA."
+    }
+    return [pscustomobject]@{ Tag = $tag; Commit = $commit }
+}
+
+function Get-FidoCachePath {
+    <#
+    .SYNOPSIS
+        Return the on-disk cache path for a Fido.ps1 pinned to a given commit.
+    .DESCRIPTION
+        Private helper. The cache lives under <TEMP>\WindowsIsoMaker\fido and the file name embeds
+        the commit, so different pins never collide and a cached copy is safe to reuse across runs.
+    .PARAMETER Commit
+        Full 40-character upstream commit SHA.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string] $Commit)
+
+    $cacheDir = Join-Path ([System.IO.Path]::GetTempPath()) 'WindowsIsoMaker\fido'
+    return Join-Path $cacheDir "Fido-$Commit.ps1"
+}
+
+function Invoke-FidoScriptDownload {
+    <#
+    .SYNOPSIS
+        Download the pinned Fido.ps1 from raw.githubusercontent.com to the commit-addressed cache.
+    .DESCRIPTION
+        Private helper. Fetches https://raw.githubusercontent.com/pbatard/Fido/<commit>/Fido.ps1 to
+        a sibling .part file and renames it on success, so an interrupted transfer never leaves a
+        truncated script that a later run would trust. Pinning to the exact commit makes the fetch
+        deterministic (content-addressed like a pinned GitHub Action); no separate hash is needed.
+    .PARAMETER Commit
+        Full 40-character upstream commit SHA to fetch.
+    .PARAMETER Destination
+        Cache file path to write (from Get-FidoCachePath).
+    .OUTPUTS
+        System.String (the Destination path).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Commit,
+        [Parameter(Mandatory = $true)][string] $Destination
+    )
+
+    $url = "https://raw.githubusercontent.com/pbatard/Fido/$Commit/Fido.ps1"
+    $cacheDir = Split-Path -Parent $Destination
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+    }
+
+    Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Downloading pinned Fido.ps1 (commit $Commit) from '$url'."
+    $tempFile = "$Destination.part"
+    if (Test-Path -LiteralPath $tempFile) { Remove-Item -LiteralPath $tempFile -Force }
+
+    $previousProgress = $ProgressPreference
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $url -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
+    }
+    finally {
+        $ProgressPreference = $previousProgress
+    }
+
+    if (-not (Test-Path -LiteralPath $tempFile) -or ((Get-Item -LiteralPath $tempFile).Length -le 0)) {
+        throw "Fido download from '$url' produced no content."
+    }
+
+    Move-Item -LiteralPath $tempFile -Destination $Destination -Force
+    return $Destination
+}
+
+function Resolve-FidoScriptPath {
+    <#
+    .SYNOPSIS
+        Resolve the Fido.ps1 to run: a caller-supplied local copy, or the pinned cached download.
+    .DESCRIPTION
+        Private helper. A non-empty FidoPath is an offline/custom override and is used as-is (it
+        must exist). Otherwise the commit pinned in the manifest is resolved: a cached copy at
+        <TEMP>\WindowsIsoMaker\fido\Fido-<commit>.ps1 is reused when present, else downloaded once.
+        This is the seam mocked in tests so no network call happens under unit tests.
+    .PARAMETER FidoPath
+        Optional local Fido.ps1 override. Empty => download the pinned commit.
+    .OUTPUTS
+        System.String (path to a usable Fido.ps1).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter()][string] $FidoPath = '')
+
+    if (-not [string]::IsNullOrWhiteSpace($FidoPath)) {
+        if (-not (Test-Path -LiteralPath $FidoPath)) {
+            throw "Local FidoPath override '$FidoPath' does not exist."
+        }
+        Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Using local Fido override '$FidoPath'."
+        return (Resolve-Path -LiteralPath $FidoPath).Path
+    }
+
+    $pin = Get-FidoPin
+    $cachePath = Get-FidoCachePath -Commit $pin.Commit
+    if ((Test-Path -LiteralPath $cachePath) -and ((Get-Item -LiteralPath $cachePath).Length -gt 0)) {
+        Write-BuildLog -Level Information -Component 'Get-Windows11Iso' -Message "Reusing cached Fido.ps1 (tag $($pin.Tag), commit $($pin.Commit))."
+        return $cachePath
+    }
+
+    return (Invoke-FidoScriptDownload -Commit $pin.Commit -Destination $cachePath)
+}
+
 function Invoke-FidoUrlResolver {
     <#
     .SYNOPSIS
-        Invoke the vendored Fido.ps1 as a separate process to resolve a download URL, with retries.
+        Invoke the pinned Fido.ps1 as a separate process to resolve a download URL, with retries.
     .DESCRIPTION
         Private helper and the single GPLv3 boundary: Fido is executed as an independent
         external script in a child pwsh process (never dot-sourced/embedded). Returns the
@@ -246,7 +388,7 @@ function Invoke-FidoUrlResolver {
     )
 
     if (-not (Test-Path -LiteralPath $FidoPath)) {
-        throw "Vendored Fido script not found at '$FidoPath'. See vendor/fido/VERSION."
+        throw "Fido script not found at '$FidoPath'."
     }
 
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
@@ -281,7 +423,7 @@ function Invoke-FidoUrlResolver {
 function Invoke-FidoProcess {
     <#
     .SYNOPSIS
-        Run the vendored Fido.ps1 once in a child process and extract any resolved URL.
+        Run the pinned Fido.ps1 once in a child process and extract any resolved URL.
     .DESCRIPTION
         Private helper (mockable seam for the retry loop in Invoke-FidoUrlResolver). Executes
         Fido as a separate program (arm's-length GPLv3 invocation) and returns both the parsed
