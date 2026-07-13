@@ -40,6 +40,10 @@
 .PARAMETER DisableCatalogId
     Catalog ids to force-disable (explicit ids win).
 
+.PARAMETER ProductKey
+    Optional override for the Autounattend product key. Required for a hands-off non-Home 24H2
+    install (only Home installs without a key; the generic KMS keys fail 24H2 validation).
+
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
 
@@ -105,6 +109,10 @@ param(
     [string[]] $DisableCatalogId,
 
     [Parameter()]
+    [AllowEmptyString()]
+    [string] $ProductKey,
+
+    [Parameter()]
     [switch] $SkipHeavyBuild,
 
     [Parameter()]
@@ -146,7 +154,7 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'ProductKey') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }

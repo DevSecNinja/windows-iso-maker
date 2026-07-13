@@ -39,6 +39,11 @@ function Invoke-IsoBuild {
         Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
     .PARAMETER DisableCatalogId
         Optional force-disable catalog ids.
+    .PARAMETER ProductKey
+        Optional override for the Autounattend product key (config Autounattend.ProductKey).
+        Required for a hands-off non-Home 24H2 install (only Home installs without a key; the
+        generic KMS keys fail 24H2's online validation). '' / 'none' omit it; a genuine key is
+        baked in verbatim.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -92,6 +97,10 @@ function Invoke-IsoBuild {
         [string[]] $DisableCatalogId,
 
         [Parameter()]
+        [AllowEmptyString()]
+        [string] $ProductKey,
+
+        [Parameter()]
         [switch] $SkipHeavyBuild,
 
         [Parameter()]
@@ -109,6 +118,15 @@ function Invoke-IsoBuild {
             if ($PSBoundParameters.ContainsKey($n)) { $cfgParams[$n] = $PSBoundParameters[$n] }
         }
         $Config = Get-BuildConfiguration @cfgParams
+    }
+
+    # Last-mile ProductKey override applies to the nested Autounattend sub-config (it is not a
+    # top-level field, so Get-BuildConfiguration does not carry it). Required for a hands-off
+    # non-Home 24H2 install; only Home installs without a key.
+    if ($PSBoundParameters.ContainsKey('ProductKey')) {
+        $au = $Config.Autounattend
+        if ($au -is [hashtable]) { $au['ProductKey'] = $ProductKey }
+        elseif ($null -ne $au) { $au | Add-Member -NotePropertyName 'ProductKey' -NotePropertyValue $ProductKey -Force }
     }
 
     $isPreview = $WhatIfPreference -or $SkipHeavyBuild.IsPresent
