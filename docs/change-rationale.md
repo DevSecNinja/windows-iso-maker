@@ -42,7 +42,11 @@ from three inputs, in order of increasing precedence:
 1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming` / `opinionated`,
    where `gaming` is `default` minus the `Category = 'Gaming'` entries so Xbox / Game Bar are
    preserved, and `opinionated` is `aggressive` plus the `Category = 'Opinionated'` personal-taste
-   extras — reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL).
+   extras — reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL, and the
+   United States-International keyboard layout for English (US)). `Profile` also accepts a list to
+   combine baselines (e.g. `gaming,opinionated`): the selected profiles are UNIONed, and when
+   `gaming` is one of them the `Category = 'Gaming'` entries stay preserved — so
+   `gaming,opinionated` gives aggressive debloat + opinionated tweaks with a working gaming stack.
 2. `Toggles` — a per-id `@{ id = $true/$false }` map.
 3. `EnableCatalogId` / `DisableCatalogId` — explicit ids always win.
 

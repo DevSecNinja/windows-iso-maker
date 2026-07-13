@@ -21,7 +21,7 @@
     Architecture = 'amd64'      # 'amd64' | 'arm64' (validated)
 
     # --- Data-driven change selection (FR-024) ---
-    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated' (baseline set)
+    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'; accepts a list, e.g. @('gaming','opinionated')
     Toggles          = @{}        # per-id override map, e.g. @{ 'appx-todos' = $false; 'feature-wsl' = $true }
     EnableCatalogId  = @('reg-reverse-mouse-scroll')  # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
     DisableCatalogId = @()        # force-disable specific catalog entries by Id (explicit ids win)
@@ -45,7 +45,10 @@
         LocalAccountName = 'Admin'        # local account username (no password stored in the file)
         Locale           = 'en-US'        # UI / system language (kept English (United States))
         UserLocale       = 'nl-NL'         # region format for dates/times/numbers = Dutch (Netherlands)
-        KeyboardLayout   = '0409:00000409' # input locale (en-US)
+        # KeyboardLayout: input locale. Left unset so the profile-driven default applies:
+        #   most profiles => '0409:00000409' (US); the 'opinionated' profile => '0409:00020409'
+        #   (United States-International, so English (US) types on US-International). Uncomment to pin.
+        # KeyboardLayout   = '0409:00000409'
         TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout
         # ProductKey: baked into the answer file. Windows 11 24H2 Setup only installs hands-off

@@ -7,8 +7,13 @@ function Resolve-CatalogSelection {
         per-feature switches). The resolution order is:
 
             1. Architecture filter (Principle IV) — entries not listing the target arch are dropped.
-            2. Profile baseline — 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'
-               selects an initial enabled set.
+            2. Profile baseline — one or more of 'minimal' | 'default' | 'aggressive' | 'gaming' |
+               'opinionated' select an initial enabled set. When several profiles are given the
+               baselines are UNIONed (an entry is enabled if ANY selected profile enables it), with
+               one exception: if 'gaming' is among them, Category='Gaming' entries (Xbox / Game Bar)
+               are kept (never removed) even though aggressive/opinionated otherwise remove them —
+               so e.g. 'gaming','opinionated' = aggressive debloat + opinionated tweaks but a
+               working gaming stack.
             3. Toggles map — per-id boolean overrides from the config (Id -> $true/$false).
             4. EnableCatalogId — force-enable specific ids (opt-in, e.g. 'remove-edge','feature-wsl').
             5. DisableCatalogId — force-disable specific ids (explicit ids win, applied last).
@@ -32,7 +37,8 @@ function Resolve-CatalogSelection {
     .PARAMETER Architecture
         Target architecture ('amd64' or 'arm64'); entries not listing it are excluded.
     .PARAMETER Profile
-        Baseline profile: 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'.
+        Baseline profile(s): one or more of 'minimal' | 'default' | 'aggressive' | 'gaming' |
+        'opinionated'. Multiple values are UNIONed (with 'gaming' protecting the gaming stack).
     .PARAMETER Toggles
         Hashtable of per-id boolean overrides (Id -> $true/$false).
     .PARAMETER EnableCatalogId
@@ -58,7 +64,7 @@ function Resolve-CatalogSelection {
 
         [Parameter()]
         [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
-        [string] $Profile = 'default',
+        [string[]] $Profile = @('default'),
 
         [Parameter()]
         [hashtable] $Toggles = @{},
@@ -89,8 +95,19 @@ function Resolve-CatalogSelection {
             continue
         }
 
-        # 2. Profile baseline.
-        $enabled = Test-CatalogEntryInProfile -Entry $entry -Profile $Profile
+        # 2. Profile baseline: an entry is enabled if ANY selected profile enables it (union of
+        #    the chosen profiles).
+        $enabled = $false
+        foreach ($p in $Profile) {
+            if (Test-CatalogEntryInProfile -Entry $entry -Profile $p) { $enabled = $true; break }
+        }
+        # 'gaming' protection wins over the other profiles in the union: when the combination
+        # includes 'gaming', a Category='Gaming' entry (Xbox / Game Bar) is never removed by the
+        # baseline, even though aggressive/opinionated otherwise would. An explicit EnableCatalogId
+        # (step 4) can still force such a removal back on.
+        if ($enabled -and ($Profile -contains 'gaming') -and ((Get-CatalogEntryCategory -Entry $entry) -eq 'Gaming')) {
+            $enabled = $false
+        }
 
         # 3. Toggles per-id override.
         if ($Toggles -and $Toggles.ContainsKey($entry.Id)) {
@@ -113,6 +130,31 @@ function Resolve-CatalogSelection {
     }
 
     return $selected.ToArray()
+}
+
+function Get-CatalogEntryCategory {
+    <#
+    .SYNOPSIS
+        Return a catalog entry's Category ('' when it has none), handling both hashtable and
+        pscustomobject entry shapes (private helper for Resolve-CatalogSelection).
+    .PARAMETER Entry
+        A single catalog entry.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)] [object] $Entry
+    )
+
+    if ($Entry -is [System.Collections.IDictionary]) {
+        if ($Entry.Contains('Category')) { return [string]$Entry['Category'] }
+    }
+    elseif (($Entry.PSObject.Properties.Name -contains 'Category')) {
+        return [string]$Entry.Category
+    }
+    return ''
 }
 
 function Test-CatalogEntryInProfile {
@@ -155,26 +197,14 @@ function Test-CatalogEntryInProfile {
             # Same debloat baseline as 'default', but preserve gaming components: entries tagged
             # Category='Gaming' (the Xbox Game Bar / Xbox provisioned apps) are never removed, so
             # gamers keep a working Xbox / Game Bar stack.
-            $isGaming = if ($Entry -is [System.Collections.IDictionary]) {
-                $Entry.Contains('Category') -and $Entry['Category'] -eq 'Gaming'
-            }
-            else {
-                ($Entry.PSObject.Properties.Name -contains 'Category') -and $Entry.Category -eq 'Gaming'
-            }
-            if ($isGaming) { return $false }
+            if ((Get-CatalogEntryCategory -Entry $Entry) -eq 'Gaming') { return $false }
             return $isDefault
         }
         'opinionated' {
             # The 'aggressive' baseline PLUS personal-taste extras tagged Category='Opinionated'
             # (reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL +
             # Virtual Machine Platform). Those grade-3/additive opt-ins appear in no other profile.
-            $isOpinionated = if ($Entry -is [System.Collections.IDictionary]) {
-                $Entry.Contains('Category') -and $Entry['Category'] -eq 'Opinionated'
-            }
-            else {
-                ($Entry.PSObject.Properties.Name -contains 'Category') -and $Entry.Category -eq 'Opinionated'
-            }
-            if ($isOpinionated) { return $true }
+            if ((Get-CatalogEntryCategory -Entry $Entry) -eq 'Opinionated') { return $true }
             # Fall through to the aggressive baseline.
             if ($isDefault) { return $true }
             return ($grade -le 2 -and $action -in @('RemoveAppx', 'RemoveCapability'))

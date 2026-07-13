@@ -95,6 +95,64 @@ Describe 'Opinionated profile baseline' {
     }
 }
 
+Describe 'Combining profiles (union with gaming veto)' {
+    It 'gaming,opinionated keeps the Xbox/gaming stack but adds the opinionated extras' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $comboIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile gaming, opinionated | ForEach-Object { $_.Id })
+
+            # Gaming veto: every Category=Gaming entry is preserved (not removed).
+            $gamingCategoryIds = @($catalog | Where-Object {
+                    ($_.PSObject.Properties.Name -contains 'Category') -and $_.Category -eq 'Gaming'
+                } | ForEach-Object { $_.Id })
+            foreach ($id in $gamingCategoryIds) {
+                $comboIds | Should -Not -Contain $id -Because 'gaming in the combination preserves the gaming stack'
+            }
+
+            # Opinionated extras are included.
+            foreach ($id in @('reg-reverse-mouse-scroll', 'feature-wsl', 'feature-vmplatform', 'reg-disable-start-web-search')) {
+                $comboIds | Should -Contain $id -Because 'opinionated in the combination adds its personal-taste extras'
+            }
+
+            # Aggressive/default non-gaming debloat still applies.
+            $comboIds | Should -Contain 'appx-clipchamp'
+            $comboIds | Should -Contain 'reg-disable-recall'
+        }
+    }
+
+    It 'gaming,opinionated equals opinionated minus the Category=Gaming entries' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $comboIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile gaming, opinionated | ForEach-Object { $_.Id })
+            $opinionatedIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile opinionated | ForEach-Object { $_.Id })
+
+            $gamingCategoryIds = @($catalog | Where-Object {
+                    ($_.PSObject.Properties.Name -contains 'Category') -and $_.Category -eq 'Gaming'
+                } | ForEach-Object { $_.Id })
+
+            $expected = @($opinionatedIds | Where-Object { $gamingCategoryIds -notcontains $_ })
+            ($comboIds | Sort-Object) | Should -Be ($expected | Sort-Object)
+        }
+    }
+
+    It 'EnableCatalogId still overrides the gaming veto in a combination' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $ids = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile gaming, opinionated -EnableCatalogId 'appx-xbox-app' | ForEach-Object { $_.Id })
+            $ids | Should -Contain 'appx-xbox-app' -Because 'an explicit EnableCatalogId beats the gaming veto'
+        }
+    }
+
+    It 'a single-value array behaves like the scalar profile' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $arrayIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile @('default') | ForEach-Object { $_.Id })
+            $scalarIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile default | ForEach-Object { $_.Id })
+            ($arrayIds | Sort-Object) | Should -Be ($scalarIds | Sort-Object)
+        }
+    }
+}
+
 Describe 'Test-CatalogEntryInProfile Category handling' {
     It 'excludes a Category=Gaming entry from the gaming profile (hashtable entry)' {
         InModuleScope WindowsIsoMaker {

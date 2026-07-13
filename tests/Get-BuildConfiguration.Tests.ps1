@@ -172,4 +172,43 @@ Describe 'Get-BuildConfiguration' {
             }
         }
     }
+
+    Context 'Profile combinations and opinionated keyboard layout' {
+        It 'accepts a list of profiles and stores them joined' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'gaming', 'opinionated'
+            $cfg.Profile | Should -Be 'gaming, opinionated'
+        }
+
+        It 'gaming,opinionated keeps the Xbox app but adds opinionated extras' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'gaming', 'opinionated'
+            $ids = $cfg.SelectedCatalog | ForEach-Object { $_.Id }
+            $ids | Should -Not -Contain 'appx-xbox-app'
+            $ids | Should -Contain 'reg-reverse-mouse-scroll'
+        }
+
+        It 'defaults to United States-International keyboard under opinionated' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'opinionated'
+            $cfg.Autounattend.KeyboardLayout | Should -Be '0409:00020409'
+        }
+
+        It 'keeps the plain US keyboard for non-opinionated profiles' {
+            $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'aggressive'
+            $cfg.Autounattend.KeyboardLayout | Should -Be '0409:00000409'
+        }
+
+        It 'still honours an explicit KeyboardLayout in the config under opinionated' {
+            $customConfig = Join-Path $script:TempRoot 'kbd.psd1'
+            @"
+@{
+    Edition = 'Pro'
+    Language = 'en-US'
+    Architecture = 'amd64'
+    Profile = 'opinionated'
+    Autounattend = @{ KeyboardLayout = '0413:00000413' }
+}
+"@ | Set-Content -LiteralPath $customConfig -Encoding UTF8
+            $cfg = Get-BuildConfiguration -Path $customConfig
+            $cfg.Autounattend.KeyboardLayout | Should -Be '0413:00000413'
+        }
+    }
 }

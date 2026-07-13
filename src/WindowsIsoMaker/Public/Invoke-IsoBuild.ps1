@@ -34,7 +34,9 @@ function Invoke-IsoBuild {
     .PARAMETER Release
         Optional release override.
     .PARAMETER Profile
-        Optional profile override ('minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated').
+        Optional profile override: one or more of 'minimal' | 'default' | 'aggressive' | 'gaming' |
+        'opinionated' (e.g. -Profile gaming,opinionated). Multiple values are UNIONed; 'gaming'
+        preserves the gaming stack.
     .PARAMETER EnableCatalogId
         Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
     .PARAMETER DisableCatalogId
@@ -97,7 +99,7 @@ function Invoke-IsoBuild {
 
         [Parameter()]
         [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
-        [string] $Profile,
+        [string[]] $Profile,
 
         [Parameter()]
         [string[]] $EnableCatalogId,

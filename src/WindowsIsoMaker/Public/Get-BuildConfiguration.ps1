@@ -33,7 +33,9 @@ function Get-BuildConfiguration {
     .PARAMETER Architecture
         Optional override for the target architecture ('amd64' | 'arm64').
     .PARAMETER Profile
-        Optional override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated').
+        Optional override for the catalog profile(s): one or more of 'minimal' | 'default' |
+        'aggressive' | 'gaming' | 'opinionated'. Multiple values (e.g. 'gaming','opinionated') are
+        UNIONed; 'gaming' preserves the gaming stack.
     .PARAMETER EnableCatalogId
         Catalog ids to force-enable (opt-in), e.g. 'remove-edge','feature-wsl'.
     .PARAMETER DisableCatalogId
@@ -71,7 +73,7 @@ function Get-BuildConfiguration {
 
         [Parameter()]
         [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
-        [string] $Profile,
+        [string[]] $Profile,
 
         [Parameter()]
         [string[]] $EnableCatalogId,
@@ -187,9 +189,23 @@ function Get-BuildConfiguration {
     if (@('amd64', 'arm64') -notcontains $resolved['Architecture']) {
         throw "Invalid configuration: 'Architecture' must be 'amd64' or 'arm64' (got '$($resolved['Architecture'])')."
     }
-    if (@('minimal', 'default', 'aggressive', 'gaming', 'opinionated') -notcontains $resolved['Profile']) {
-        throw "Invalid configuration: 'Profile' must be 'minimal', 'default', 'aggressive', 'gaming', or 'opinionated' (got '$($resolved['Profile'])')."
+    # Normalize Profile into a validated list. Supports a single value, a config array
+    # (Profile = @('gaming','opinionated')), a comma/semicolon-separated string (env/file), or the
+    # -Profile parameter. Multiple profiles are UNIONed by Resolve-CatalogSelection.
+    $profileList = @(
+        @($resolved['Profile']) |
+            ForEach-Object { [string]$_ -split '[,;]' } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() } |
+            Where-Object { $_ }
+    )
+    if ($profileList.Count -eq 0) { $profileList = @('default') }
+    $validProfiles = @('minimal', 'default', 'aggressive', 'gaming', 'opinionated')
+    foreach ($p in $profileList) {
+        if ($validProfiles -notcontains $p) {
+            throw "Invalid configuration: 'Profile' must be one or more of $($validProfiles -join ', ') (got '$p')."
+        }
     }
+    $resolved['Profile'] = $profileList
     if (@('zip', '7z') -notcontains $resolved['CompressionFormat']) {
         throw "Invalid configuration: 'CompressionFormat' must be 'zip' or '7z' (got '$($resolved['CompressionFormat'])')."
     }
@@ -216,7 +232,8 @@ function Get-BuildConfiguration {
 
     # --- 9. Resolve the Autounattend sub-config (merge over documented defaults). ---
     $autounattend = Resolve-AutounattendConfig -FileValue $resolved['Autounattend'] `
-        -Language $resolved['Language'] -Architecture $resolved['Architecture']
+        -Language $resolved['Language'] -Architecture $resolved['Architecture'] `
+        -Profile $profileList
 
     # --- 10. Emit the BuildConfiguration object. ---
     return [pscustomobject]@{
@@ -226,7 +243,7 @@ function Get-BuildConfiguration {
         Language          = [string]$resolved['Language']
         Release           = [string]$resolved['Release']
         Architecture      = [string]$resolved['Architecture']
-        Profile           = [string]$resolved['Profile']
+        Profile           = ($profileList -join ', ')
         Toggles           = $toggles
         EnableCatalogId   = @($resolved['EnableCatalogId'])
         DisableCatalogId  = @($resolved['DisableCatalogId'])
@@ -258,16 +275,29 @@ function Resolve-AutounattendConfig {
     .PARAMETER Architecture
         The resolved architecture (recorded for reference; the XML processorArchitecture is
         set by New-AutounattendXml).
+    .PARAMETER Profile
+        The resolved profile list. When it includes 'opinionated' the default keyboard layout
+        becomes United States-International (0409:00020409) instead of plain US, matching the
+        opinionated preference to always type on US-International. An explicit KeyboardLayout in
+        the config file still wins.
     .OUTPUTS
         System.Collections.Hashtable
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
+        Justification = 'Profile is the domain term for the catalog profile; it is only read here, never reassigned.')]
     param(
         [Parameter()] $FileValue,
         [Parameter(Mandatory = $true)] [string] $Language,
-        [Parameter(Mandatory = $true)] [string] $Architecture
+        [Parameter(Mandatory = $true)] [string] $Architecture,
+        [Parameter()] [string[]] $Profile = @('default')
     )
+
+    # Opinionated builds default to the United States-International keyboard layout so that
+    # English (United States) also types on US-International (dead keys for accents), rather than
+    # the plain US layout. An explicit Autounattend.KeyboardLayout in the config file overrides it.
+    $defaultKeyboard = if ($Profile -contains 'opinionated') { '0409:00020409' } else { '0409:00000409' }
 
     $defaults = @{
         Enabled               = $true
@@ -277,7 +307,7 @@ function Resolve-AutounattendConfig {
         CreateLocalAccount    = $true
         LocalAccountName      = 'Admin'
         Locale                = $Language
-        KeyboardLayout        = '0409:00000409'
+        KeyboardLayout        = $defaultKeyboard
         TimeZone              = 'UTC'
         DiskId                = 0
         FirstLogonCommands    = @()

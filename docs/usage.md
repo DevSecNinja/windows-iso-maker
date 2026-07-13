@@ -23,7 +23,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | Field | Meaning |
 |-------|---------|
 | `Edition` / `Language` / `Release` / `Architecture` | Base image selection (Fido inputs). `Architecture` is `amd64` or `arm64`. |
-| `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + personal-taste extras: reversed scroll, Start web-search off, Spotlight off, WSL). |
+| `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + personal-taste extras: reversed scroll, Start web-search off, Spotlight off, WSL, and the United States-International keyboard layout for English (US)). Accepts a list to combine profiles, e.g. `@('gaming','opinionated')` — the baselines are UNIONed and `gaming` keeps the gaming stack. |
 | `Toggles` | Per-id override map, e.g. `@{ 'appx-todos' = $false; 'feature-wsl' = $true }`. |
 | `EnableCatalogId` / `DisableCatalogId` | Force-enable / force-disable specific entries by `Id` (explicit ids win). |
 | `Autounattend` | Install/OOBE-time options (see [autounattend.md](autounattend.md)). |
@@ -52,7 +52,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-ConfigPath` (alias `-Path`) | Config file to load (default `config/build.config.psd1`). |
 | `-Architecture` | `amd64` \| `arm64`. |
 | `-Edition` / `-Language` / `-Release` | Base image overrides. |
-| `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming` \| `opinionated`. |
+| `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming` \| `opinionated`. Accepts a comma-separated list to combine, e.g. `-Profile gaming,opinionated`. |
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
 | `-ProductKey` | Override the Autounattend product key. **Required for a hands-off non-Home 24H2 install** — only Home installs without a key (the generic KMS keys fail 24H2's online validation). `''`/`none` omit it; a genuine key is baked in verbatim. |
 | `-UseGenericProductKey` | Bake the edition's generic/default retail key so Setup skips the OOBE product-key page (no activation). The easy way to make a fully hands-off **Home** build. An explicit `-ProductKey` wins; non-Home generic keys may still fail 24H2 validation. |
@@ -88,6 +88,10 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 
 # Gaming profile: full debloat but preserve Xbox Game Bar and the Xbox provisioned apps
 ./build.ps1 -Profile gaming
+
+# Game PC: aggressive debloat + opinionated tweaks (reversed scroll, US-International keyboard,
+# WSL, ...) while keeping the whole Xbox / Game Bar gaming stack
+./build.ps1 -Profile gaming,opinionated
 
 # Opt in to Edge + OneDrive removal and enable WSL
 ./build.ps1 -EnableCatalogId remove-edge,remove-onedrive,feature-wsl
