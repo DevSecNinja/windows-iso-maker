@@ -38,6 +38,35 @@ Describe 'New-BootableIso' {
         }
     }
 
+    It 'prefers efisys_noprompt.bin for the UEFI boot image when present' {
+        'x' | Set-Content -LiteralPath (Join-Path $script:MediaRoot 'efi/microsoft/boot/efisys_noprompt.bin')
+        InModuleScope WindowsIsoMaker -Parameters @{ MediaRoot = $script:MediaRoot; OutIso = $script:OutIso } {
+            param($MediaRoot, $OutIso)
+            Mock Resolve-OscdimgPath { 'C:\adk\oscdimg.exe' }
+            Mock Invoke-OscdimgTool { param($OscdimgPath, $Arguments) 'iso' | Set-Content -LiteralPath $OutIso }
+
+            New-BootableIso -MediaRoot $MediaRoot -Architecture amd64 -OutputIsoPath $OutIso | Out-Null
+
+            Should -Invoke Invoke-OscdimgTool -Times 1 -ParameterFilter {
+                ($Arguments -join ' ') -match 'pEF,e,b\S*efisys_noprompt\.bin'
+            }
+        }
+    }
+
+    It 'falls back to efisys.bin when the no-prompt variant is absent' {
+        InModuleScope WindowsIsoMaker -Parameters @{ MediaRoot = $script:MediaRoot; OutIso = $script:OutIso } {
+            param($MediaRoot, $OutIso)
+            Mock Resolve-OscdimgPath { 'C:\adk\oscdimg.exe' }
+            Mock Invoke-OscdimgTool { param($OscdimgPath, $Arguments) 'iso' | Set-Content -LiteralPath $OutIso }
+
+            New-BootableIso -MediaRoot $MediaRoot -Architecture amd64 -OutputIsoPath $OutIso | Out-Null
+
+            Should -Invoke Invoke-OscdimgTool -Times 1 -ParameterFilter {
+                ($Arguments -join ' ') -match 'pEF,e,b\S*efisys\.bin' -and ($Arguments -join ' ') -notmatch 'efisys_noprompt'
+            }
+        }
+    }
+
     It 'selects UEFI-only boot data for arm64' {
         InModuleScope WindowsIsoMaker -Parameters @{ MediaRoot = $script:MediaRoot; OutIso = $script:OutIso } {
             param($MediaRoot, $OutIso)

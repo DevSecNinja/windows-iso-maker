@@ -5,9 +5,11 @@ function New-BootableIso {
     .DESCRIPTION
         Invokes oscdimg (Windows ADK Deployment Tools) to author a bootable ISO from the
         extracted, serviced media tree. Selects boot data by architecture (Principle IV):
-        amd64 gets BIOS + UEFI boot (etfsboot.com + efisys.bin); arm64 is UEFI-only
-        (efisys.bin, matching the ARM64 EFI boot layout). Fails fast with an actionable error
-        if oscdimg cannot be found.
+        amd64 gets BIOS + UEFI boot (etfsboot.com + efisys); arm64 is UEFI-only
+        (efisys, matching the ARM64 EFI boot layout). The UEFI boot image prefers
+        'efisys_noprompt.bin' over 'efisys.bin' so unattended media boots straight into Setup
+        without stalling on "Press any key to boot from CD or DVD...". Fails fast with an
+        actionable error if oscdimg cannot be found.
     .PARAMETER MediaRoot
         Root directory of the serviced media (contains boot\ and efi\ and sources\).
     .PARAMETER Architecture
@@ -73,7 +75,19 @@ function New-BootableIso {
 
     # Boot files live inside the media tree, so no separate ADK boot data is required.
     $etfsboot = Join-Path -Path $MediaRoot -ChildPath 'boot\etfsboot.com'
-    $efisys = Join-Path -Path $MediaRoot -ChildPath 'efi\microsoft\boot\efisys.bin'
+    # Prefer the no-prompt UEFI boot image so unattended media boots straight into Windows Setup.
+    # The default 'efisys.bin' shows "Press any key to boot from CD or DVD..." and waits for a
+    # keypress; unattended (VM boot test or a real automated install) nobody presses a key, the
+    # firmware times out and falls through to the (empty) disk, leaving "No operating system was
+    # loaded" at the UEFI. 'efisys_noprompt.bin' ships alongside it in Windows media and skips the
+    # prompt. Fall back to the prompting image if the no-prompt variant is somehow absent.
+    $efisysNoPrompt = Join-Path -Path $MediaRoot -ChildPath 'efi\microsoft\boot\efisys_noprompt.bin'
+    $efisys = if (Test-Path -LiteralPath $efisysNoPrompt) {
+        $efisysNoPrompt
+    }
+    else {
+        Join-Path -Path $MediaRoot -ChildPath 'efi\microsoft\boot\efisys.bin'
+    }
 
     # Arch-specific boot data selection (Principle IV / FR-004).
     if ($Architecture -eq 'amd64') {
@@ -98,6 +112,10 @@ function New-BootableIso {
     if ($outputDir -and -not (Test-Path -LiteralPath $outputDir)) {
         New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
     }
+
+    $efisysName = Split-Path -Leaf $efisys
+    $bootMode = if ($efisysName -eq 'efisys_noprompt.bin') { 'boots straight into Setup, no keypress' } else { 'prompts "Press any key to boot from CD or DVD..."' }
+    Write-BuildLog -Level Information -Component 'New-BootableIso' -Message "UEFI boot image: '$efisysName' ($bootMode)."
 
     # oscdimg args as an ARRAY (no shell string building; Principle VII).
     #   -m         : ignore max image size
