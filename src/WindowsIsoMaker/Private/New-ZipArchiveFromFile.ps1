@@ -41,14 +41,20 @@ function New-ZipArchiveFromFile {
     # of the shared framework on PowerShell 7 (Add-Type there throws, which we ignore).
     try { Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction Stop } catch { $null = $_ }
 
+    # .NET file APIs resolve relative paths against [Environment]::CurrentDirectory (the process
+    # start dir), NOT PowerShell's $PWD. Resolve to absolute provider paths first so a relative
+    # OutputDirectory (e.g. './out') lands next to $PWD instead of the process start directory.
+    $sourceFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourceFile)
+    $destFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DestinationArchive)
+
     if (-not $EntryName) {
-        $EntryName = [System.IO.Path]::GetFileName($SourceFile)
+        $EntryName = [System.IO.Path]::GetFileName($sourceFull)
     }
     $level = [System.IO.Compression.CompressionLevel]::$CompressionLevel
 
-    $zip = [System.IO.Compression.ZipFile]::Open($DestinationArchive, [System.IO.Compression.ZipArchiveMode]::Create)
+    $zip = [System.IO.Compression.ZipFile]::Open($destFull, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $SourceFile, $EntryName, $level) | Out-Null
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $sourceFull, $EntryName, $level) | Out-Null
     }
     finally {
         $zip.Dispose()

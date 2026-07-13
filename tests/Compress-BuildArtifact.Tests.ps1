@@ -62,6 +62,31 @@ Describe 'New-ZipArchiveFromFile' {
         }
         $names | Should -Contain 'Windows11.iso'
     }
+
+    It 'resolves a relative destination against PowerShell $PWD, not the .NET current directory' {
+        # Regression: [ZipFile]::Open resolves relative paths against [Environment]::CurrentDirectory
+        # (the process start dir), which differs from $PWD, so './out/x.zip' landed in the wrong place.
+        $src = Join-Path $script:WorkDir 'fake.iso'
+        Set-Content -LiteralPath $src -Value 'iso' -NoNewline
+        $outDir = Join-Path $script:WorkDir 'out'
+        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+        # Point the .NET current directory somewhere else entirely to prove it is not used.
+        $savedNetCwd = [System.Environment]::CurrentDirectory
+        [System.Environment]::CurrentDirectory = [System.IO.Path]::GetTempPath()
+        Push-Location -LiteralPath $script:WorkDir
+        try {
+            InModuleScope WindowsIsoMaker -Parameters @{ Src = $src } {
+                param($Src)
+                New-ZipArchiveFromFile -SourceFile $Src -DestinationArchive './out/relative.zip'
+            }
+            (Join-Path $outDir 'relative.zip') | Should -Exist
+        }
+        finally {
+            Pop-Location
+            [System.Environment]::CurrentDirectory = $savedNetCwd
+        }
+    }
 }
 
 Describe 'Compress-BuildArtifact (zip format)' {
