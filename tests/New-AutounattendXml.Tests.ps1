@@ -138,5 +138,23 @@ Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
         $installTo.DiskID | Should -Be '0'
         $installTo.PartitionID | Should -Be '3'
     }
+
+    It 'formats the EFI system partition as FAT32 so the bootloader can be serviced (prevents 0x800703ED)' {
+        New-AutounattendXml -Config (New-ImgConfig -Edition 'Pro') -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        # Partition 1 (ESP) must be modified to FAT32; without this BFSVC ServicingBootFiles fails.
+        $esp = $xml.SelectSingleNode("//u:ModifyPartitions/u:ModifyPartition[u:PartitionID='1']", $ns)
+        $esp | Should -Not -BeNullOrEmpty
+        $esp.Format | Should -Be 'FAT32'
+        # Partition 3 (Windows) is NTFS and gets C:.
+        $win = $xml.SelectSingleNode("//u:ModifyPartitions/u:ModifyPartition[u:PartitionID='3']", $ns)
+        $win.Format | Should -Be 'NTFS'
+        $win.Letter | Should -Be 'C'
+        # Partition 2 (MSR) must NOT be formatted.
+        $msr = $xml.SelectSingleNode("//u:ModifyPartitions/u:ModifyPartition[u:PartitionID='2']", $ns)
+        $msr.SelectSingleNode('u:Format', $ns) | Should -BeNullOrEmpty
+    }
 }
 

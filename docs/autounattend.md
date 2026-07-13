@@ -56,6 +56,12 @@ whenever the install phase isn't fully specified:
   (e.g. `Windows 11 Enterprise` on a volume-licence WIM).
 - **Target** — `InstallTo` points at disk `DiskId`, partition 3 (the Windows primary created by the
   `DiskConfiguration` layout: ESP 260 MB + MSR 16 MB + Windows).
+- **Disk formatting** — `DiskConfiguration/ModifyPartitions` formats each created partition: the ESP
+  (partition 1) as **FAT32** and the Windows partition (partition 3) as **NTFS** (drive `C:`); the MSR
+  (partition 2) is deliberately left unformatted. The FAT32 format on the ESP is required — without it
+  Setup installs Windows but then fails at the *Finalize / Update Boot Code* step
+  (`BFSVC ServicingBootFiles`, error `0x800703ED` = the volume has no recognized file system), because
+  the bootloader cannot be written to an unformatted system partition.
 - **Key** — the generic `ProductKey` below selects/validates that edition so the key page is skipped.
 
 All three use `WillShowUI = OnError`, so a genuine mismatch still surfaces the relevant page instead
