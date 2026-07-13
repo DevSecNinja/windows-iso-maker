@@ -85,7 +85,7 @@
             <DiskID>{{DISK_ID}}</DiskID>
             <PartitionID>3</PartitionID>
           </InstallTo>
-          <WillShowUI>OnError</WillShowUI>
+          <WillShowUI>Never</WillShowUI>
         </OSImage>
       </ImageInstall>
       <UserData>

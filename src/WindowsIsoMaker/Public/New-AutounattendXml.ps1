@@ -91,6 +91,11 @@ function New-AutounattendXml {
     # a fully-unattended Pro install stops with "Setup has failed to validate the product key".
     # Supplying Microsoft's public generic (KMS client setup) key selects the edition and skips
     # that page — activation still happens later via the user's own key / digital licence / KMS.
+    # WillShowUI is 'Never': on Windows 11 24H2's redesigned Setup, 'OnError' makes Setup drop to
+    # the interactive product-key page on any validation hiccup with a generic key (the exact
+    # "asks for a product key / Setup has failed to validate the product key" symptom). 'Never'
+    # keeps the install hands-off; a genuinely bad key hard-fails (and is captured by log harvest)
+    # instead of silently blocking on an interactive page.
     #   ProductKey not set / '' / whitespace -> auto-pick the generic key for the resolved Edition
     #   ProductKey = 'none'                  -> omit entirely (Setup will prompt)
     #   ProductKey = 'XXXXX-...'             -> use that explicit key
@@ -112,7 +117,7 @@ function New-AutounattendXml {
         $productKeyFragment = @"
         <ProductKey>
           <Key>$safeKey</Key>
-          <WillShowUI>OnError</WillShowUI>
+          <WillShowUI>Never</WillShowUI>
         </ProductKey>
 "@
     }

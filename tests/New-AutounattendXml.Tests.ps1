@@ -92,6 +92,15 @@ Describe 'New-AutounattendXml product key' {
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
+
+    It 'sets WillShowUI=Never on the ProductKey so 24H2 Setup never drops to the interactive key page' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        $xml.SelectSingleNode("//u:UserData/u:ProductKey/u:WillShowUI", $ns).InnerText | Should -Be 'Never'
+    }
 }
 
 Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
@@ -137,6 +146,8 @@ Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
         $installTo = $xml.SelectSingleNode("//u:ImageInstall/u:OSImage/u:InstallTo", $ns)
         $installTo.DiskID | Should -Be '0'
         $installTo.PartitionID | Should -Be '3'
+        # OSImage WillShowUI=Never keeps image selection hands-off on 24H2 too.
+        $xml.SelectSingleNode("//u:ImageInstall/u:OSImage/u:WillShowUI", $ns).InnerText | Should -Be 'Never'
     }
 
     It 'formats the EFI system partition as FAT32 so the bootloader can be serviced (prevents 0x800703ED)' {

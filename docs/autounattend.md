@@ -64,8 +64,12 @@ whenever the install phase isn't fully specified:
   the bootloader cannot be written to an unformatted system partition.
 - **Key** — the generic `ProductKey` below selects/validates that edition so the key page is skipped.
 
-All three use `WillShowUI = OnError`, so a genuine mismatch still surfaces the relevant page instead
-of hard-failing.
+The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`, and so does the `ProductKey` element.
+On **Windows 11 24H2** the redesigned Setup treats `OnError` as "show the interactive page on any
+validation hiccup", which is what made unattended Pro installs stop on the *"Setup has failed to
+validate the product key"* page even with a correct generic key. `Never` keeps the install fully
+hands-off; a genuinely wrong key or image name hard-fails (and is captured by the boot-test log
+harvest) instead of silently blocking on an interactive page.
 
 ## Product key (edition selector)
 
