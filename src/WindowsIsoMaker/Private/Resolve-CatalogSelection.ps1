@@ -10,9 +10,9 @@ function Resolve-CatalogSelection {
             2. Profile baseline — one or more of 'minimal' | 'default' | 'aggressive' | 'gaming' |
                'opinionated' select an initial enabled set. When several profiles are given the
                baselines are UNIONed (an entry is enabled if ANY selected profile enables it), with
-               one exception: if 'gaming' is among them, Category='Gaming' entries (Xbox / Game Bar)
-               are kept (never removed) even though aggressive/opinionated otherwise remove them —
-               so e.g. 'gaming','opinionated' = aggressive debloat + opinionated tweaks but a
+               one exception: if 'gaming' is among them, Profiles=@('gaming') entries (Xbox / Game
+               Bar) are kept (never removed) even though aggressive/opinionated otherwise remove them
+               — so e.g. 'gaming','opinionated' = aggressive debloat + opinionated tweaks but a
                working gaming stack.
             3. Toggles map — per-id boolean overrides from the config (Id -> $true/$false).
             4. EnableCatalogId — force-enable specific ids (opt-in, e.g. 'remove-edge','feature-wsl').
@@ -23,9 +23,9 @@ function Resolve-CatalogSelection {
             * default    — every entry whose DefaultEnabled is $true.
             * aggressive — the default set PLUS opt-in removal entries graded 1-2 (never grade-3,
                            never additive features such as WSL, which stay strictly opt-in).
-            * gaming     — the default set MINUS entries tagged Category='Gaming' (Xbox Game Bar /
+            * gaming     — the default set MINUS entries tagged Profiles=@('gaming') (Xbox Game Bar /
                            Xbox provisioned apps), so gaming functionality is preserved.
-            * opinionated— the aggressive set PLUS personal-taste extras tagged Category='Opinionated'
+            * opinionated— the aggressive set PLUS personal-taste extras tagged Profiles=@('opinionated')
                            (reversed mouse scroll, Start web-search off, lock-screen Spotlight off,
                            WSL + Virtual Machine Platform). These grade-3/additive opt-ins are in no
                            other profile, so this is the maintainer's "kitchen sink" preference set.
@@ -102,10 +102,10 @@ function Resolve-CatalogSelection {
             if (Test-CatalogEntryInProfile -Entry $entry -Profile $p) { $enabled = $true; break }
         }
         # 'gaming' protection wins over the other profiles in the union: when the combination
-        # includes 'gaming', a Category='Gaming' entry (Xbox / Game Bar) is never removed by the
-        # baseline, even though aggressive/opinionated otherwise would. An explicit EnableCatalogId
-        # (step 4) can still force such a removal back on.
-        if ($enabled -and ($Profile -contains 'gaming') -and ((Get-CatalogEntryCategory -Entry $entry) -eq 'Gaming')) {
+        # includes 'gaming', an entry tagged Profiles=@('gaming') (Xbox / Game Bar) is never removed
+        # by the baseline, even though aggressive/opinionated otherwise would. An explicit
+        # EnableCatalogId (step 4) can still force such a removal back on.
+        if ($enabled -and ($Profile -contains 'gaming') -and ((Get-CatalogEntryProfileTag -Entry $entry) -contains 'gaming')) {
             $enabled = $false
         }
 
@@ -132,29 +132,35 @@ function Resolve-CatalogSelection {
     return $selected.ToArray()
 }
 
-function Get-CatalogEntryCategory {
+function Get-CatalogEntryProfileTag {
     <#
     .SYNOPSIS
-        Return a catalog entry's Category ('' when it has none), handling both hashtable and
-        pscustomobject entry shapes (private helper for Resolve-CatalogSelection).
+        Return a catalog entry's explicit profile-membership tags as a string array (empty when it
+        has none), handling both hashtable and pscustomobject entry shapes (private helper for
+        Resolve-CatalogSelection).
+    .DESCRIPTION
+        The `Profiles` field is the curated profile-membership tag (e.g. 'gaming', 'opinionated'),
+        kept separate from the semantic `Category` field so an entry can be, say, Category='Development'
+        AND part of the opinionated profile at the same time.
     .PARAMETER Entry
         A single catalog entry.
     .OUTPUTS
-        System.String
+        System.String[]
     #>
     [CmdletBinding()]
-    [OutputType([string])]
+    [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)] [object] $Entry
     )
 
+    $value = $null
     if ($Entry -is [System.Collections.IDictionary]) {
-        if ($Entry.Contains('Category')) { return [string]$Entry['Category'] }
+        if ($Entry.Contains('Profiles')) { $value = $Entry['Profiles'] }
     }
-    elseif (($Entry.PSObject.Properties.Name -contains 'Category')) {
-        return [string]$Entry.Category
+    elseif (($Entry.PSObject.Properties.Name -contains 'Profiles')) {
+        $value = $Entry.Profiles
     }
-    return ''
+    return [string[]]@($value | ForEach-Object { [string]$_ } | Where-Object { $_ })
 }
 
 function Test-CatalogEntryInProfile {
@@ -195,16 +201,16 @@ function Test-CatalogEntryInProfile {
         }
         'gaming' {
             # Same debloat baseline as 'default', but preserve gaming components: entries tagged
-            # Category='Gaming' (the Xbox Game Bar / Xbox provisioned apps) are never removed, so
+            # Profiles=@('gaming') (the Xbox Game Bar / Xbox provisioned apps) are never removed, so
             # gamers keep a working Xbox / Game Bar stack.
-            if ((Get-CatalogEntryCategory -Entry $Entry) -eq 'Gaming') { return $false }
+            if ((Get-CatalogEntryProfileTag -Entry $Entry) -contains 'gaming') { return $false }
             return $isDefault
         }
         'opinionated' {
-            # The 'aggressive' baseline PLUS personal-taste extras tagged Category='Opinionated'
+            # The 'aggressive' baseline PLUS personal-taste extras tagged Profiles=@('opinionated')
             # (reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL +
             # Virtual Machine Platform). Those grade-3/additive opt-ins appear in no other profile.
-            if ((Get-CatalogEntryCategory -Entry $Entry) -eq 'Opinionated') { return $true }
+            if ((Get-CatalogEntryProfileTag -Entry $Entry) -contains 'opinionated') { return $true }
             # Fall through to the aggressive baseline.
             if ($isDefault) { return $true }
             return ($grade -le 2 -and $action -in @('RemoveAppx', 'RemoveCapability'))

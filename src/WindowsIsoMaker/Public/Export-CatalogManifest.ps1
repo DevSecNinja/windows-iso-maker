@@ -41,8 +41,8 @@ function Export-CatalogManifest {
         [ordered]@{ Name = 'minimal';     Description = 'Fewest changes: only the default-enabled registry policy tweaks — no app or capability removals.' }
         [ordered]@{ Name = 'default';     Description = 'Balanced baseline: every catalog entry marked DefaultEnabled (the recommended starting point).' }
         [ordered]@{ Name = 'aggressive';  Description = 'Most debloat: the default set plus opt-in grade 1-2 app/capability removals (never community-graded).' }
-        [ordered]@{ Name = 'gaming';      Description = 'The default set, but Xbox / Game Bar (Category = Gaming) entries are preserved.' }
-        [ordered]@{ Name = 'opinionated'; Description = 'The aggressive set plus personal-taste extras (Category = Opinionated): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL.' }
+        [ordered]@{ Name = 'gaming';      Description = 'The default set, but Xbox / Game Bar entries (tagged Profiles=@(''gaming'')) are preserved.' }
+        [ordered]@{ Name = 'opinionated'; Description = 'The aggressive set plus personal-taste extras (tagged Profiles=@(''opinionated'')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL.' }
     )
     $profileNames = @($profiles | ForEach-Object { $_.Name })
 

@@ -24,6 +24,7 @@
             Id             = 'reg-disable-recall'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Privacy & telemetry'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\WindowsAI'
@@ -45,6 +46,7 @@
             Id             = 'reg-disable-widgets'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Personalization'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Dsh'
@@ -68,6 +70,7 @@
             Id             = 'reg-disable-consumer-features'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Bundled apps'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\CloudContent'
@@ -89,6 +92,7 @@
             Id             = 'reg-disable-advertising-id'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Privacy & telemetry'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\AdvertisingInfo'
@@ -110,6 +114,7 @@
             Id             = 'reg-telemetry-basic'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Privacy & telemetry'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\DataCollection'
@@ -131,6 +136,7 @@
             Id             = 'reg-disable-cortana'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Privacy & telemetry'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\Windows Search'
@@ -152,6 +158,7 @@
             Id             = 'reg-disable-tailored-experiences'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Privacy & telemetry'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\CloudContent'
@@ -175,7 +182,8 @@
             Id             = 'reg-disable-start-web-search'
             Type           = 'Registry'
             Action         = 'SetRegistry'
-            Category       = 'Opinionated'
+            Category       = 'Personalization'
+            Profiles       = @('opinionated')
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\Windows Search'
@@ -198,7 +206,8 @@
             Id             = 'reg-disable-lockscreen-spotlight'
             Type           = 'Registry'
             Action         = 'SetRegistry'
-            Category       = 'Opinionated'
+            Category       = 'Personalization'
+            Profiles       = @('opinionated')
             Target         = @{
                 Hive  = 'DEFAULT'
                 Path  = 'Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
@@ -224,6 +233,7 @@
             Id             = 'remove-onedrive'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Cloud storage'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\OneDrive'
@@ -251,7 +261,8 @@
             Id             = 'reg-reverse-mouse-scroll'
             Type           = 'Registry'
             Action         = 'SetRegistry'
-            Category       = 'Opinionated'
+            Category       = 'Personalization'
+            Profiles       = @('opinionated')
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'

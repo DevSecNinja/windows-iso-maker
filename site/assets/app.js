@@ -173,8 +173,12 @@ function buildOverview() {
   for (const t of state.manifest.types || []) {
     typeSel.appendChild(el('option', { value: t, text: t }));
   }
+  const categorySel = $('#filter-category');
+  for (const c of state.manifest.categories || []) {
+    categorySel.appendChild(el('option', { value: c, text: c }));
+  }
 
-  ['#search', '#filter-profile', '#filter-type', '#filter-grade', '#sort-by'].forEach((s) =>
+  ['#search', '#filter-profile', '#filter-type', '#filter-category', '#filter-grade', '#sort-by'].forEach((s) =>
     $(s).addEventListener('input', renderEntries)
   );
   $('#filter-reversible').addEventListener('change', renderEntries);
@@ -203,6 +207,7 @@ function currentFilters() {
     q: $('#search').value.trim().toLowerCase(),
     profile: $('#filter-profile').value,
     type: $('#filter-type').value,
+    category: $('#filter-category')?.value || '',
     grade: $('#filter-grade').value,
     sort: $('#sort-by')?.value || '',
     reversible: $('#filter-reversible').checked,
@@ -217,6 +222,8 @@ function sortEntries(list, sort) {
     arr.sort((a, b) => entryProfileRank(a) - entryProfileRank(b) || String(a.type).localeCompare(String(b.type)) || byId(a, b));
   } else if (sort === 'type') {
     arr.sort((a, b) => String(a.type).localeCompare(String(b.type)) || byId(a, b));
+  } else if (sort === 'category') {
+    arr.sort((a, b) => String(a.category).localeCompare(String(b.category)) || byId(a, b));
   } else if (sort === 'grade') {
     arr.sort((a, b) => (a.evidenceGrade || 0) - (b.evidenceGrade || 0) || byId(a, b));
   }
@@ -248,6 +255,7 @@ function renderEntries() {
   const list = state.entries.filter((entry) => {
     if (f.profile && !isDefaultFor(entry, f.profile)) return false;
     if (f.type && entry.type !== f.type) return false;
+    if (f.category && entry.category !== f.category) return false;
     if (f.grade && String(entry.evidenceGrade) !== f.grade) return false;
     if (f.reversible && !entry.reversible) return false;
     if (f.q) {
@@ -276,6 +284,21 @@ function renderEntries() {
       if (rank !== lastRank) {
         nodes.push(renderTierHeader(entry));
         lastRank = rank;
+      }
+      nodes.push(renderEntryCard(entry));
+    }
+    container.replaceChildren(...nodes);
+    return;
+  }
+  if (f.sort === 'category') {
+    // Group under category headers so related changes (Gaming, Privacy & telemetry, …) sit together.
+    const nodes = [];
+    let lastCat = null;
+    for (const entry of sorted) {
+      const cat = entry.category || 'Uncategorized';
+      if (cat !== lastCat) {
+        nodes.push(el('div', { class: 'tier-header' }, [el('span', { class: 'tier-label', text: cat })]));
+        lastCat = cat;
       }
       nodes.push(renderEntryCard(entry));
     }
@@ -438,7 +461,7 @@ function renderConfigEntries() {
       const hay = `${entry.id} ${entry.description} ${entry.target}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
-    (groups[entry.type] ||= []).push(entry);
+    (groups[entry.category || 'Uncategorized'] ||= []).push(entry);
   }
 
   const nodes = [];
@@ -481,9 +504,7 @@ function renderConfigEntry(entry) {
     el('div', { class: 'd', text: entry.description || entry.id }),
     el('div', { class: 'i', text: entry.id }),
   ]);
-  const badge = entry.category
-    ? el('span', { class: 'badge cat', text: entry.category })
-    : el('span', { class: `badge g${entry.evidenceGrade}`, text: `G${entry.evidenceGrade}` });
+  const badge = el('span', { class: 'badge type', text: entry.type });
 
   return el('div', { class: `cfg-entry${deviated ? ' deviated' : ''}` }, [sw, desc, badge]);
 }
