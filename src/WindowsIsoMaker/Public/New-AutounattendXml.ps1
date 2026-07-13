@@ -110,18 +110,17 @@ function New-AutounattendXml {
         $bypassMsAccount = $false
     }
 
-    # --- ProductKey fragment (edition selector, NOT an activation key). ---
-    # Windows 11 24H2's rearchitected Setup ("windlp") validates a product key online during
-    # windowsPE. The KMS client setup keys FAIL that new validation and hard-stop with "Setup has
-    # failed to validate the product key" - so no key is emitted by default. Windows 11 *Home*
-    # installs hands-off without any key (though Setup still shows a "do you have a key?" page you
-    # must click through); non-Home editions (Pro, Enterprise, ...) require a genuine key.
-    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (Home installs hands-off but
-    #                                                    shows the key page; non-Home Setup stops)
+    # --- ProductKey (edition-selecting generic setup key, NOT an activation key). ---
+    # Windows 11 24H2's rearchitected Setup ("windlp") performs strict product-key validation
+    # during the windowsPE phase on multi-edition install.wim media and HARD-STOPS generic keys
+    # with "Setup has failed to validate the product key". So the key is NOT emitted in windowsPE;
+    # the edition is selected purely by the ImageInstall /IMAGE/NAME metadata (which must match a
+    # WIM image name exactly), and any key is applied later in the `specialize` pass instead. This
+    # is Microsoft's documented approach for unattended installs from multi-edition media.
+    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (install-only; no key applied)
     #   ProductKey = 'generic' | 'auto'               -> generic/default retail key for the edition
-    #                                                    (skips the OOBE key page; Home's is
-    #                                                    confirmed to pass 24H2, non-Home may fail).
-    #                                                    Set via build.ps1 -UseGenericProductKey.
+    #                                                    (applied in specialize; set via
+    #                                                    build.ps1 -UseGenericProductKey)
     #   ProductKey = 'XXXXX-...'                       -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
@@ -136,20 +135,24 @@ function New-AutounattendXml {
         $productKey = [string]$productKeyRaw.ToString().Trim()
     }
 
-    # A non-Home edition with no key will stop at Setup's product-key page. Surface that early so a
-    # direct caller (CI, Invoke-IsoBuild) is not surprised by an interactive stall in the boot test.
-    if ([string]::IsNullOrWhiteSpace($productKey) -and ([string]$Config.Edition) -notmatch '(?i)home') {
-        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "Edition '$($Config.Edition)' has no product key, so Windows 11 24H2 Setup will stop at the product-key page. Set Autounattend.ProductKey to a genuine key (only Home installs hands-off without one)."
+    # Edition selection is driven by the ImageInstall /IMAGE/NAME metadata, so Setup does not stop
+    # at the product-key / edition page even without a windowsPE key. Surface a heads-up when no key
+    # is configured at all (the installed OS will be unlicensed until a key is entered later).
+    if ([string]::IsNullOrWhiteSpace($productKey)) {
+        Write-BuildLog -Level Information -Component 'New-AutounattendXml' -Message "No product key configured; Setup installs edition '$editionImageName' from image metadata and the OS remains unlicensed until a key is entered. Use -UseGenericProductKey (or set Autounattend.ProductKey) to apply a key in the specialize pass."
     }
 
-    $productKeyFragment = ''
+    # The key is applied in the specialize pass (Microsoft-Windows-Shell-Setup/ProductKey), never in
+    # windowsPE, to avoid 24H2's windowsPE key-validation hard-stop on multi-edition media.
+    $specializeFragment = ''
     if (-not [string]::IsNullOrWhiteSpace($productKey)) {
         $safeKey = [System.Security.SecurityElement]::Escape($productKey)
-        $productKeyFragment = @"
-        <ProductKey>
-          <Key>$safeKey</Key>
-          <WillShowUI>Never</WillShowUI>
-        </ProductKey>
+        $specializeFragment = @"
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="$Architecture" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ProductKey>$safeKey</ProductKey>
+    </component>
+  </settings>
 "@
     }
 
@@ -221,7 +224,7 @@ function New-AutounattendXml {
         '{{TIMEZONE}}'               = [System.Security.SecurityElement]::Escape($timezone)
         '{{DISK_ID}}'                = [string]$diskId
         '{{EDITION_IMAGE_NAME}}'     = [System.Security.SecurityElement]::Escape($editionImageName)
-        '{{PRODUCTKEY_FRAGMENT}}'    = $productKeyFragment.TrimEnd("`r", "`n")
+        '{{SPECIALIZE_FRAGMENT}}'    = $specializeFragment.TrimEnd("`r", "`n")
         '{{OOBE_FRAGMENT}}'          = $oobeFragment.TrimEnd("`r", "`n")
         '{{USERACCOUNTS_FRAGMENT}}'  = $userAccountsFragment.TrimEnd("`r", "`n")
         '{{FIRSTLOGON_FRAGMENT}}'    = $firstLogonFragment.TrimEnd("`r", "`n")

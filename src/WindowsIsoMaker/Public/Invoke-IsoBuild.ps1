@@ -42,19 +42,18 @@ function Invoke-IsoBuild {
     .PARAMETER DisableCatalogId
         Optional force-disable catalog ids.
     .PARAMETER ProductKey
-        Optional override for the Autounattend product key (config Autounattend.ProductKey).
-        Required for a hands-off non-Home 24H2 install (only Home installs without a key; the
-        generic KMS keys fail 24H2's online validation). '' / 'none' omit it; a genuine key is
-        baked in verbatim.
+        Optional override for the Autounattend product key (config Autounattend.ProductKey). Applied
+        in the specialize pass (not windowsPE), so it is never subject to 24H2's windowsPE key-
+        validation hard-stop. '' / 'none' install the metadata-selected edition unlicensed; a genuine
+        key activates when valid.
     .PARAMETER AccountMode
         Optional override for how the first OOBE account is provisioned (config
         Autounattend.AccountMode): 'local' (create a local admin, hands-off) or 'entra' (present
         the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
     .PARAMETER UseGenericProductKey
-        Bake the edition's generic/default retail product key (which selects the edition and skips
-        the OOBE product-key page without activating). Handy for a fully hands-off Home build.
-        An explicit -ProductKey always takes precedence. Non-Home generic keys may still fail
-        24H2's online validation, so pass a genuine -ProductKey for Pro/Enterprise/etc.
+        Bake the edition's generic/default retail product key, applied in the specialize pass
+        (non-activating). Handy for a fully hands-off Home build. An explicit -ProductKey always
+        takes precedence.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -139,8 +138,8 @@ function Invoke-IsoBuild {
     }
 
     # Last-mile ProductKey / AccountMode overrides apply to the nested Autounattend sub-config (not
-    # top-level fields, so Get-BuildConfiguration does not carry them). ProductKey is required for a
-    # hands-off non-Home 24H2 install; AccountMode selects local vs Entra-join OOBE provisioning.
+    # top-level fields, so Get-BuildConfiguration does not carry them). ProductKey (when set) is
+    # applied in the specialize pass; AccountMode selects local vs Entra-join OOBE provisioning.
     foreach ($ov in @(
             @{ Name = 'ProductKey';  Key = 'ProductKey' },
             @{ Name = 'AccountMode'; Key = 'AccountMode' })) {
@@ -152,8 +151,8 @@ function Invoke-IsoBuild {
         }
     }
 
-    # -UseGenericProductKey bakes the edition's generic/default retail key (skips the OOBE
-    # product-key page). An explicit -ProductKey always wins over the switch.
+    # -UseGenericProductKey bakes the edition's generic/default retail key, applied in the specialize
+    # pass (non-activating). An explicit -ProductKey always wins over the switch.
     if ($UseGenericProductKey.IsPresent -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
         $au = $Config.Autounattend
         if ($au -is [hashtable]) { $au['ProductKey'] = 'generic' }

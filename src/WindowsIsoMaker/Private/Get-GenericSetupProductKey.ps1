@@ -3,18 +3,14 @@ function Get-GenericSetupProductKey {
     .SYNOPSIS
         Return the generic (default retail) setup product key for a Windows 11 edition.
     .DESCRIPTION
-        Windows Setup uses the <ProductKey> in the windowsPE pass only to decide WHICH edition
-        to install and to skip the interactive product-key page. These are the public generic
-        "default" keys Microsoft ships for exactly that purpose — they select an edition but do
-        NOT activate Windows (activation still happens later via the user's own key, digital
-        licence, or KMS). Baking the correct generic key in lets a fully-unattended install
-        proceed past the "Setup has failed to validate the product key" / "Do you have a product
-        key?" page that appears when a key is required but none is supplied.
-
-        NOTE on Windows 11 24H2: its rearchitected Setup ("windlp") validates the key online in
-        windowsPE. The *Home* generic key below is confirmed to pass that check and install
-        hands-off; the non-Home generic keys may still be rejected there, so for Pro/Enterprise/etc.
-        prefer a genuine key. See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
+        These are the public generic "default" keys Microsoft ships to select a Windows 11 edition
+        without activating it (activation still happens later via the user's own key, digital
+        licence, or KMS). This tool applies the key in the *specialize* pass, never in windowsPE:
+        Windows 11 24H2's rearchitected Setup ("windlp") performs strict key validation during the
+        windowsPE phase on multi-edition media and hard-stops generic keys with "Setup has failed to
+        validate the product key", so the edition is selected by the ImageInstall /IMAGE/NAME
+        metadata instead and the key is applied afterwards in specialize (where it is not revalidated
+        that way). See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
     .PARAMETER Edition
         The Windows 11 edition name (e.g. 'Pro', 'Pro N', 'Home', 'Education').
     .OUTPUTS
@@ -28,8 +24,8 @@ function Get-GenericSetupProductKey {
         [string] $Edition
     )
 
-    # Public generic / default retail setup keys (edition selectors that skip the OOBE
-    # product-key page; they do NOT activate). Keyed by a normalized edition name.
+    # Public generic / default retail setup keys (edition selectors applied in the specialize pass;
+    # they do NOT activate). Keyed by a normalized edition name.
     $keys = @{
         'home'                    = 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
         'homen'                   = '4CPRK-NM3K3-X6XXQ-RXX86-WXCHW'

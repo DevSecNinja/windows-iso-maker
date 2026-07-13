@@ -25,11 +25,11 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
   `remove_edge`/`remove_onedrive` inputs — pass `enable_catalog_id: remove-edge,remove-onedrive`
   instead (data-driven selection, FR-024).
 - **Product key (optional secret)**: CI ships **no product key by default** — a keyless build
-  produces a hands-off **Home** image (non-Home CI builds simply stop at the product-key page in a
-  boot test, which is expected). If you ever need a keyed non-Home CI build, set the optional
+  installs the metadata-selected edition hands-off (the OS is simply unlicensed until a key is
+  entered). If you want a keyed/activated build, set the optional
   `WINDOWS_PRODUCT_KEY` repo secret; the build step reads it from an environment variable (so the
-  key is masked and never appears on a command line) and passes it as `-ProductKey`. Leaving the
-  secret unset keeps the key out of CI entirely.
+  key is masked and never appears on a command line) and passes it as `-ProductKey` (applied in the
+  `specialize` pass). Leaving the secret unset keeps the key out of CI entirely.
 - **Permissions** (least privilege): `contents: read`, plus `id-token: write` and
   `attestations: write` for provenance/OIDC.
 - **Matrix**:

@@ -53,17 +53,17 @@
 
 .PARAMETER Edition
     Windows 11 edition to author into the answer file for this run (overrides the config's
-    Edition). Handy for testing the no-key path with -Edition Home before doing a keyed Pro build.
+    Edition). Every edition installs hands-off from the image metadata; a key is optional.
 
 .PARAMETER ProductKey
-    Product key to bake into the answer file (overrides config Autounattend.ProductKey). REQUIRED
-    for any non-Home edition: Windows 11 24H2 Setup only installs hands-off without a key on Home;
-    Pro/Enterprise/etc. need a genuine key (the generic KMS key fails 24H2's new validation).
+    Product key to bake into the answer file (overrides config Autounattend.ProductKey). Applied in
+    the specialize pass (not windowsPE), so it is never subject to 24H2's windowsPE key-validation
+    hard-stop. Optional for every edition: without a key the metadata-selected edition installs
+    hands-off but unlicensed; a genuine key activates when valid.
 
 .PARAMETER UseGenericProductKey
-    Bake the edition's generic/default retail key so Setup skips the OOBE product-key page without
-    activating - use it for a fully hands-off Home run (no key prompt). An explicit -ProductKey wins
-    over this switch; non-Home generic keys may still fail 24H2 validation.
+    Bake the edition's generic/default retail key (applied in the specialize pass, non-activating) -
+    use it for a fully hands-off run. An explicit -ProductKey wins over this switch.
 
 .PARAMETER Profile
     Debloat/customization profile(s) to apply for this run, overriding the config's Profile. Accepts
@@ -141,14 +141,14 @@ if ($UseGenericProductKey -and -not $PSBoundParameters.ContainsKey('ProductKey')
     Write-Host "[QuickBootTest] Using the edition's generic product key (skips the OOBE product-key page)." -ForegroundColor Cyan
 }
 
-# Windows 11 24H2 only installs hands-off WITHOUT a product key on Home. Non-Home editions need a
-# genuine key (the generic KMS key fails 24H2's new online validation), so require one up front.
+# The edition is selected by the image metadata and any key is applied in the specialize pass, so
+# every edition installs hands-off with or without a key. Without a usable key the OS is simply
+# unlicensed until one is entered - note that, but don't block the run.
 $resolvedEdition = [string]$cfg.Edition
 $resolvedKey = [string]$cfg.Autounattend['ProductKey']
-$isHomeEdition = $resolvedEdition -match '(?i)home'
 $keyIsUsable = -not [string]::IsNullOrWhiteSpace($resolvedKey) -and $resolvedKey -notmatch '(?i)^\s*(none|generic|auto)\s*$'
-if (-not $SkipRebuild -and -not $isHomeEdition -and -not $keyIsUsable) {
-    throw "Edition '$resolvedEdition' needs a genuine product key for an unattended 24H2 install (the generic key fails 24H2's new validation for non-Home editions). Re-run with -ProductKey '<your-key>', or test the fully hands-off path with -Edition Home -UseGenericProductKey."
+if (-not $SkipRebuild -and -not $keyIsUsable) {
+    Write-Host "[QuickBootTest] No genuine product key set for edition '$resolvedEdition'; it installs hands-off from the image metadata but stays unlicensed until a key is entered. Pass -ProductKey '<your-key>' to activate, or -UseGenericProductKey for a non-activating generic key." -ForegroundColor Yellow
 }
 
 # --- Resolve the working directory that holds the serviced media. ---

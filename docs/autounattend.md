@@ -84,10 +84,11 @@ whenever the install phase isn't fully specified:
   Setup installs Windows but then fails at the *Finalize / Update Boot Code* step
   (`BFSVC ServicingBootFiles`, error `0x800703ED` = the volume has no recognized file system), because
   the bootloader cannot be written to an unformatted system partition.
-- **Key** — see the *Product key* section below. On 24H2 only **Home** installs hands-off without a
-  key; non-Home editions require a genuine key.
+- **Key** — see the *Product key* section below. The key (if any) is applied in the **`specialize`**
+  pass, not `windowsPE`, so 24H2's strict windowsPE key validation can't hard-stop the install; the
+  edition itself is always chosen by the image metadata above.
 
-The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`, and so does any `ProductKey` element.
+The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`.
 On **Windows 11 24H2** the rearchitected Setup treats `OnError` as "show the interactive page on any
 validation hiccup", so `Never` keeps image selection hands-off; a genuinely wrong image name
 hard-fails (and is captured by the boot-test log harvest) instead of silently blocking on a page.
@@ -95,34 +96,38 @@ hard-fails (and is captured by the boot-test log harvest) instead of silently bl
 ## Product key (edition selector)
 
 The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
-`/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass.
+`/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass. That
+alone is enough for Setup to skip the *"which edition?"* and product-key pages — no key is needed in
+`windowsPE` to get a hands-off install.
 
-**Windows 11 24H2's rearchitected Setup (`windlp`)** validates a product key online during the
-install and **rejects the public generic (KMS client setup) keys** — it hard-stops with *"Setup has
-failed to validate the product key"* even with a connected network and `WillShowUI = Never`. The
-only edition that installs **fully hands-off without any key is Home**. Non-Home editions
-(Pro, Enterprise, …) therefore need a **genuine** product key.
+**Windows 11 24H2's rearchitected Setup (`windlp`) validates any `windowsPE` product key and rejects
+generic keys on multi-edition media** — it hard-stops with *"Setup has failed to validate the product
+key"* even for the public generic/retail keys, a connected network, and `WillShowUI = Never`. So this
+tool **never writes a `<ProductKey>` into the `windowsPE` pass**. Instead, any configured key is
+applied in the **`specialize`** pass (`Microsoft-Windows-Shell-Setup/ProductKey`), which runs after
+the image is applied and is not subject to the windowsPE validation hard-stop. This is Microsoft's
+documented approach for unattended installs from multi-edition install.wim media.
 
-So by **default** this tool emits **no `<ProductKey>`**: a Home build is hands-off, and a non-Home
-build without a key stops at Setup's product-key page (a warning is logged at generation time). Pass
-a real key to make a non-Home build hands-off.
+By **default** no key is configured at all: Setup installs the edition chosen by the metadata and the
+OS stays **unlicensed** until a key is entered later (a note is logged at generation time). Configure
+a key to have it applied automatically in `specialize`.
 
-`ProductKey` controls whether (and which) `<ProductKey>` element is written:
+`ProductKey` controls whether (and which) `<ProductKey>` element is written into the `specialize` pass:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) / `'none'` | **Omit** the `<ProductKey>` element. Home installs hands-off; non-Home Setup stops for a key (a generation-time warning is logged). |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit, **genuine** key. Required for a hands-off non-Home install. |
-| `'generic'` / `'auto'` | Inject the resolved `Edition`'s public **generic / default retail** key (skips the OOBE product-key page without activating). **Home**'s generic key is confirmed to pass 24H2's online validation and install hands-off; non-Home generic keys may still be rejected on 24H2, so prefer a genuine key there. |
+| `''` (default) / `'none'` | **No key.** Setup installs the metadata-selected edition hands-off; the OS is unlicensed until a key is entered. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit, **genuine** key in `specialize` (activates when valid). |
+| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic / default retail** key in `specialize` (non-activating; selects/keeps the edition without prompting). Works for Home and other editions because it is no longer validated in `windowsPE`. |
 
 The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
 shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`
 takes precedence). Use it for a fully hands-off **Home** build.
 
 `scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
-`-Profile` overrides and **requires** a usable key for any non-Home edition, so you can test the
-hands-off path with `-Edition Home -UseGenericProductKey` and do a keyed build with
-`-ProductKey '<your-key>'`. `-Profile` accepts one or more profiles (e.g. `-Profile gaming,opinionated`);
+`-Profile` overrides, so you can test the hands-off path with `-Edition Home -UseGenericProductKey`
+and do a keyed build with `-ProductKey '<your-key>'`. `-Profile` accepts one or more profiles (e.g.
+`-Profile gaming,opinionated`);
 because a quick boot test reuses the already-serviced `media\` folder it does **not** re-run debloat,
 but it re-derives the answer file, so profile-driven `Autounattend` settings (such as the opinionated
 United States-International keyboard) are reflected in the boot test.
@@ -133,8 +138,7 @@ uniquely-named `Autounattend-<tag>.xml` and ISO, and ISO authoring is serialized
 atomic while the slow VM boot tests overlap. Without `-Isolated`, concurrent runs share
 `media\Autounattend.xml` and the deterministic ISO path and will clobber each other.
 
-When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
-published by Microsoft — see
+The generic keys are published by Microsoft — see
 [KMS client activation and product keys](https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys).
 
 ## Security note

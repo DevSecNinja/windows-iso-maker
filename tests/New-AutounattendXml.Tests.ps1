@@ -71,12 +71,13 @@ Describe 'New-AutounattendXml product key' {
         $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Home</Value>'))
     }
 
-    It 'warns for a non-Home edition with no key (Setup would stop at the key page)' {
+    It 'renders no ProductKey and no interactive stop for a non-Home edition with no key (edition selected by image metadata)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
-        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
-            Where-Object { $_ -is [System.Management.Automation.WarningRecord] -or "$_" -match 'product key' }
-        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Not -Match '<ProductKey>'
-        "$warnings" | Should -Match 'product-key page'
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Not -Match '<ProductKey>'
+        # Edition is still selected via the image metadata, so Setup does not stop at the key page.
+        $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Pro</Value>'))
     }
 
     It 'injects the generic key for the edition when ProductKey is "generic"' {
@@ -125,13 +126,18 @@ Describe 'New-AutounattendXml product key' {
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
 
-    It 'sets WillShowUI=Never on an explicit/generic ProductKey so 24H2 Setup never drops to the key page' {
+    It 'applies the ProductKey in the specialize pass (not windowsPE) so 24H2 never fails windowsPE key validation' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
         $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
         $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
-        $xml.SelectSingleNode("//u:UserData/u:ProductKey/u:WillShowUI", $ns).InnerText | Should -Be 'Never'
+        # Key lives under specialize / Microsoft-Windows-Shell-Setup.
+        $specKey = $xml.SelectSingleNode("//u:settings[@pass='specialize']/u:component[@name='Microsoft-Windows-Shell-Setup']/u:ProductKey", $ns)
+        $specKey | Should -Not -BeNullOrEmpty
+        $specKey.InnerText | Should -Be 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
+        # And NOT under windowsPE UserData (that is what 24H2 rejects on multi-edition media).
+        $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey", $ns) | Should -BeNullOrEmpty
     }
 }
 
