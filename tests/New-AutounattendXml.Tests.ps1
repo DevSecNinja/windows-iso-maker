@@ -61,14 +61,21 @@ Describe 'New-AutounattendXml product key' {
         }
     }
 
-    It 'injects the generic key for the resolved edition by default so 24H2 Setup can validate it (hands-off)' {
-        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+    It 'omits the ProductKey by default (generic fails 24H2; Home installs hands-off without one)' {
+        $cfg = New-TestConfig -Edition 'Home' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
-        $xml | Should -Match '<ProductKey>'
-        $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
-        # Edition selection must still be present via the image metadata too.
-        $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Pro</Value>'))
+        $xml | Should -Not -Match '<ProductKey>'
+        # Edition selection is still present via the image metadata.
+        $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Home</Value>'))
+    }
+
+    It 'warns for a non-Home edition with no key (Setup would stop at the key page)' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] -or "$_" -match 'product key' }
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Not -Match '<ProductKey>'
+        "$warnings" | Should -Match 'product-key page'
     }
 
     It 'injects the generic key for the edition when ProductKey is "generic"' {
@@ -97,8 +104,8 @@ Describe 'New-AutounattendXml product key' {
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'))
     }
 
-    It 'produces well-formed XML by default (generic product key)' {
-        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+    It 'produces well-formed XML by default (no product key, Home)' {
+        $cfg = New-TestConfig -Edition 'Home' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }

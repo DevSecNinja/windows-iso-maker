@@ -40,11 +40,13 @@
         KeyboardLayout   = '0409:00000409' # input locale (en-US)
         TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout
-        # ProductKey: edition selector so unattended non-Home installs skip the product-key page.
-        #   ''      = auto-pick Microsoft's public generic (KMS client) key for Edition (skips the
-        #             "Setup has failed to validate the product key" stop; does NOT activate)
-        #   'none'  = omit entirely (Setup will prompt for a key)
-        #   '<key>' = use a specific product key
+        # ProductKey: baked into the answer file. Windows 11 24H2 Setup only installs hands-off
+        # WITHOUT a key on Home; non-Home editions (Pro, Enterprise, ...) need a genuine key
+        # (the generic KMS key fails 24H2's new online validation).
+        #   ''      = omit the key. Home installs hands-off; non-Home Setup stops for a key.
+        #   'none'  = omit entirely (same as '').
+        #   '<key>' = use a specific, genuine product key (required for non-Home unattended).
+        #   'generic'/'auto' = public generic key for the edition (older media only; fails 24H2).
         ProductKey       = ''
         FirstLogonCommands = @()          # optional array of command strings run at first logon
         SetupCompleteCommands = @()       # optional array of SetupComplete.cmd command strings

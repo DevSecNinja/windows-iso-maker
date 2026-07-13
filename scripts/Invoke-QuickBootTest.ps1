@@ -43,6 +43,15 @@
     Open the interactive VM console (vmconnect) as soon as the boot-test VM starts, so you can
     watch Setup and press Shift+F10 to capture logs on a stall.
 
+.PARAMETER Edition
+    Windows 11 edition to author into the answer file for this run (overrides the config's
+    Edition). Handy for testing the no-key path with -Edition Home before doing a keyed Pro build.
+
+.PARAMETER ProductKey
+    Product key to bake into the answer file (overrides config Autounattend.ProductKey). REQUIRED
+    for any non-Home edition: Windows 11 24H2 Setup only installs hands-off without a key on Home;
+    Pro/Enterprise/etc. need a genuine key (the generic KMS key fails 24H2's new validation).
+
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
     Auto-discovers everything, rebuilds the ISO, and boot-tests it, pausing for manual inspection.
@@ -62,7 +71,9 @@ param(
     [string] $IsoPath,
     [switch] $SkipRebuild,
     [switch] $NoKeep,
-    [switch] $ConnectVm
+    [switch] $ConnectVm,
+    [string] $Edition,
+    [string] $ProductKey
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,6 +89,26 @@ $cfg = Get-BuildConfiguration -Path $ConfigPath
 
 if (-not $Architecture) { $Architecture = [string]$cfg.Architecture }
 if (-not $Architecture) { $Architecture = 'amd64' }
+
+# --- Apply per-run edition / product-key overrides onto the config. ---
+if ($PSBoundParameters.ContainsKey('Edition') -and $Edition) {
+    $cfg.Edition = $Edition
+    Write-Host "[QuickBootTest] Edition override: '$Edition'." -ForegroundColor Cyan
+}
+if ($PSBoundParameters.ContainsKey('ProductKey')) {
+    if ($cfg.Autounattend -isnot [hashtable]) { throw 'Config Autounattend section is not a hashtable; cannot apply -ProductKey.' }
+    $cfg.Autounattend['ProductKey'] = $ProductKey
+}
+
+# Windows 11 24H2 only installs hands-off WITHOUT a product key on Home. Non-Home editions need a
+# genuine key (the generic KMS key fails 24H2's new online validation), so require one up front.
+$resolvedEdition = [string]$cfg.Edition
+$resolvedKey = [string]$cfg.Autounattend['ProductKey']
+$isHomeEdition = $resolvedEdition -match '(?i)home'
+$keyIsUsable = -not [string]::IsNullOrWhiteSpace($resolvedKey) -and $resolvedKey -notmatch '(?i)^\s*(none|generic|auto)\s*$'
+if (-not $SkipRebuild -and -not $isHomeEdition -and -not $keyIsUsable) {
+    throw "Edition '$resolvedEdition' needs a genuine product key for an unattended 24H2 install (the generic KMS key fails 24H2's new validation). Re-run with -ProductKey '<your-key>', or test the no-key path with -Edition Home."
+}
 
 # --- Resolve the working directory that holds the serviced media. ---
 if (-not $WorkingDirectory) {

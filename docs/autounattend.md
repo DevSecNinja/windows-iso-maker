@@ -62,40 +62,40 @@ whenever the install phase isn't fully specified:
   Setup installs Windows but then fails at the *Finalize / Update Boot Code* step
   (`BFSVC ServicingBootFiles`, error `0x800703ED` = the volume has no recognized file system), because
   the bootloader cannot be written to an unformatted system partition.
-- **Key** — the generic `ProductKey` below selects/validates that edition so the key page is skipped.
+- **Key** — see the *Product key* section below. On 24H2 only **Home** installs hands-off without a
+  key; non-Home editions require a genuine key.
 
-The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`, and so does the `ProductKey` element.
-On **Windows 11 24H2** the redesigned Setup treats `OnError` as "show the interactive page on any
-validation hiccup", which is what made unattended Pro installs stop on the *"Setup has failed to
-validate the product key"* page even with a correct generic key. `Never` keeps the install fully
-hands-off; a genuinely wrong key or image name hard-fails (and is captured by the boot-test log
-harvest) instead of silently blocking on an interactive page.
+The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`, and so does any `ProductKey` element.
+On **Windows 11 24H2** the rearchitected Setup treats `OnError` as "show the interactive page on any
+validation hiccup", so `Never` keeps image selection hands-off; a genuinely wrong image name
+hard-fails (and is captured by the boot-test log harvest) instead of silently blocking on a page.
 
 ## Product key (edition selector)
 
 The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
 `/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass.
 
-On **Windows 11 24H2** the redesigned Setup validates a product key during `windowsPE` and — unless
-a valid key is present *and* validates — shows the interactive *"Type your product key"* page or
-hard-stops with *"Setup has failed to validate the product key"*. Image metadata **alone** no longer
-reliably skips that page on 24H2. So by **default** this tool emits Microsoft's public **generic
-(KMS client setup) key** for the resolved edition with `WillShowUI = Never`: it selects the edition
-and satisfies validation for a hands-off install. It is **not** an activation key — activation still
-happens later via the user's own key, digital licence, or KMS.
+**Windows 11 24H2's rearchitected Setup (`windlp`)** validates a product key online during the
+install and **rejects the public generic (KMS client setup) keys** — it hard-stops with *"Setup has
+failed to validate the product key"* even with a connected network and `WillShowUI = Never`. The
+only edition that installs **fully hands-off without any key is Home**. Non-Home editions
+(Pro, Enterprise, …) therefore need a **genuine** product key.
 
-> **24H2 validates the key online.** The boot-test VM is therefore attached to a network switch (the
-> client-Hyper-V *Default Switch* if present, otherwise any External switch) so validation can
-> succeed; a real install likewise needs connectivity for a fully hands-off first run.
+So by **default** this tool emits **no `<ProductKey>`**: a Home build is hands-off, and a non-Home
+build without a key stops at Setup's product-key page (a warning is logged at generation time). Pass
+a real key to make a non-Home build hands-off.
 
 `ProductKey` controls whether (and which) `<ProductKey>` element is written:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition` so 24H2 Setup validates it and the install stays hands-off. Recommended. |
-| `'generic'` / `'auto'` | Same as the default — explicit generic key for the resolved `Edition`. Only *selects the edition*; does **not** activate Windows. |
-| `'none'` | **Omit** the `<ProductKey>` element and rely solely on the image metadata. May drop to the interactive key page on 24H2. |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit key (e.g. a real retail key). |
+| `''` (default) / `'none'` | **Omit** the `<ProductKey>` element. Home installs hands-off; non-Home Setup stops for a key (a generation-time warning is logged). |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit, **genuine** key. Required for a hands-off non-Home install. |
+| `'generic'` / `'auto'` | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. Selects the edition on **older media only** — it **fails 24H2 validation**. Does not activate Windows. |
+
+`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition` and `-ProductKey` overrides and **requires**
+`-ProductKey` for any non-Home edition, so you can test the no-key path with `-Edition Home` and do a
+keyed build with `-ProductKey '<your-key>'`.
 
 When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
 published by Microsoft — see

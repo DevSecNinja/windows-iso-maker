@@ -87,29 +87,35 @@ function New-AutounattendXml {
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
     # --- ProductKey fragment (edition selector, NOT an activation key). ---
-    # Windows 11 24H2's redesigned Setup validates a product key during windowsPE and, unless a
-    # valid key is present AND validated, shows the interactive "Type your product key" page (or
-    # hard-stops with "Setup has failed to validate the product key"). Image metadata alone
-    # (/IMAGE/NAME) no longer reliably skips that page on 24H2. So by DEFAULT we emit the public
-    # generic (KMS client setup) key for the resolved edition with WillShowUI=Never: it selects the
-    # edition and satisfies validation for a hands-off install. It is NOT an activation key -
-    # activation still happens later via the user's own key / digital licence / KMS. 24H2's Setup
-    # validates the key online, so the boot-test VM is given network (see New-BootTestVm).
-    #   ProductKey not set / '' / whitespace -> generic key for the resolved Edition (hands-off)
-    #   ProductKey = 'generic' | 'auto'      -> generic key for the resolved Edition
-    #   ProductKey = 'none'                  -> omit entirely (edition then relies on image metadata)
-    #   ProductKey = 'XXXXX-...'             -> use that explicit key verbatim
+    # Windows 11 24H2's rearchitected Setup ("windlp") validates a product key online during
+    # windowsPE. The public generic (KMS client setup) keys FAIL that new validation and hard-stop
+    # with "Setup has failed to validate the product key" - even with WillShowUI=Never and a
+    # network connection - so they are no longer emitted by default. Windows 11 *Home* installs
+    # fully unattended WITHOUT any key, so the default (omit) works for Home. Non-Home editions
+    # (Pro, Enterprise, ...) require a genuine key: supply it via Autounattend.ProductKey (a real
+    # key), or via the -ProductKey parameter of scripts/Invoke-QuickBootTest.ps1.
+    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (Home installs hands-off;
+    #                                                    non-Home Setup will stop for a key)
+    #   ProductKey = 'generic' | 'auto'               -> generic key for the edition (NOTE: fails
+    #                                                    24H2 validation; kept for older media only)
+    #   ProductKey = 'XXXXX-...'                       -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
-    if ([string]$productKeyRaw -match '(?i)^\s*none\s*$') {
+    if ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
+        [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
         $productKey = ''
     }
-    elseif ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
-        [string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
+    elseif ([string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
         $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
     }
     else {
         $productKey = [string]$productKeyRaw.ToString().Trim()
+    }
+
+    # A non-Home edition with no key will stop at Setup's product-key page. Surface that early so a
+    # direct caller (CI, Invoke-IsoBuild) is not surprised by an interactive stall in the boot test.
+    if ([string]::IsNullOrWhiteSpace($productKey) -and ([string]$Config.Edition) -notmatch '(?i)home') {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "Edition '$($Config.Edition)' has no product key, so Windows 11 24H2 Setup will stop at the product-key page. Set Autounattend.ProductKey to a genuine key (only Home installs hands-off without one)."
     }
 
     $productKeyFragment = ''
