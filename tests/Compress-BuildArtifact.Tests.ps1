@@ -52,7 +52,7 @@ Describe 'New-ZipArchiveFromFile' {
             New-ZipArchiveFromFile -SourceFile $Src -DestinationArchive $Zip -EntryName 'Windows11.iso'
         }
 
-        try { Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction Stop } catch { }
+        try { Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction Stop } catch { Write-Verbose "System.IO.Compression.FileSystem already loaded: $_" }
         $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
         try {
             $names = @($archive.Entries | ForEach-Object { $_.FullName })
