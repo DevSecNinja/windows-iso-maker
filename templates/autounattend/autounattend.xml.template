@@ -43,7 +43,7 @@
             <CreatePartition wcm:action="add">
               <Order>2</Order>
               <Type>MSR</Type>
-              <Size>128</Size>
+              <Size>16</Size>
             </CreatePartition>
             <CreatePartition wcm:action="add">
               <Order>3</Order>
