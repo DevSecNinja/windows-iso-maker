@@ -43,6 +43,14 @@
     Open the interactive VM console (vmconnect) as soon as the boot-test VM starts, so you can
     watch Setup and press Shift+F10 to capture logs on a stall.
 
+.PARAMETER Isolated
+    Make this run safe to execute in parallel with other Invoke-QuickBootTest runs against the same
+    working directory. Each isolated run gets its own uniquely-named Autounattend.xml and output ISO
+    (a short run tag is appended) so concurrent runs never clobber one another's answer file or ISO.
+    ISO authoring is always serialized across processes with a named mutex (New-BootableIso stages
+    the answer file inside the shared media\ tree before imaging it), so the fast rebuild step is
+    atomic while the slow VM boot tests overlap. Pass -Isolated to EVERY parallel window.
+
 .PARAMETER Edition
     Windows 11 edition to author into the answer file for this run (overrides the config's
     Edition). Handy for testing the no-key path with -Edition Home before doing a keyed Pro build.
@@ -64,6 +72,11 @@
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1 -SkipRebuild
     Just boot-test the ISO that is already on disk.
+
+.EXAMPLE
+    # In two separate elevated windows, boot-test two editions at once against the same media:
+    ./scripts/Invoke-QuickBootTest.ps1 -Edition Home -UseGenericProductKey -Isolated
+    ./scripts/Invoke-QuickBootTest.ps1 -Edition Pro  -ProductKey '<key>'    -Isolated
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
@@ -77,6 +90,7 @@ param(
     [switch] $SkipRebuild,
     [switch] $NoKeep,
     [switch] $ConnectVm,
+    [switch] $Isolated,
     [string] $Edition,
     [string] $ProductKey,
     [switch] $UseGenericProductKey
@@ -132,12 +146,21 @@ if (-not $WorkingDirectory) {
 Write-Host "[QuickBootTest] Working directory: '$WorkingDirectory'." -ForegroundColor Cyan
 
 $mediaRoot = Join-Path $WorkingDirectory 'media'
-$autounattend = Join-Path $WorkingDirectory 'Autounattend.xml'
+# -Isolated: give this run its own answer file + ISO so parallel runs don't clobber each other.
+$runTag = if ($Isolated) { [guid]::NewGuid().ToString('N').Substring(0, 8) } else { '' }
+$autounattend = if ($runTag) {
+    Join-Path $WorkingDirectory "Autounattend-$runTag.xml"
+}
+else {
+    Join-Path $WorkingDirectory 'Autounattend.xml'
+}
 if (-not $IsoPath) {
     $edition = ([string]$cfg.Edition) -replace '[^A-Za-z0-9]', ''
     if (-not $edition) { $edition = 'Pro' }
-    $IsoPath = Join-Path $WorkingDirectory ("Windows11-$edition-$Architecture-bootcheck.iso")
+    $suffix = if ($runTag) { "-$runTag" } else { '' }
+    $IsoPath = Join-Path $WorkingDirectory ("Windows11-$edition-$Architecture-bootcheck$suffix.iso")
 }
+if ($Isolated) { Write-Host "[QuickBootTest] Isolated run tag: '$runTag'." -ForegroundColor Cyan }
 
 if (-not $SkipRebuild) {
     if (-not (Test-Path -LiteralPath $mediaRoot)) {
@@ -147,8 +170,26 @@ if (-not $SkipRebuild) {
     Write-Host "[QuickBootTest] Regenerating Autounattend.xml -> '$autounattend'." -ForegroundColor Cyan
     New-AutounattendXml -Config $cfg -Architecture $Architecture -OutputPath $autounattend | Out-Null
 
-    Write-Host "[QuickBootTest] Rebuilding ISO (no re-servicing) -> '$IsoPath'." -ForegroundColor Cyan
-    New-BootableIso -MediaRoot $mediaRoot -Architecture $Architecture -OutputIsoPath $IsoPath -AutounattendPath $autounattend | Out-Null
+    # New-BootableIso copies the answer file INTO the shared media\ tree before oscdimg images it,
+    # so two concurrent authoring passes would race on media\Autounattend.xml (and SHA256SUMS). A
+    # system-wide named mutex keyed on the media path makes the copy+image atomic; the far slower
+    # VM boot tests still overlap freely.
+    $mediaKey = [System.BitConverter]::ToString(
+        [System.Security.Cryptography.SHA1]::Create().ComputeHash(
+            [System.Text.Encoding]::UTF8.GetBytes($mediaRoot.ToLowerInvariant()))
+    ).Replace('-', '').Substring(0, 16)
+    $mutex = [System.Threading.Mutex]::new($false, "Global\WindowsIsoMaker-media-$mediaKey")
+    $haveLock = $false
+    try {
+        try { $haveLock = $mutex.WaitOne() }
+        catch [System.Threading.AbandonedMutexException] { $haveLock = $true }
+        Write-Host "[QuickBootTest] Rebuilding ISO (no re-servicing) -> '$IsoPath'." -ForegroundColor Cyan
+        New-BootableIso -MediaRoot $mediaRoot -Architecture $Architecture -OutputIsoPath $IsoPath -AutounattendPath $autounattend | Out-Null
+    }
+    finally {
+        if ($haveLock) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
 }
 elseif (-not (Test-Path -LiteralPath $IsoPath)) {
     throw "-SkipRebuild was set but the ISO '$IsoPath' does not exist."

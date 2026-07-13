@@ -123,6 +123,12 @@ takes precedence). Use it for a fully hands-off **Home** build.
 overrides and **requires** a usable key for any non-Home edition, so you can test the hands-off path
 with `-Edition Home -UseGenericProductKey` and do a keyed build with `-ProductKey '<your-key>'`.
 
+To boot-test several editions at once, pass `-Isolated` to each parallel window. Isolated runs get a
+uniquely-named `Autounattend-<tag>.xml` and ISO, and ISO authoring is serialized with a named mutex
+(the answer file is staged inside the shared `media\` tree before imaging), so the fast rebuilds are
+atomic while the slow VM boot tests overlap. Without `-Isolated`, concurrent runs share
+`media\Autounattend.xml` and the deterministic ISO path and will clobber each other.
+
 When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
 published by Microsoft — see
 [KMS client activation and product keys](https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys).
