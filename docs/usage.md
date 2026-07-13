@@ -30,9 +30,9 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | `AzureUpload` | Optional off-box artifact storage (see [azure-upload.md](azure-upload.md)). |
 | `WorkingDirectory` / `OutputDirectory` | Scoped working + output locations. |
 | `IsoPath` | Provide a pre-downloaded ISO to skip Fido. |
-| `BootTest` | Opt-in VM boot validation (default: structural checks only). |
+| `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway Hyper-V VM and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
 | `CompressionFormat` | `zip` or `7z`. |
-| `FidoPath` / `OscdimgPath` | Pinned tool locations (`OscdimgPath` empty = auto-detect). |
+| `FidoPath` / `OscdimgPath` | Tool locations. `FidoPath` empty = download the pinned Fido at build time (set a path only for offline use); `OscdimgPath` empty = auto-detect from a Windows ADK install. |
 
 ### Multiple saved profiles
 

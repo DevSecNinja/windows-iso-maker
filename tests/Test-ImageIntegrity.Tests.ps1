@@ -72,3 +72,108 @@ Describe 'Test-ImageIntegrity' {
         }
     }
 }
+
+Describe 'Test-HeartbeatHealthy' {
+    It 'treats OK-prefixed statuses as healthy and everything else as not' {
+        InModuleScope WindowsIsoMaker {
+            Test-HeartbeatHealthy -Status 'OK' | Should -BeTrue
+            Test-HeartbeatHealthy -Status 'OkApplicationsHealthy' | Should -BeTrue
+            Test-HeartbeatHealthy -Status 'ok' | Should -BeTrue
+            Test-HeartbeatHealthy -Status 'No Contact' | Should -BeFalse
+            Test-HeartbeatHealthy -Status 'Lost Communication' | Should -BeFalse
+            Test-HeartbeatHealthy -Status '' | Should -BeFalse
+            Test-HeartbeatHealthy -Status $null | Should -BeFalse
+        }
+    }
+}
+
+Describe 'Invoke-VmBootTest polling' {
+
+    BeforeEach {
+        InModuleScope WindowsIsoMaker {
+            # Isolate the polling logic: provisioning/teardown/wait are seams, so no Hyper-V is
+            # touched and no real time is spent.
+            Mock Test-HyperVAvailable { $true }
+            Mock New-BootTestVm { }
+            Mock Remove-BootTestVm { }
+            Mock Start-Sleep { }
+        }
+    }
+
+    It 'reports None (no fail throw) when Hyper-V is unavailable' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Test-HyperVAvailable { $false }
+            Mock Get-VmBootStatus { throw 'should not poll' }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64
+            $r.Passed | Should -BeFalse
+            $r.Method | Should -Be 'None'
+            Should -Invoke New-BootTestVm -Times 0
+        }
+    }
+
+    It 'passes via Heartbeat as soon as the guest heartbeat is healthy' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            $script:poll = 0
+            Mock Get-VmBootStatus {
+                $script:poll++
+                if ($script:poll -ge 2) { [pscustomobject]@{ State = 'Running'; Heartbeat = 'OK'; HeartbeatHealthy = $true } }
+                else { [pscustomobject]@{ State = 'Running'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 300 -PollIntervalSeconds 10 -MinRunningSeconds 90
+            $r.Passed | Should -BeTrue
+            $r.Method | Should -Be 'Heartbeat'
+            Should -Invoke Remove-BootTestVm -Times 1
+        }
+    }
+
+    It 'passes via StayedRunning after MinRunningSeconds without a heartbeat' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 300 -PollIntervalSeconds 10 -MinRunningSeconds 30
+            $r.Passed | Should -BeTrue
+            $r.Method | Should -Be 'StayedRunning'
+            $r.ElapsedSeconds | Should -BeGreaterOrEqual 30
+        }
+    }
+
+    It 'fails via BootReset when the VM leaves Running after having started' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            $script:poll = 0
+            Mock Get-VmBootStatus {
+                $script:poll++
+                if ($script:poll -ge 3) { [pscustomobject]@{ State = 'Off'; Heartbeat = $null; HeartbeatHealthy = $false } }
+                else { [pscustomobject]@{ State = 'Running'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 300 -PollIntervalSeconds 10 -MinRunningSeconds 90
+            $r.Passed | Should -BeFalse
+            $r.Method | Should -Be 'BootReset'
+            $r.State | Should -Be 'Off'
+        }
+    }
+
+    It 'fails via Timeout when no pass signal is seen in the window' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000
+            $r.Passed | Should -BeFalse
+            $r.Method | Should -Be 'Timeout'
+            $r.ElapsedSeconds | Should -BeGreaterOrEqual 30
+        }
+    }
+
+    It 'always tears down the VM even when polling throws' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { throw 'boom' }
+            $r = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10
+            $r.Passed | Should -BeFalse
+            $r.Method | Should -Be 'Error'
+            Should -Invoke Remove-BootTestVm -Times 1
+        }
+    }
+}
