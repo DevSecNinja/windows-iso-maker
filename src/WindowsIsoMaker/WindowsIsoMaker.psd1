@@ -26,6 +26,7 @@
         'Compress-BuildArtifact',
         'Test-ImageIntegrity',
         'Export-ImageBom',
+        'Export-CatalogManifest',
         'Invoke-IsoBuild'
     )
     CmdletsToExport   = @()
