@@ -335,7 +335,7 @@ function Invoke-VmBootTest {
                     if ($null -ne $result) {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue ([pscustomobject]@{ Path = $vmDiagnosticsPath; Files = @(); SetupErrorTail = $null }) -Force
                     }
-                    Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk (Shift+F10 -> X:\Windows\Panther\setupact.log)."
+                    Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk. To capture them: at the failing screen press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\' (the DiskConfiguration creates C:), then let this teardown re-harvest - the pe-* logs will land in '$vmDiagnosticsPath'."
                 }
 
                 # Extra check: a VM can "stay running" while stuck at an interactive Setup page (e.g.
@@ -350,7 +350,7 @@ function Invoke-VmBootTest {
                     if ($result.Passed -and $result.Method -eq 'StayedRunning' -and -not $installProgressed) {
                         $result.Passed = $false
                         $result.Method = 'NoInstallProgress'
-                        $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath' and, on the WinPE RAM disk, X:\Windows\Panther\setupact.log (Shift+F10)."
+                        $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath'. To capture the windowsPE logs, at the stuck screen press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\', then press Enter here to re-harvest."
                         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message $result.Detail
                     }
                 }
@@ -439,6 +439,29 @@ function New-BootTestVm {
     # Virtual TPM 2.0: a local key protector satisfies Enable-VMTPM without Host Guardian Service.
     Set-VMKeyProtector -VMName $VmName -NewLocalKeyProtector -ErrorAction Stop
     Enable-VMTPM -VMName $VmName -ErrorAction Stop
+    # Give the guest network access. Windows 11 24H2's redesigned Setup attempts ONLINE product-key
+    # validation during windowsPE and fails with "Setup has failed to validate the product key" when
+    # offline (the setuperr.log then shows only network errors: OneSettings 0x80072EE7, metered
+    # network, DeviceId retrieval). New-VM adds a NIC but leaves it disconnected, so wire it to a
+    # switch with connectivity - the client-Hyper-V 'Default Switch' (NAT + internet) if present,
+    # otherwise any External switch. Best-effort: a boot test on a host without a usable switch still
+    # runs (offline), it just cannot validate keys online.
+    try {
+        $switch = Get-VMSwitch -ErrorAction Stop |
+            Sort-Object -Property @{ Expression = { $_.Name -eq 'Default Switch' }; Descending = $true },
+                                  @{ Expression = { $_.SwitchType -eq 'External' }; Descending = $true } |
+            Select-Object -First 1
+        if ($switch) {
+            Connect-VMNetworkAdapter -VMName $VmName -SwitchName $switch.Name -ErrorAction Stop
+            Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "Connected boot-test VM '$VmName' network adapter to switch '$($switch.Name)' ($($switch.SwitchType)) so 24H2 Setup can validate the product key online."
+        }
+        else {
+            Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "No Hyper-V switch found; boot-test VM '$VmName' will run offline. Windows 11 24H2 Setup may fail online product-key validation without network."
+        }
+    }
+    catch {
+        Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "Could not connect boot-test VM '$VmName' to a network switch ($($_.Exception.Message)); it will run offline."
+    }
     Start-VM -Name $VmName -ErrorAction Stop
 }
 
@@ -518,6 +541,8 @@ function Save-BootTestSetupLog {
             this is where a failed install before first boot records its error)
           * \Windows\Panther\setupact.log / setuperr.log               (specialize/oobe phase)
           * \Windows\INF\setupapi.dev.log                              (driver install)
+          * pe-setupact.log / pe-setuperr.log / setupact.log / setuperr.log at the disk root
+            (windowsPE-phase logs the operator copied from the WinPE RAM disk X: via Shift+F10)
           * the matching diagerr.xml / diagwrn.xml / miglog.xml diagnostics
 
         Every Hyper-V/storage cmdlet (Mount-VHD/Get-Disk/Get-Partition/Get-Volume/Dismount-VHD) is
@@ -564,6 +589,14 @@ function Save-BootTestSetupLog {
         'Windows\Panther\setuperr.log'
         'Windows\Panther\UnattendGC\setupact.log'
         'Windows\INF\setupapi.dev.log'
+        # windowsPE-phase logs live on the WinPE RAM disk (X:) and never reach the VHDX, so a
+        # product-key/answer-file rejection writes nothing above. To capture them, Shift+F10 at the
+        # failing screen and copy X:\Windows\Panther\setup*.log to the target disk root (C:\); these
+        # well-known drop names are then harvested here automatically.
+        'pe-setupact.log'
+        'pe-setuperr.log'
+        'setupact.log'
+        'setuperr.log'
     )
 
     $mounted = $null

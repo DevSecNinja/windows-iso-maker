@@ -61,12 +61,13 @@ Describe 'New-AutounattendXml product key' {
         }
     }
 
-    It 'omits the ProductKey by default so the image metadata selects the edition (24H2-safe)' {
+    It 'injects the generic key for the resolved edition by default so 24H2 Setup can validate it (hands-off)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
-        $xml | Should -Not -Match '<ProductKey>'
-        # Edition selection must still be present via the image metadata.
+        $xml | Should -Match '<ProductKey>'
+        $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
+        # Edition selection must still be present via the image metadata too.
         $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Pro</Value>'))
     }
 
@@ -96,8 +97,14 @@ Describe 'New-AutounattendXml product key' {
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'))
     }
 
-    It 'produces well-formed XML by default (no product key)' {
+    It 'produces well-formed XML by default (generic product key)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
+    }
+
+    It 'produces well-formed XML with no ProductKey when set to "none"' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'none' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }

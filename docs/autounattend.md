@@ -75,20 +75,26 @@ harvest) instead of silently blocking on an interactive page.
 
 The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
 `/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass.
-Per Microsoft's *Automate Windows Setup* docs, configuring that image metadata **also skips the
-"Type your product key" page** — so **no `<ProductKey>` element is needed at all** for a fully
-unattended install, and none is emitted by default.
 
-This matters on **Windows 11 24H2**: its redesigned Setup validates an explicit generic key more
-strictly and stops with *"Setup has failed to validate the product key"* (even with `WillShowUI`
-set), so emitting a redundant generic key actively breaks the unattended install. `ProductKey`
-controls whether (and which) `<ProductKey>` element is written:
+On **Windows 11 24H2** the redesigned Setup validates a product key during `windowsPE` and — unless
+a valid key is present *and* validates — shows the interactive *"Type your product key"* page or
+hard-stops with *"Setup has failed to validate the product key"*. Image metadata **alone** no longer
+reliably skips that page on 24H2. So by **default** this tool emits Microsoft's public **generic
+(KMS client setup) key** for the resolved edition with `WillShowUI = Never`: it selects the edition
+and satisfies validation for a hands-off install. It is **not** an activation key — activation still
+happens later via the user's own key, digital licence, or KMS.
+
+> **24H2 validates the key online.** The boot-test VM is therefore attached to a network switch (the
+> client-Hyper-V *Default Switch* if present, otherwise any External switch) so validation can
+> succeed; a real install likewise needs connectivity for a fully hands-off first run.
+
+`ProductKey` controls whether (and which) `<ProductKey>` element is written:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) | **Omit** the `<ProductKey>` element; the image metadata selects the edition and skips the key page. Recommended (24H2-safe). |
-| `'none'` | Also omit the element. |
-| `'generic'` / `'auto'` | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. Only *selects the edition*; does **not** activate Windows. May fail on 24H2 — prefer the default. |
+| `''` (default) | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition` so 24H2 Setup validates it and the install stays hands-off. Recommended. |
+| `'generic'` / `'auto'` | Same as the default — explicit generic key for the resolved `Edition`. Only *selects the edition*; does **not** activate Windows. |
+| `'none'` | **Omit** the `<ProductKey>` element and rely solely on the image metadata. May drop to the interactive key page on 24H2. |
 | `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit key (e.g. a real retail key). |
 
 When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are

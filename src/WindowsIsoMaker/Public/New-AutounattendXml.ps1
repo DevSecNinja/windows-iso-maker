@@ -86,25 +86,26 @@ function New-AutounattendXml {
     $localAccountName = [string](& $get 'LocalAccountName' 'Admin')
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
-    # --- ProductKey fragment (optional edition selector, NOT an activation key). ---
-    # The edition is already chosen by the ImageInstall/OSImage image metadata (/IMAGE/NAME), which
-    # ALSO skips Setup's "Type your product key" page (Microsoft docs: that page is skipped when
-    # EITHER a ProductKey Key OR the ImageInstall image metadata is configured). So by default we
-    # emit NO <ProductKey> at all — it is redundant, and on Windows 11 24H2's redesigned Setup an
-    # explicit generic key fails validation and hard-stops with "Setup has failed to validate the
-    # product key" (with WillShowUI=Never) or drops to the interactive key page (with OnError).
-    # Activation happens later via the user's own key / digital licence / KMS.
-    #   ProductKey not set / '' / whitespace -> omit entirely (edition selected by image metadata)
-    #   ProductKey = 'none'                  -> omit entirely
-    #   ProductKey = 'generic' | 'auto'      -> inject the public generic key for the resolved Edition
-    #   ProductKey = 'XXXXX-...'             -> use that explicit key
+    # --- ProductKey fragment (edition selector, NOT an activation key). ---
+    # Windows 11 24H2's redesigned Setup validates a product key during windowsPE and, unless a
+    # valid key is present AND validated, shows the interactive "Type your product key" page (or
+    # hard-stops with "Setup has failed to validate the product key"). Image metadata alone
+    # (/IMAGE/NAME) no longer reliably skips that page on 24H2. So by DEFAULT we emit the public
+    # generic (KMS client setup) key for the resolved edition with WillShowUI=Never: it selects the
+    # edition and satisfies validation for a hands-off install. It is NOT an activation key -
+    # activation still happens later via the user's own key / digital licence / KMS. 24H2's Setup
+    # validates the key online, so the boot-test VM is given network (see New-BootTestVm).
+    #   ProductKey not set / '' / whitespace -> generic key for the resolved Edition (hands-off)
+    #   ProductKey = 'generic' | 'auto'      -> generic key for the resolved Edition
+    #   ProductKey = 'none'                  -> omit entirely (edition then relies on image metadata)
+    #   ProductKey = 'XXXXX-...'             -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
-    if ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
-        [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
+    if ([string]$productKeyRaw -match '(?i)^\s*none\s*$') {
         $productKey = ''
     }
-    elseif ([string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
+    elseif ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
+        [string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
         $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
     }
     else {
