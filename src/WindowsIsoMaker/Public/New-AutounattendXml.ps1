@@ -68,6 +68,9 @@ function New-AutounattendXml {
     }
 
     $locale = [string](& $get 'Locale' $Config.Language)
+    # UserLocale = the "region format" (dates/times/numbers) shown under Control Panel > Clock and
+    # Region. It is independent of the UI language; default it to the UI locale for back-compat.
+    $userLocale = [string](& $get 'UserLocale' $locale)
     $keyboard = [string](& $get 'KeyboardLayout' '0409:00000409')
     $timezone = [string](& $get 'TimeZone' 'UTC')
     $diskId = [int](& $get 'DiskId' 0)
@@ -134,6 +137,7 @@ function New-AutounattendXml {
     $replacements = @{
         '{{PROCESSOR_ARCHITECTURE}}' = $Architecture
         '{{LOCALE}}'                 = [System.Security.SecurityElement]::Escape($locale)
+        '{{USER_LOCALE}}'            = [System.Security.SecurityElement]::Escape($userLocale)
         '{{KEYBOARD}}'               = [System.Security.SecurityElement]::Escape($keyboard)
         '{{TIMEZONE}}'               = [System.Security.SecurityElement]::Escape($timezone)
         '{{DISK_ID}}'                = [string]$diskId

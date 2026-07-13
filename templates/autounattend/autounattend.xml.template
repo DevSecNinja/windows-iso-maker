@@ -5,7 +5,8 @@
   Rendered per-architecture by New-AutounattendXml. Do NOT edit the {{TOKENS}} by hand — they
   are substituted at build time from the resolved Autounattend sub-config:
     {{PROCESSOR_ARCHITECTURE}}  amd64 | arm64
-    {{LOCALE}}                  UI/system/user locale (e.g. en-US)
+    {{LOCALE}}                  UI/system locale (e.g. en-US)
+    {{USER_LOCALE}}             user locale / region format for dates, times, numbers (e.g. nl-NL)
     {{KEYBOARD}}                input locale id (e.g. 0409:00000409)
     {{TIMEZONE}}                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
     {{DISK_ID}}                 target disk id for the default single-partition layout
@@ -25,7 +26,7 @@
       <InputLocale>{{KEYBOARD}}</InputLocale>
       <SystemLocale>{{LOCALE}}</SystemLocale>
       <UILanguage>{{LOCALE}}</UILanguage>
-      <UserLocale>{{LOCALE}}</UserLocale>
+      <UserLocale>{{USER_LOCALE}}</UserLocale>
     </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <DiskConfiguration>
@@ -62,7 +63,7 @@
       <InputLocale>{{KEYBOARD}}</InputLocale>
       <SystemLocale>{{LOCALE}}</SystemLocale>
       <UILanguage>{{LOCALE}}</UILanguage>
-      <UserLocale>{{LOCALE}}</UserLocale>
+      <UserLocale>{{USER_LOCALE}}</UserLocale>
     </component>
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <TimeZone>{{TIMEZONE}}</TimeZone>

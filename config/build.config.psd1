@@ -35,9 +35,10 @@
         BypassMsAccount  = $true          # bypass the Microsoft-account requirement (FR-027)
         CreateLocalAccount = $true        # create a local account instead (default on, toggleable)
         LocalAccountName = 'Admin'        # local account username (no password stored in the file)
-        Locale           = 'en-US'        # UI / system locale
+        Locale           = 'en-US'        # UI / system language (kept English (United States))
+        UserLocale       = 'nl-NL'         # region format for dates/times/numbers = Dutch (Netherlands)
         KeyboardLayout   = '0409:00000409' # input locale (en-US)
-        TimeZone         = 'UTC'          # e.g. 'W. Europe Standard Time'
+        TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout
         FirstLogonCommands = @()          # optional array of command strings run at first logon
         SetupCompleteCommands = @()       # optional array of SetupComplete.cmd command strings
