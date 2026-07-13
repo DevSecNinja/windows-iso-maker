@@ -39,6 +39,10 @@
 .PARAMETER NoKeep
     Do not keep the VM / pause for manual inspection (runs the boot test unattended).
 
+.PARAMETER ConnectVm
+    Open the interactive VM console (vmconnect) as soon as the boot-test VM starts, so you can
+    watch Setup and press Shift+F10 to capture logs on a stall.
+
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
     Auto-discovers everything, rebuilds the ISO, and boot-tests it, pausing for manual inspection.
@@ -57,7 +61,8 @@ param(
     [string] $Architecture,
     [string] $IsoPath,
     [switch] $SkipRebuild,
-    [switch] $NoKeep
+    [switch] $NoKeep,
+    [switch] $ConnectVm
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,7 +126,7 @@ $keep = -not $NoKeep
 $diagnostics = Join-Path $WorkingDirectory 'boottest-diagnostics'
 Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
 Write-Host "[QuickBootTest] Windows Setup logs (if any) will be harvested to '$diagnostics'." -ForegroundColor Cyan
-$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -DiagnosticsPath $diagnostics -Verbose
+$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -DiagnosticsPath $diagnostics -Verbose
 
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }

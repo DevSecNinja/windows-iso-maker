@@ -121,6 +121,7 @@ Describe 'Invoke-VmBootTest polling' {
             Mock Test-HyperVAvailable { $true }
             Mock New-BootTestVm { }
             Mock Remove-BootTestVm { }
+            Mock Start-BootTestVmConnect { }
             Mock Start-Sleep { }
         }
     }
@@ -178,6 +179,24 @@ Describe 'Invoke-VmBootTest polling' {
             $r.Passed | Should -BeFalse
             $r.Method | Should -Be 'BootReset'
             $r.State | Should -Be 'Off'
+        }
+    }
+
+    It 'launches vmconnect once when -ConnectVm is set' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = 'OkApplicationsHealthy'; HeartbeatHealthy = $true } }
+            $null = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -ConnectVm
+            Should -Invoke Start-BootTestVmConnect -Times 1
+        }
+    }
+
+    It 'does not launch vmconnect when -ConnectVm is not set' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Running'; Heartbeat = 'OkApplicationsHealthy'; HeartbeatHealthy = $true } }
+            $null = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64
+            Should -Invoke Start-BootTestVmConnect -Times 0
         }
     }
 

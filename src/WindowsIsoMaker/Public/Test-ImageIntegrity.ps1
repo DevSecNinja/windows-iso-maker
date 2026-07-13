@@ -18,7 +18,10 @@ function Test-ImageIntegrity {
         Opt-in: after the boot test resolves, keep the throwaway VM alive and pause until you
         press Enter so you can attach with vmconnect and test interactively. The VM (and its
         VHDX) are still torn down afterwards. Only meaningful together with -BootTest.
-    .EXAMPLE
+    .PARAMETER ConnectVm
+        Opt-in: launch the interactive VM console (vmconnect.exe) as soon as the boot-test VM
+        starts, so you can watch Windows Setup and press Shift+F10 to capture logs on a stall.
+        Best-effort (skipped on headless/CI hosts). Only meaningful together with -BootTest.
         Test-ImageIntegrity -IsoPath C:\out\win11.iso -Architecture amd64
     .OUTPUTS
         PSCustomObject with Passed, Structural (per-check results), an optional Boot result, and
@@ -40,6 +43,9 @@ function Test-ImageIntegrity {
 
         [Parameter()]
         [switch] $KeepBootTestVm,
+
+        [Parameter()]
+        [switch] $ConnectVm,
 
         [Parameter()]
         [string] $DiagnosticsPath
@@ -88,7 +94,7 @@ function Test-ImageIntegrity {
     $bootResult = $null
     if ($BootTest) {
         Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message 'Opt-in VM boot test requested.'
-        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -DiagnosticsPath $DiagnosticsPath
+        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -ConnectVm:$ConnectVm -DiagnosticsPath $DiagnosticsPath
     }
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
@@ -213,6 +219,9 @@ function Invoke-VmBootTest {
         When set, after a pass/fail signal is resolved the VM is left in place and the function
         blocks (via the mockable Wait-BootTestInspection seam) until the user presses Enter, so
         they can attach with vmconnect and test manually before the finally block tears it down.
+    .PARAMETER ConnectVm
+        When set, launches vmconnect.exe against the VM as soon as it starts (via the mockable
+        Start-BootTestVmConnect seam) so the operator can watch Setup interactively.
     .PARAMETER DiagnosticsPath
         Directory to harvest Windows Setup logs into. After the VM is stopped (and before it is
         removed) the throwaway VHDX is mounted offline and any Windows Setup Panther logs
@@ -232,6 +241,7 @@ function Invoke-VmBootTest {
         [Parameter()][int] $PollIntervalSeconds = 10,
         [Parameter()][int] $MinRunningSeconds = 90,
         [Parameter()][switch] $KeepBootTestVm,
+        [Parameter()][switch] $ConnectVm,
         [Parameter()][string] $DiagnosticsPath
     )
 
@@ -248,6 +258,13 @@ function Invoke-VmBootTest {
     $vhd = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "$vmName.vhdx"
     try {
         New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd
+
+        # Opt-in: open the interactive VM console (vmconnect) so the operator can watch Setup and,
+        # on a windowsPE stall, press Shift+F10 to capture logs. Behind a mockable seam so the unit
+        # suite never launches a UI. Failure to launch is non-fatal (headless/CI hosts have no UI).
+        if ($ConnectVm) {
+            Start-BootTestVmConnect -VmName $vmName
+        }
 
         # Logical clock: $elapsed advances by a >=1s step each poll so the timeout is always
         # reached even if PollIntervalSeconds is 0; Start-Sleep is the only real wait (mocked
@@ -391,6 +408,43 @@ function Wait-BootTestInspection {
     $state = if ($Result) { $Result.State } else { 'unknown' }
     Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: vmconnect localhost $VmName"
     $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off, harvest the Windows Setup logs, and clean up"
+}
+
+function Start-BootTestVmConnect {
+    <#
+    .SYNOPSIS
+        Open the Hyper-V VM console (vmconnect) for a boot-test VM (runtime-only UI seam).
+    .DESCRIPTION
+        Private helper for Invoke-VmBootTest, invoked only when -ConnectVm is set. Launches
+        Windows' built-in Virtual Machine Connection (vmconnect.exe) against the local host so the
+        operator can watch Windows Setup and, on a windowsPE stall, press Shift+F10 to capture the
+        RAM-disk logs. Non-blocking (Start-Process) and best-effort: a missing vmconnect.exe or a
+        headless/CI host (no UI) is logged as a warning, never a failure. Behind this one seam so
+        the unit suite can mock it and never launch a UI.
+    .PARAMETER VmName
+        Name of the boot-test VM to connect to on localhost.
+    .OUTPUTS
+        None.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Best-effort UI seam that only launches the vmconnect viewer; it changes no system or VM state.')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $VmName
+    )
+
+    $vmconnect = Join-Path -Path $env:SystemRoot -ChildPath 'System32\vmconnect.exe'
+    if (-not (Test-Path -LiteralPath $vmconnect)) {
+        Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "ConnectVm: vmconnect.exe not found at '$vmconnect'; cannot open the VM console. Connect manually with: vmconnect localhost $VmName"
+        return
+    }
+    try {
+        Start-Process -FilePath $vmconnect -ArgumentList @('localhost', $VmName) -ErrorAction Stop | Out-Null
+        Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "ConnectVm: opened the VM console for '$VmName'. On a Setup stall, press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\' to capture the windowsPE logs."
+    }
+    catch {
+        Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "ConnectVm: could not launch vmconnect for '$VmName' ($($_.Exception.Message)). Connect manually with: vmconnect localhost $VmName"
+    }
 }
 
 function New-BootTestVm {
