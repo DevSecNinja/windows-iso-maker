@@ -4,8 +4,8 @@ function Export-CatalogManifest {
         Export the change catalog + profile membership to a JSON manifest for the website (FR-024).
     .DESCRIPTION
         Flattens every config/catalog.*.psd1 entry (via Import-ChangeCatalog) and, for each
-        entry, records which baseline Profiles (minimal / default / aggressive / gaming) enable
-        it — reusing the exact same profile logic the build uses (Test-CatalogEntryInProfile) so
+        entry, records which baseline Profiles (minimal / default / aggressive / gaming / opinionated)
+        enable it — reusing the exact same profile logic the build uses (Test-CatalogEntryInProfile) so
         the published site can never drift from the tool's real behaviour.
 
         The emitted JSON is consumed by the static showcase/configurator site under site/. It is a
@@ -38,10 +38,11 @@ function Export-CatalogManifest {
     $entries = Import-ChangeCatalog @importArgs
 
     $profiles = @(
-        [ordered]@{ Name = 'minimal';    Description = 'Only the default-enabled registry policy tweaks — no app or capability removals.' }
-        [ordered]@{ Name = 'default';    Description = 'Every catalog entry marked DefaultEnabled — the balanced baseline.' }
-        [ordered]@{ Name = 'aggressive'; Description = 'The default set plus opt-in grade 1-2 app/capability removals (never community-graded).' }
-        [ordered]@{ Name = 'gaming';     Description = 'The default set, but Xbox / Game Bar (Category = Gaming) entries are preserved.' }
+        [ordered]@{ Name = 'minimal';     Description = 'Fewest changes: only the default-enabled registry policy tweaks — no app or capability removals.' }
+        [ordered]@{ Name = 'default';     Description = 'Balanced baseline: every catalog entry marked DefaultEnabled (the recommended starting point).' }
+        [ordered]@{ Name = 'aggressive';  Description = 'Most debloat: the default set plus opt-in grade 1-2 app/capability removals (never community-graded).' }
+        [ordered]@{ Name = 'gaming';      Description = 'The default set, but Xbox / Game Bar (Category = Gaming) entries are preserved.' }
+        [ordered]@{ Name = 'opinionated'; Description = 'The aggressive set plus personal-taste extras (Category = Opinionated): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL.' }
     )
     $profileNames = @($profiles | ForEach-Object { $_.Name })
 

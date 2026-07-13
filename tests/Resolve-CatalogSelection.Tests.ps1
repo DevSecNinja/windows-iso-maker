@@ -2,8 +2,9 @@
 <#
 .SYNOPSIS
     Tests for Resolve-CatalogSelection / Test-CatalogEntryInProfile, focused on the profile
-    baselines (minimal | default | aggressive | gaming). The 'gaming' profile keeps gaming
-    components (entries tagged Category='Gaming', e.g. the Xbox provisioned apps).
+    baselines (minimal | default | aggressive | gaming | opinionated). The 'gaming' profile keeps
+    gaming components (Category='Gaming'); 'opinionated' adds the maintainer's personal-taste extras
+    (Category='Opinionated', e.g. reversed mouse scroll + WSL) on top of the aggressive baseline.
 #>
 
 BeforeAll {
@@ -66,6 +67,34 @@ Describe 'Resolve-CatalogSelection profile baselines' {
     }
 }
 
+Describe 'Opinionated profile baseline' {
+    It 'includes every Category=Opinionated extra that lower profiles leave off' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $opinionatedIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile opinionated | ForEach-Object { $_.Id })
+            $aggressiveIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile aggressive | ForEach-Object { $_.Id })
+
+            foreach ($id in @('reg-reverse-mouse-scroll', 'reg-disable-start-web-search', 'reg-disable-lockscreen-spotlight', 'feature-wsl', 'feature-vmplatform')) {
+                $opinionatedIds | Should -Contain $id -Because 'the opinionated profile enables the personal-taste extras'
+                $aggressiveIds | Should -Not -Contain $id -Because 'those extras are only in the opinionated profile'
+            }
+        }
+    }
+
+    It 'is a strict superset of the aggressive baseline' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = Import-ChangeCatalog
+            $opinionatedIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile opinionated | ForEach-Object { $_.Id })
+            $aggressiveIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile aggressive | ForEach-Object { $_.Id })
+
+            foreach ($id in $aggressiveIds) {
+                $opinionatedIds | Should -Contain $id -Because 'opinionated builds on top of aggressive'
+            }
+            $opinionatedIds.Count | Should -BeGreaterThan $aggressiveIds.Count
+        }
+    }
+}
+
 Describe 'Test-CatalogEntryInProfile Category handling' {
     It 'excludes a Category=Gaming entry from the gaming profile (hashtable entry)' {
         InModuleScope WindowsIsoMaker {
@@ -79,6 +108,15 @@ Describe 'Test-CatalogEntryInProfile Category handling' {
         InModuleScope WindowsIsoMaker {
             $entry = [pscustomobject]@{ Id = 'y'; Action = 'RemoveAppx'; EvidenceGrade = 1; DefaultEnabled = $true }
             Test-CatalogEntryInProfile -Entry $entry -Profile gaming | Should -BeTrue
+        }
+    }
+
+    It 'enables a Category=Opinionated opt-in only in the opinionated profile' {
+        InModuleScope WindowsIsoMaker {
+            $entry = @{ Id = 'z'; Action = 'SetRegistry'; EvidenceGrade = 3; DefaultEnabled = $false; Category = 'Opinionated' }
+            Test-CatalogEntryInProfile -Entry $entry -Profile opinionated | Should -BeTrue
+            Test-CatalogEntryInProfile -Entry $entry -Profile aggressive | Should -BeFalse
+            Test-CatalogEntryInProfile -Entry $entry -Profile default | Should -BeFalse
         }
     }
 }

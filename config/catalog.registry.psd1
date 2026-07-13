@@ -175,6 +175,7 @@
             Id             = 'reg-disable-start-web-search'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Opinionated'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Policies\Microsoft\Windows\Windows Search'
@@ -197,6 +198,7 @@
             Id             = 'reg-disable-lockscreen-spotlight'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Opinionated'
             Target         = @{
                 Hive  = 'DEFAULT'
                 Path  = 'Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
@@ -248,6 +250,7 @@
             Id             = 'reg-reverse-mouse-scroll'
             Type           = 'Registry'
             Action         = 'SetRegistry'
+            Category       = 'Opinionated'
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'

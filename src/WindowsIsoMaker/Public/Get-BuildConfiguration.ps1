@@ -70,7 +70,7 @@ function Get-BuildConfiguration {
         [string] $Architecture,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
         [string] $Profile,
 
         [Parameter()]
@@ -187,8 +187,8 @@ function Get-BuildConfiguration {
     if (@('amd64', 'arm64') -notcontains $resolved['Architecture']) {
         throw "Invalid configuration: 'Architecture' must be 'amd64' or 'arm64' (got '$($resolved['Architecture'])')."
     }
-    if (@('minimal', 'default', 'aggressive', 'gaming') -notcontains $resolved['Profile']) {
-        throw "Invalid configuration: 'Profile' must be 'minimal', 'default', 'aggressive', or 'gaming' (got '$($resolved['Profile'])')."
+    if (@('minimal', 'default', 'aggressive', 'gaming', 'opinionated') -notcontains $resolved['Profile']) {
+        throw "Invalid configuration: 'Profile' must be 'minimal', 'default', 'aggressive', 'gaming', or 'opinionated' (got '$($resolved['Profile'])')."
     }
     if (@('zip', '7z') -notcontains $resolved['CompressionFormat']) {
         throw "Invalid configuration: 'CompressionFormat' must be 'zip' or '7z' (got '$($resolved['CompressionFormat'])')."

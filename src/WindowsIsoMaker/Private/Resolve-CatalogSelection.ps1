@@ -7,7 +7,8 @@ function Resolve-CatalogSelection {
         per-feature switches). The resolution order is:
 
             1. Architecture filter (Principle IV) — entries not listing the target arch are dropped.
-            2. Profile baseline — 'minimal' | 'default' | 'aggressive' | 'gaming' selects an initial enabled set.
+            2. Profile baseline — 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'
+               selects an initial enabled set.
             3. Toggles map — per-id boolean overrides from the config (Id -> $true/$false).
             4. EnableCatalogId — force-enable specific ids (opt-in, e.g. 'remove-edge','feature-wsl').
             5. DisableCatalogId — force-disable specific ids (explicit ids win, applied last).
@@ -19,6 +20,10 @@ function Resolve-CatalogSelection {
                            never additive features such as WSL, which stay strictly opt-in).
             * gaming     — the default set MINUS entries tagged Category='Gaming' (Xbox Game Bar /
                            Xbox provisioned apps), so gaming functionality is preserved.
+            * opinionated— the aggressive set PLUS personal-taste extras tagged Category='Opinionated'
+                           (reversed mouse scroll, Start web-search off, lock-screen Spotlight off,
+                           WSL + Virtual Machine Platform). These grade-3/additive opt-ins are in no
+                           other profile, so this is the maintainer's "kitchen sink" preference set.
 
         Any id referenced by Toggles/EnableCatalogId/DisableCatalogId that does not exist in the
         catalog raises a terminating error.
@@ -27,7 +32,7 @@ function Resolve-CatalogSelection {
     .PARAMETER Architecture
         Target architecture ('amd64' or 'arm64'); entries not listing it are excluded.
     .PARAMETER Profile
-        Baseline profile: 'minimal' | 'default' | 'aggressive' | 'gaming'.
+        Baseline profile: 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'.
     .PARAMETER Toggles
         Hashtable of per-id boolean overrides (Id -> $true/$false).
     .PARAMETER EnableCatalogId
@@ -52,7 +57,7 @@ function Resolve-CatalogSelection {
         [string] $Architecture,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
         [string] $Profile = 'default',
 
         [Parameter()]
@@ -128,7 +133,7 @@ function Test-CatalogEntryInProfile {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)] [object] $Entry,
-        [Parameter(Mandatory = $true)] [ValidateSet('minimal', 'default', 'aggressive', 'gaming')] [string] $Profile
+        [Parameter(Mandatory = $true)] [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')] [string] $Profile
     )
 
     $isDefault = [bool]$Entry.DefaultEnabled
@@ -158,6 +163,21 @@ function Test-CatalogEntryInProfile {
             }
             if ($isGaming) { return $false }
             return $isDefault
+        }
+        'opinionated' {
+            # The 'aggressive' baseline PLUS personal-taste extras tagged Category='Opinionated'
+            # (reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL +
+            # Virtual Machine Platform). Those grade-3/additive opt-ins appear in no other profile.
+            $isOpinionated = if ($Entry -is [System.Collections.IDictionary]) {
+                $Entry.Contains('Category') -and $Entry['Category'] -eq 'Opinionated'
+            }
+            else {
+                ($Entry.PSObject.Properties.Name -contains 'Category') -and $Entry.Category -eq 'Opinionated'
+            }
+            if ($isOpinionated) { return $true }
+            # Fall through to the aggressive baseline.
+            if ($isDefault) { return $true }
+            return ($grade -le 2 -and $action -in @('RemoveAppx', 'RemoveCapability'))
         }
         default {
             # 'default'

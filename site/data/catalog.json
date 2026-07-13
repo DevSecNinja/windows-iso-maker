@@ -1,28 +1,33 @@
 {
   "schemaVersion": 1,
-  "generatedUtc": "2026-07-13T13:02:29Z",
+  "generatedUtc": "2026-07-13T13:47:04Z",
   "moduleVersion": "1.0.0",
   "defaultProfile": "default",
   "profiles": [
     {
       "name": "minimal",
-      "description": "Only the default-enabled registry policy tweaks — no app or capability removals."
+      "description": "Fewest changes: only the default-enabled registry policy tweaks — no app or capability removals."
     },
     {
       "name": "default",
-      "description": "Every catalog entry marked DefaultEnabled — the balanced baseline."
+      "description": "Balanced baseline: every catalog entry marked DefaultEnabled (the recommended starting point)."
     },
     {
       "name": "aggressive",
-      "description": "The default set plus opt-in grade 1-2 app/capability removals (never community-graded)."
+      "description": "Most debloat: the default set plus opt-in grade 1-2 app/capability removals (never community-graded)."
     },
     {
       "name": "gaming",
       "description": "The default set, but Xbox / Game Bar (Category = Gaming) entries are preserved."
+    },
+    {
+      "name": "opinionated",
+      "description": "The aggressive set plus personal-taste extras (Category = Opinionated): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL."
     }
   ],
   "categories": [
-    "Gaming"
+    "Gaming",
+    "Opinionated"
   ],
   "types": [
     "Appx",
@@ -53,7 +58,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -77,7 +83,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -101,7 +108,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -125,7 +133,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -148,7 +157,8 @@
       "sourceFile": "catalog.appx.psd1",
       "profiles": [
         "default",
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -171,7 +181,8 @@
       "sourceFile": "catalog.appx.psd1",
       "profiles": [
         "default",
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -194,7 +205,8 @@
       "sourceFile": "catalog.appx.psd1",
       "profiles": [
         "default",
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -217,7 +229,8 @@
       "sourceFile": "catalog.appx.psd1",
       "profiles": [
         "default",
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -241,7 +254,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -265,7 +279,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -289,7 +304,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -313,7 +329,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -337,7 +354,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -361,7 +379,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -385,7 +404,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -409,7 +429,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -432,7 +453,8 @@
       "sourceFile": "catalog.appx.psd1",
       "profiles": [
         "default",
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -456,7 +478,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -480,7 +503,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -504,7 +528,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -528,7 +553,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -572,7 +598,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -596,7 +623,8 @@
       "profiles": [
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -618,7 +646,8 @@
       ],
       "sourceFile": "catalog.capabilities.psd1",
       "profiles": [
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
@@ -640,14 +669,15 @@
       ],
       "sourceFile": "catalog.capabilities.psd1",
       "profiles": [
-        "aggressive"
+        "aggressive",
+        "opinionated"
       ]
     },
     {
       "id": "feature-wsl",
       "type": "OptionalFeature",
       "action": "EnableOptionalFeature",
-      "category": "",
+      "category": "Opinionated",
       "target": "Microsoft-Windows-Subsystem-Linux",
       "description": "Enables the Windows Subsystem for Linux optional feature on the offline image.",
       "rationale": "Pre-enables the WSL platform feature so the finished image ships WSL-ready. This offline step only turns on the OS feature; the actual WSL2 kernel and the chosen Linux distribution are installed online on first boot (`wsl --install`/`wsl --update`), which is a Microsoft platform constraint, not a limitation of this tool. Opt-in because it adds attack surface not everyone wants.",
@@ -661,13 +691,15 @@
         "arm64"
       ],
       "sourceFile": "catalog.capabilities.psd1",
-      "profiles": []
+      "profiles": [
+        "opinionated"
+      ]
     },
     {
       "id": "feature-vmplatform",
       "type": "OptionalFeature",
       "action": "EnableOptionalFeature",
-      "category": "",
+      "category": "Opinionated",
       "target": "VirtualMachinePlatform",
       "description": "Enables the Virtual Machine Platform optional feature (WSL2 dependency) on the offline image.",
       "rationale": "WSL2 runs a lightweight utility VM and requires the Virtual Machine Platform feature. Enable it alongside feature-wsl for a WSL2-capable image. Like feature-wsl the actual WSL2 kernel is fetched online on first boot. Opt-in.",
@@ -681,7 +713,9 @@
         "arm64"
       ],
       "sourceFile": "catalog.capabilities.psd1",
-      "profiles": []
+      "profiles": [
+        "opinionated"
+      ]
     },
     {
       "id": "reg-disable-recall",
@@ -705,7 +739,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -730,7 +765,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -755,7 +791,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -780,7 +817,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -805,7 +843,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -830,7 +869,8 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
@@ -855,14 +895,15 @@
         "minimal",
         "default",
         "aggressive",
-        "gaming"
+        "gaming",
+        "opinionated"
       ]
     },
     {
       "id": "reg-disable-start-web-search",
       "type": "Registry",
       "action": "SetRegistry",
-      "category": "",
+      "category": "Opinionated",
       "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search!DisableSearchBoxSuggestions",
       "description": "Disables web/Bing suggestions in the Start menu and taskbar search box.",
       "rationale": "Removes internet-backed search suggestions from Start/search for a more local, private search experience. This exact value is community-documented rather than in a single authoritative Microsoft page (EvidenceGrade 3), so it is opt-in only.",
@@ -876,13 +917,15 @@
         "arm64"
       ],
       "sourceFile": "catalog.registry.psd1",
-      "profiles": []
+      "profiles": [
+        "opinionated"
+      ]
     },
     {
       "id": "reg-disable-lockscreen-spotlight",
       "type": "Registry",
       "action": "SetRegistry",
-      "category": "",
+      "category": "Opinionated",
       "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager!RotatingLockScreenOverlayEnabled",
       "description": "Disables Windows Spotlight lock-screen \"fun facts/ads\" overlays for new user profiles.",
       "rationale": "Spotlight lock-screen overlays surface suggestions/ads. Applied to the DEFAULT hive so new profiles inherit it. The specific per-user ContentDeliveryManager value is community-documented (EvidenceGrade 3), so it is opt-in only.",
@@ -896,7 +939,9 @@
         "arm64"
       ],
       "sourceFile": "catalog.registry.psd1",
-      "profiles": []
+      "profiles": [
+        "opinionated"
+      ]
     },
     {
       "id": "remove-onedrive",
@@ -922,7 +967,7 @@
       "id": "reg-reverse-mouse-scroll",
       "type": "Registry",
       "action": "SetRegistry",
-      "category": "",
+      "category": "Opinionated",
       "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimReverseMouseScroll",
       "description": "Reverses the mouse wheel scroll direction (macOS-style \"natural\" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.",
       "rationale": "FlipFlopWheel is the well-known per-device control that inverts wheel scroll direction, but it lives under each mouse's SYSTEM\\...\\Enum\\HID\\<device>\\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (a Microsoft-documented mechanism) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. The FlipFlopWheel value itself is community-documented (EvidenceGrade 3), so it is opt-in only.",
@@ -936,7 +981,9 @@
         "arm64"
       ],
       "sourceFile": "catalog.registry.psd1",
-      "profiles": []
+      "profiles": [
+        "opinionated"
+      ]
     }
   ]
 }

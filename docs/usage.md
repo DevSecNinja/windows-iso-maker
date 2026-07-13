@@ -23,7 +23,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | Field | Meaning |
 |-------|---------|
 | `Edition` / `Language` / `Release` / `Architecture` | Base image selection (Fido inputs). `Architecture` is `amd64` or `arm64`. |
-| `Profile` | Baseline change set: `minimal`, `default`, `aggressive`, or `gaming` (keeps Xbox/Game Bar). |
+| `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + personal-taste extras: reversed scroll, Start web-search off, Spotlight off, WSL). |
 | `Toggles` | Per-id override map, e.g. `@{ 'appx-todos' = $false; 'feature-wsl' = $true }`. |
 | `EnableCatalogId` / `DisableCatalogId` | Force-enable / force-disable specific entries by `Id` (explicit ids win). |
 | `Autounattend` | Install/OOBE-time options (see [autounattend.md](autounattend.md)). |

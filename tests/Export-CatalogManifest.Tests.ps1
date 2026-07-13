@@ -31,12 +31,13 @@ Describe 'Export-CatalogManifest' {
         $script:Manifest.entryCount | Should -Be $script:Manifest.entries.Count
     }
 
-    It 'exposes the four baseline profiles' {
+    It 'exposes the five baseline profiles' {
         $names = @($script:Manifest.profiles | ForEach-Object { $_.name })
         $names | Should -Contain 'minimal'
         $names | Should -Contain 'default'
         $names | Should -Contain 'aggressive'
         $names | Should -Contain 'gaming'
+        $names | Should -Contain 'opinionated'
     }
 
     It 'gives every entry the mandatory documentation fields' {
@@ -60,6 +61,17 @@ Describe 'Export-CatalogManifest' {
         $entry | Should -Not -BeNullOrEmpty -Because "manifest should contain $Id"
         $entry.profiles | Should -Contain 'default'
         $entry.profiles | Should -Contain 'aggressive'
+    }
+
+    It 'tags the reversed-scroll extra and WSL as opinionated-only' -ForEach @(
+        @{ Id = 'reg-reverse-mouse-scroll' }
+        @{ Id = 'feature-wsl' }
+    ) {
+        $entry = $script:Manifest.entries | Where-Object { $_.id -eq $Id }
+        $entry | Should -Not -BeNullOrEmpty -Because "manifest should contain $Id"
+        $entry.profiles | Should -Contain 'opinionated'
+        $entry.profiles | Should -Not -Contain 'aggressive'
+        $entry.profiles | Should -Not -Contain 'default'
     }
 
     It 'writes valid JSON to -OutputPath and returns that path' {

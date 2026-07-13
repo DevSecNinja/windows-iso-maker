@@ -70,7 +70,7 @@ docs/                         # This documentation
 
 ## Building blocks
 
-- **Config-driven** selection via named `Profile`s (`minimal`/`default`/`aggressive`/`gaming`), a
+- **Config-driven** selection via named `Profile`s (`minimal`/`default`/`aggressive`/`gaming`/`opinionated`), a
   `Toggles` map, and `EnableCatalogId`/`DisableCatalogId` lists.
 - **Cross-architecture**: amd64 on `windows-latest`, arm64 on native `windows-11-arm` runners.
 - **Verifiable builds**: SHA256 checksums + SLSA build provenance + a CycloneDX SBOM and an

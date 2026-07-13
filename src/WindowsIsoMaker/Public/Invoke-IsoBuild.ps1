@@ -91,7 +91,7 @@ function Invoke-IsoBuild {
         [string] $Release,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
         [string] $Profile,
 
         [Parameter()]
