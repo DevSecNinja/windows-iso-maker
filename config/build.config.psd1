@@ -21,7 +21,7 @@
     Architecture = 'amd64'      # 'amd64' | 'arm64' (validated)
 
     # --- Data-driven change selection (FR-024) ---
-    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' (baseline set)
+    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' (baseline set)
     Toggles          = @{}        # per-id override map, e.g. @{ 'appx-todos' = $false; 'feature-wsl' = $true }
     EnableCatalogId  = @()        # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
     DisableCatalogId = @()        # force-disable specific catalog entries by Id (explicit ids win)

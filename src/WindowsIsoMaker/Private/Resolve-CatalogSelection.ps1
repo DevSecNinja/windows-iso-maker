@@ -7,7 +7,7 @@ function Resolve-CatalogSelection {
         per-feature switches). The resolution order is:
 
             1. Architecture filter (Principle IV) — entries not listing the target arch are dropped.
-            2. Profile baseline — 'minimal' | 'default' | 'aggressive' selects an initial enabled set.
+            2. Profile baseline — 'minimal' | 'default' | 'aggressive' | 'gaming' selects an initial enabled set.
             3. Toggles map — per-id boolean overrides from the config (Id -> $true/$false).
             4. EnableCatalogId — force-enable specific ids (opt-in, e.g. 'remove-edge','feature-wsl').
             5. DisableCatalogId — force-disable specific ids (explicit ids win, applied last).
@@ -17,6 +17,8 @@ function Resolve-CatalogSelection {
             * default    — every entry whose DefaultEnabled is $true.
             * aggressive — the default set PLUS opt-in removal entries graded 1-2 (never grade-3,
                            never additive features such as WSL, which stay strictly opt-in).
+            * gaming     — the default set MINUS entries tagged Category='Gaming' (Xbox Game Bar /
+                           Xbox provisioned apps), so gaming functionality is preserved.
 
         Any id referenced by Toggles/EnableCatalogId/DisableCatalogId that does not exist in the
         catalog raises a terminating error.
@@ -25,7 +27,7 @@ function Resolve-CatalogSelection {
     .PARAMETER Architecture
         Target architecture ('amd64' or 'arm64'); entries not listing it are excluded.
     .PARAMETER Profile
-        Baseline profile: 'minimal' | 'default' | 'aggressive'.
+        Baseline profile: 'minimal' | 'default' | 'aggressive' | 'gaming'.
     .PARAMETER Toggles
         Hashtable of per-id boolean overrides (Id -> $true/$false).
     .PARAMETER EnableCatalogId
@@ -50,7 +52,7 @@ function Resolve-CatalogSelection {
         [string] $Architecture,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive')]
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
         [string] $Profile = 'default',
 
         [Parameter()]
@@ -118,7 +120,7 @@ function Test-CatalogEntryInProfile {
     .PARAMETER Entry
         A single catalog entry.
     .PARAMETER Profile
-        'minimal' | 'default' | 'aggressive'.
+        'minimal' | 'default' | 'aggressive' | 'gaming'.
     .OUTPUTS
         System.Boolean
     #>
@@ -126,7 +128,7 @@ function Test-CatalogEntryInProfile {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)] [object] $Entry,
-        [Parameter(Mandatory = $true)] [ValidateSet('minimal', 'default', 'aggressive')] [string] $Profile
+        [Parameter(Mandatory = $true)] [ValidateSet('minimal', 'default', 'aggressive', 'gaming')] [string] $Profile
     )
 
     $isDefault = [bool]$Entry.DefaultEnabled
@@ -143,6 +145,19 @@ function Test-CatalogEntryInProfile {
             # optional features such as WSL — those stay strictly opt-in).
             if ($isDefault) { return $true }
             return ($grade -le 2 -and $action -in @('RemoveAppx', 'RemoveCapability'))
+        }
+        'gaming' {
+            # Same debloat baseline as 'default', but preserve gaming components: entries tagged
+            # Category='Gaming' (the Xbox Game Bar / Xbox provisioned apps) are never removed, so
+            # gamers keep a working Xbox / Game Bar stack.
+            $isGaming = if ($Entry -is [System.Collections.IDictionary]) {
+                $Entry.Contains('Category') -and $Entry['Category'] -eq 'Gaming'
+            }
+            else {
+                ($Entry.PSObject.Properties.Name -contains 'Category') -and $Entry.Category -eq 'Gaming'
+            }
+            if ($isGaming) { return $false }
+            return $isDefault
         }
         default {
             # 'default'

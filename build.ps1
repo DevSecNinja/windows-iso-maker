@@ -32,7 +32,7 @@
     Optional last-mile override for the Windows release (e.g. 'latest').
 
 .PARAMETER Profile
-    Optional last-mile override for the catalog profile ('minimal' | 'default' | 'aggressive').
+    Optional last-mile override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming').
 
 .PARAMETER EnableCatalogId
     Opt-in catalog ids to enable (data-driven; e.g. 'remove-edge','remove-onedrive','feature-wsl').
@@ -91,7 +91,7 @@ param(
     [string] $Release,
 
     [Parameter()]
-    [ValidateSet('minimal', 'default', 'aggressive')]
+    [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
     [string] $Profile,
 
     [Parameter()]

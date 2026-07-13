@@ -33,7 +33,7 @@ function Get-BuildConfiguration {
     .PARAMETER Architecture
         Optional override for the target architecture ('amd64' | 'arm64').
     .PARAMETER Profile
-        Optional override for the catalog profile ('minimal' | 'default' | 'aggressive').
+        Optional override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming').
     .PARAMETER EnableCatalogId
         Catalog ids to force-enable (opt-in), e.g. 'remove-edge','feature-wsl'.
     .PARAMETER DisableCatalogId
@@ -70,7 +70,7 @@ function Get-BuildConfiguration {
         [string] $Architecture,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive')]
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
         [string] $Profile,
 
         [Parameter()]
@@ -185,8 +185,8 @@ function Get-BuildConfiguration {
     if (@('amd64', 'arm64') -notcontains $resolved['Architecture']) {
         throw "Invalid configuration: 'Architecture' must be 'amd64' or 'arm64' (got '$($resolved['Architecture'])')."
     }
-    if (@('minimal', 'default', 'aggressive') -notcontains $resolved['Profile']) {
-        throw "Invalid configuration: 'Profile' must be 'minimal', 'default', or 'aggressive' (got '$($resolved['Profile'])')."
+    if (@('minimal', 'default', 'aggressive', 'gaming') -notcontains $resolved['Profile']) {
+        throw "Invalid configuration: 'Profile' must be 'minimal', 'default', 'aggressive', or 'gaming' (got '$($resolved['Profile'])')."
     }
     if (@('zip', '7z') -notcontains $resolved['CompressionFormat']) {
         throw "Invalid configuration: 'CompressionFormat' must be 'zip' or '7z' (got '$($resolved['CompressionFormat'])')."

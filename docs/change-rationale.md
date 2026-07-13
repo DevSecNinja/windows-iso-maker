@@ -39,7 +39,8 @@ new code path or parameter** (FR-024/FR-025).
 Selection is resolved by [`Resolve-CatalogSelection`](../src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1)
 from three inputs, in order of increasing precedence:
 
-1. `Profile` — the baseline set (`minimal` / `default` / `aggressive`).
+1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming`, where `gaming`
+   is `default` minus the `Category = 'Gaming'` entries so Xbox / Game Bar are preserved).
 2. `Toggles` — a per-id `@{ id = $true/$false }` map.
 3. `EnableCatalogId` / `DisableCatalogId` — explicit ids always win.
 

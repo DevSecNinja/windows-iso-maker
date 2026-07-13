@@ -23,7 +23,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | Field | Meaning |
 |-------|---------|
 | `Edition` / `Language` / `Release` / `Architecture` | Base image selection (Fido inputs). `Architecture` is `amd64` or `arm64`. |
-| `Profile` | Baseline change set: `minimal`, `default`, or `aggressive`. |
+| `Profile` | Baseline change set: `minimal`, `default`, `aggressive`, or `gaming` (keeps Xbox/Game Bar). |
 | `Toggles` | Per-id override map, e.g. `@{ 'appx-todos' = $false; 'feature-wsl' = $true }`. |
 | `EnableCatalogId` / `DisableCatalogId` | Force-enable / force-disable specific entries by `Id` (explicit ids win). |
 | `Autounattend` | Install/OOBE-time options (see [autounattend.md](autounattend.md)). |
@@ -51,7 +51,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-ConfigPath` (alias `-Path`) | Config file to load (default `config/build.config.psd1`). |
 | `-Architecture` | `amd64` \| `arm64`. |
 | `-Edition` / `-Language` / `-Release` | Base image overrides. |
-| `-Profile` | `minimal` \| `default` \| `aggressive`. |
+| `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming`. |
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
@@ -68,6 +68,9 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 
 # Aggressive profile, but keep the Xbox game overlay
 ./build.ps1 -Profile aggressive -DisableCatalogId appx-xbox-game-overlay
+
+# Gaming profile: full debloat but preserve Xbox Game Bar and the Xbox provisioned apps
+./build.ps1 -Profile gaming
 
 # Opt in to Edge + OneDrive removal and enable WSL
 ./build.ps1 -EnableCatalogId remove-edge,remove-onedrive,feature-wsl
