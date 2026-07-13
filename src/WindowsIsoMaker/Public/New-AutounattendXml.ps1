@@ -86,25 +86,25 @@ function New-AutounattendXml {
     $localAccountName = [string](& $get 'LocalAccountName' 'Admin')
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
-    # --- ProductKey fragment (edition selector, NOT an activation key). ---
-    # Windows Setup requires a key on the product-key page for non-Home editions; without one
-    # a fully-unattended Pro install stops with "Setup has failed to validate the product key".
-    # Supplying Microsoft's public generic (KMS client setup) key selects the edition and skips
-    # that page — activation still happens later via the user's own key / digital licence / KMS.
-    # WillShowUI is 'Never': on Windows 11 24H2's redesigned Setup, 'OnError' makes Setup drop to
-    # the interactive product-key page on any validation hiccup with a generic key (the exact
-    # "asks for a product key / Setup has failed to validate the product key" symptom). 'Never'
-    # keeps the install hands-off; a genuinely bad key hard-fails (and is captured by log harvest)
-    # instead of silently blocking on an interactive page.
-    #   ProductKey not set / '' / whitespace -> auto-pick the generic key for the resolved Edition
-    #   ProductKey = 'none'                  -> omit entirely (Setup will prompt)
+    # --- ProductKey fragment (optional edition selector, NOT an activation key). ---
+    # The edition is already chosen by the ImageInstall/OSImage image metadata (/IMAGE/NAME), which
+    # ALSO skips Setup's "Type your product key" page (Microsoft docs: that page is skipped when
+    # EITHER a ProductKey Key OR the ImageInstall image metadata is configured). So by default we
+    # emit NO <ProductKey> at all — it is redundant, and on Windows 11 24H2's redesigned Setup an
+    # explicit generic key fails validation and hard-stops with "Setup has failed to validate the
+    # product key" (with WillShowUI=Never) or drops to the interactive key page (with OnError).
+    # Activation happens later via the user's own key / digital licence / KMS.
+    #   ProductKey not set / '' / whitespace -> omit entirely (edition selected by image metadata)
+    #   ProductKey = 'none'                  -> omit entirely
+    #   ProductKey = 'generic' | 'auto'      -> inject the public generic key for the resolved Edition
     #   ProductKey = 'XXXXX-...'             -> use that explicit key
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
-    if ($null -ne $productKeyRaw -and [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
+    if ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
+        [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
         $productKey = ''
     }
-    elseif ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw)) {
+    elseif ([string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
         $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
     }
     else {

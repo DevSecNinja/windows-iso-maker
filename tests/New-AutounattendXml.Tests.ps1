@@ -61,16 +61,25 @@ Describe 'New-AutounattendXml product key' {
         }
     }
 
-    It 'auto-injects the generic Pro key when ProductKey is not set' {
+    It 'omits the ProductKey by default so the image metadata selects the edition (24H2-safe)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Not -Match '<ProductKey>'
+        # Edition selection must still be present via the image metadata.
+        $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Pro</Value>'))
+    }
+
+    It 'injects the generic key for the edition when ProductKey is "generic"' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
         $xml | Should -Match '<ProductKey>'
         $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
     }
 
-    It 'auto-picks the key matching the resolved edition' {
-        $cfg = New-TestConfig -Edition 'Pro N' -Autounattend @{}
+    It 'picks the generic key matching the resolved edition for "auto"' {
+        $cfg = New-TestConfig -Edition 'Pro N' -Autounattend @{ ProductKey = 'auto' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'))
     }
@@ -87,14 +96,14 @@ Describe 'New-AutounattendXml product key' {
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'))
     }
 
-    It 'produces well-formed XML with the injected key' {
+    It 'produces well-formed XML by default (no product key)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
 
-    It 'sets WillShowUI=Never on the ProductKey so 24H2 Setup never drops to the interactive key page' {
-        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
+    It 'sets WillShowUI=Never on an explicit/generic ProductKey so 24H2 Setup never drops to the key page' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
         $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)

@@ -241,6 +241,16 @@ Describe 'Invoke-VmBootTest diagnostics harvesting' {
         }
     }
 
+    It 'nests harvested logs in a per-VM subfolder of -DiagnosticsPath' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
+            param($Iso)
+            $script:capturedDest = $null
+            Mock Save-BootTestSetupLog { $script:capturedDest = $DestinationDirectory; $null }
+            $null = Invoke-VmBootTest -IsoPath $Iso -Architecture amd64 -TimeoutSeconds 30 -PollIntervalSeconds 10 -MinRunningSeconds 1000 -DiagnosticsPath 'C:\out\diag'
+            $script:capturedDest | Should -Match ([regex]::Escape('C:\out\diag\wim-boottest-'))
+        }
+    }
+
     It 'does not harvest when -DiagnosticsPath is empty' {
         InModuleScope WindowsIsoMaker -Parameters @{ Iso = $script:FakeIso } {
             param($Iso)

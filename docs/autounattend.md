@@ -73,17 +73,26 @@ harvest) instead of silently blocking on an interactive page.
 
 ## Product key (edition selector)
 
-Windows Setup shows a product-key page for non-Home editions; a **fully unattended** Pro
-install otherwise stops with *"Setup has failed to validate the product key"*. `ProductKey`
-controls the `<ProductKey>` element written into the `windowsPE` pass:
+The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
+`/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass.
+Per Microsoft's *Automate Windows Setup* docs, configuring that image metadata **also skips the
+"Type your product key" page** — so **no `<ProductKey>` element is needed at all** for a fully
+unattended install, and none is emitted by default.
+
+This matters on **Windows 11 24H2**: its redesigned Setup validates an explicit generic key more
+strictly and stops with *"Setup has failed to validate the product key"* (even with `WillShowUI`
+set), so emitting a redundant generic key actively breaks the unattended install. `ProductKey`
+controls whether (and which) `<ProductKey>` element is written:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) | Auto-pick Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. This only *selects the edition* and skips the key page — it does **not** activate Windows (activation still happens later via your own key, a digital licence, or KMS). |
-| `'none'` | Omit the element entirely; Setup will prompt for a key. |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit key. |
+| `''` (default) | **Omit** the `<ProductKey>` element; the image metadata selects the edition and skips the key page. Recommended (24H2-safe). |
+| `'none'` | Also omit the element. |
+| `'generic'` / `'auto'` | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. Only *selects the edition*; does **not** activate Windows. May fail on 24H2 — prefer the default. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit key (e.g. a real retail key). |
 
-The generic keys are published by Microsoft for exactly this purpose — see
+When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
+published by Microsoft — see
 [KMS client activation and product keys](https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys).
 
 ## Security note

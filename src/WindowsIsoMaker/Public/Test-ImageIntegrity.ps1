@@ -292,7 +292,11 @@ function Invoke-VmBootTest {
         if (-not [string]::IsNullOrWhiteSpace($DiagnosticsPath)) {
             try {
                 Stop-BootTestVm -VmName $vmName
-                $diag = Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $DiagnosticsPath
+                # Nest per VM so it is obvious which boot-test VM each log set came from, and so a
+                # fresh run never shows a previous run's logs (each VM name is unique per build).
+                $safeVmName = ($vmName -replace '[\\/:*?"<>|]', '_')
+                $vmDiagnosticsPath = Join-Path -Path $DiagnosticsPath -ChildPath $safeVmName
+                $diag = Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $vmDiagnosticsPath
                 if ($diag) {
                     if ($null -ne $result) {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue $diag -Force
@@ -488,6 +492,16 @@ function Save-BootTestSetupLog {
 
     if (-not (Test-Path -LiteralPath $VhdPath)) { return $null }
     if (-not (Get-Command -Name 'Mount-VHD' -ErrorAction SilentlyContinue)) { return $null }
+
+    # Clear any files harvested by a previous run first. A failure in the windowsPE phase (e.g. the
+    # answer file being rejected, or a product-key validation error) happens on the WinPE RAM disk
+    # and writes NOTHING to this target VHDX - so without clearing, we would resurface stale logs
+    # from an earlier attempt and misdiagnose the current one. An empty folder correctly signals
+    # "nothing was written to disk this run".
+    if (Test-Path -LiteralPath $DestinationDirectory) {
+        Get-ChildItem -LiteralPath $DestinationDirectory -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
 
     # Setup log locations, relative to each partition root. '$WINDOWS.~BT' is a literal folder name
     # ($ is not a variable here - single-quoted).
