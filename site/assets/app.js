@@ -68,6 +68,9 @@ const currentEnabled = (entry) =>
   Object.prototype.hasOwnProperty.call(state.deviations, entry.id)
     ? state.deviations[entry.id]
     : isDefaultFor(entry, state.options.Profile);
+const profileMeta = (name) => (state.manifest?.profiles || []).find((p) => p.name === name) || null;
+const describeProfile = (name) => profileMeta(name)?.description || '';
+const profileChangeCount = (name) => state.entries.filter((e) => isDefaultFor(e, name)).length;
 
 // ============================================================================
 // Boot
@@ -145,7 +148,7 @@ function buildOverview() {
 
   const profileSel = $('#filter-profile');
   for (const p of state.manifest.profiles || []) {
-    profileSel.appendChild(el('option', { value: p.name, text: `${p.name} profile` }));
+    profileSel.appendChild(el('option', { value: p.name, text: `${p.name} profile`, title: p.description || '' }));
   }
   const typeSel = $('#filter-type');
   for (const t of state.manifest.types || []) {
@@ -186,7 +189,27 @@ function currentFilters() {
   };
 }
 
+// Explain the selected profile inline so users don't have to reverse-engineer it from the rows.
+function renderProfileSummary() {
+  const box = $('#profile-summary');
+  if (!box) return;
+  const name = $('#filter-profile').value;
+  if (!name) {
+    box.hidden = true;
+    box.replaceChildren();
+    return;
+  }
+  const count = profileChangeCount(name);
+  box.hidden = false;
+  box.replaceChildren(
+    el('span', { class: 'profile-pill', text: name }),
+    el('span', { class: 'profile-desc', text: describeProfile(name) }),
+    el('span', { class: 'profile-count', text: `${count} change${count === 1 ? '' : 's'}` })
+  );
+}
+
 function renderEntries() {
+  renderProfileSummary();
   const f = currentFilters();
   const list = state.entries.filter((entry) => {
     if (f.profile && !isDefaultFor(entry, f.profile)) return false;
@@ -262,8 +285,22 @@ function buildConfigurator() {
   });
   $('#copy-config').addEventListener('click', copyConfig);
   $('#download-config').addEventListener('click', downloadConfig);
+  renderConfigProfileSummary();
   renderConfigEntries();
   updateConfigOutput();
+}
+
+// Show the active baseline profile's description under the Profile selector.
+function renderConfigProfileSummary() {
+  const box = $('#config-profile-summary');
+  if (!box) return;
+  const desc = describeProfile(state.options.Profile);
+  const count = profileChangeCount(state.options.Profile);
+  box.replaceChildren(
+    el('span', { class: 'profile-pill', text: state.options.Profile }),
+    el('span', { class: 'profile-desc', text: desc }),
+    el('span', { class: 'profile-count', text: `${count} default change${count === 1 ? '' : 's'}` })
+  );
 }
 
 function renderOptionFields() {
@@ -316,6 +353,7 @@ function renderOptionFields() {
     selectField('Profile', 'Profile', (state.manifest.profiles || []).map((p) => p.name), () => {
       // Changing the baseline changes every default, so drop deviations to avoid confusion.
       state.deviations = {};
+      renderConfigProfileSummary();
       renderConfigEntries();
     }),
     textField('Edition', 'Edition'),
