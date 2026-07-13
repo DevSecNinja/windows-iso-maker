@@ -40,9 +40,10 @@ function Export-ImageBom {
         [string[]] $Format = @('cyclonedx', 'markdown')
     )
 
-    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
-        New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-    }
+    # Anchor outputs to the absolute path New-Item -Force actually resolved so the returned
+    # WrittenFiles are unambiguous regardless of $PWD vs process/module location differences.
+    $outputDirInfo = New-Item -ItemType Directory -Path $OutputDirectory -Force
+    $OutputDirectory = $outputDirInfo.FullName
 
     # Build an Id -> catalog-entry lookup from the resolved config (grade/description/citation).
     $catalogById = @{}

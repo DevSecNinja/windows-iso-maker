@@ -111,4 +111,26 @@ Describe 'Compress-BuildArtifact (zip format)' {
         $result.Sha256 | Should -Not -BeNullOrEmpty
         $result.SizeBytes | Should -BeGreaterThan 0
     }
+
+    It 'returns an absolute ArchivePath anchored next to $PWD for a relative OutputDirectory' {
+        # Regression: a relative OutputDirectory (e.g. './out') must resolve next to where the
+        # build runs, not the process/home directory. New-Item -Force's .FullName is authoritative,
+        # so the archive lands beside $PWD and the returned ArchivePath is absolute.
+        $iso = Join-Path $script:WorkDir 'Windows11-Pro-amd64-latest.iso'
+        Set-Content -LiteralPath $iso -Value ('iso-bytes-' + ('z' * 2000)) -NoNewline
+
+        Push-Location -LiteralPath $script:WorkDir
+        try {
+            $result = Compress-BuildArtifact -IsoPath $iso -OutputDirectory './out' -Format zip -Edition Pro -Architecture amd64 -Release latest
+        }
+        finally {
+            Pop-Location
+        }
+
+        [System.IO.Path]::IsPathRooted($result.ArchivePath) | Should -BeTrue
+        $result.ArchivePath | Should -Exist
+        $expected = Join-Path (Join-Path $script:WorkDir 'out') 'Windows11-Pro-amd64-latest.zip'
+        # Compare canonical paths (handles any 8.3/short-name or casing differences).
+        (Convert-Path -LiteralPath $result.ArchivePath) | Should -Be (Convert-Path -LiteralPath $expected)
+    }
 }

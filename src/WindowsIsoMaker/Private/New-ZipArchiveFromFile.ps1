@@ -42,10 +42,23 @@ function New-ZipArchiveFromFile {
     try { Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction Stop } catch { $null = $_ }
 
     # .NET file APIs resolve relative paths against [Environment]::CurrentDirectory (the process
-    # start dir), NOT PowerShell's $PWD. Resolve to absolute provider paths first so a relative
-    # OutputDirectory (e.g. './out') lands next to $PWD instead of the process start directory.
-    $sourceFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourceFile)
-    $destFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DestinationArchive)
+    # start dir), NOT PowerShell's $PWD, so relative paths must be made absolute first. For paths
+    # that are already rooted (the normal case — callers anchor to New-Item's .FullName), use them
+    # verbatim: the $ExecutionContext.SessionState.Path API resolves relative paths against the
+    # *module's* session-state location, which can diverge from where cmdlets like New-Item write
+    # in a long-running session, so we only fall back to it for genuinely relative inputs.
+    $sourceFull = if ([System.IO.Path]::IsPathRooted($SourceFile)) {
+        $SourceFile
+    }
+    else {
+        $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourceFile)
+    }
+    $destFull = if ([System.IO.Path]::IsPathRooted($DestinationArchive)) {
+        $DestinationArchive
+    }
+    else {
+        $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DestinationArchive)
+    }
 
     if (-not $EntryName) {
         $EntryName = [System.IO.Path]::GetFileName($sourceFull)

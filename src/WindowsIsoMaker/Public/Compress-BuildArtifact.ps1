@@ -52,12 +52,15 @@ function Compress-BuildArtifact {
     if (-not (Test-Path -LiteralPath $IsoPath)) {
         throw "ISO not found: '$IsoPath'."
     }
-    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
-        New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-    }
+    # New-Item -Force returns the DirectoryInfo for a newly created OR pre-existing directory; its
+    # .FullName is the absolute path the cmdlet actually resolved. Anchor the archive to that path
+    # so the .NET ZipFile API (which resolves relative paths against the module's session-state
+    # location / process start directory, not $PWD) always writes next to where the build ran
+    # instead of the home directory. See New-ZipArchiveFromFile for the underlying gotcha.
+    $outputDirInfo = New-Item -ItemType Directory -Path $OutputDirectory -Force
 
     $baseName = ("Windows11-$Edition-$Architecture-$Release" -replace '\s', '')
-    $archivePath = Join-Path -Path $OutputDirectory -ChildPath "$baseName.$Format"
+    $archivePath = Join-Path -Path $outputDirInfo.FullName -ChildPath "$baseName.$Format"
 
     if ($PSCmdlet.ShouldProcess($archivePath, "Compress ISO ($Format)")) {
         if (Test-Path -LiteralPath $archivePath) {
