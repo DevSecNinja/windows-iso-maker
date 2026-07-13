@@ -34,7 +34,7 @@ function Invoke-IsoBuild {
     .PARAMETER Release
         Optional release override.
     .PARAMETER Profile
-        Optional profile override ('minimal' | 'default' | 'aggressive' | 'gaming').
+        Optional profile override ('minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated').
     .PARAMETER EnableCatalogId
         Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
     .PARAMETER DisableCatalogId

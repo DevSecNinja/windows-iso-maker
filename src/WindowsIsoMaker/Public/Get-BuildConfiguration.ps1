@@ -33,7 +33,7 @@ function Get-BuildConfiguration {
     .PARAMETER Architecture
         Optional override for the target architecture ('amd64' | 'arm64').
     .PARAMETER Profile
-        Optional override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming').
+        Optional override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated').
     .PARAMETER EnableCatalogId
         Catalog ids to force-enable (opt-in), e.g. 'remove-edge','feature-wsl'.
     .PARAMETER DisableCatalogId
