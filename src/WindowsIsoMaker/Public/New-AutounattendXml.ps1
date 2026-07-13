@@ -74,6 +74,12 @@ function New-AutounattendXml {
     $keyboard = [string](& $get 'KeyboardLayout' '0409:00000409')
     $timezone = [string](& $get 'TimeZone' 'UTC')
     $diskId = [int](& $get 'DiskId' 0)
+    # The install.wim image name to deploy. Derived from Edition ("Pro" -> "Windows 11 Pro") so
+    # Setup's ImageInstall/InstallFrom skips the interactive edition picker; overridable via
+    # Autounattend.ImageName for non-standard media (e.g. an Enterprise volume-licence WIM).
+    $editionRaw = [string]$Config.Edition
+    $defaultImageName = if ($editionRaw -match '(?i)^\s*windows\s') { $editionRaw.Trim() } else { "Windows 11 $($editionRaw.Trim())" }
+    $editionImageName = [string](& $get 'ImageName' $defaultImageName)
     $skipOobe = [bool](& $get 'SkipOobe' $true)
     $bypassMsAccount = [bool](& $get 'BypassMsAccount' $true)
     $createLocalAccount = [bool](& $get 'CreateLocalAccount' $true)
@@ -172,6 +178,7 @@ function New-AutounattendXml {
         '{{KEYBOARD}}'               = [System.Security.SecurityElement]::Escape($keyboard)
         '{{TIMEZONE}}'               = [System.Security.SecurityElement]::Escape($timezone)
         '{{DISK_ID}}'                = [string]$diskId
+        '{{EDITION_IMAGE_NAME}}'     = [System.Security.SecurityElement]::Escape($editionImageName)
         '{{PRODUCTKEY_FRAGMENT}}'    = $productKeyFragment.TrimEnd("`r", "`n")
         '{{OOBE_FRAGMENT}}'          = $oobeFragment.TrimEnd("`r", "`n")
         '{{USERACCOUNTS_FRAGMENT}}'  = $userAccountsFragment.TrimEnd("`r", "`n")

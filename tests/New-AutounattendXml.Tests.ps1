@@ -93,3 +93,50 @@ Describe 'New-AutounattendXml product key' {
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
 }
+
+Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
+
+    BeforeEach {
+        $script:OutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("au-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.xml')
+    }
+    AfterEach {
+        Remove-Item $script:OutPath -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeAll {
+        function script:New-ImgConfig {
+            param($Edition = 'Pro', [hashtable]$Autounattend = @{})
+            [pscustomobject]@{ Edition = $Edition; Language = 'en-US'; Architecture = 'amd64'; Autounattend = $Autounattend }
+        }
+    }
+
+    It 'derives the install.wim image name from the edition' {
+        New-AutounattendXml -Config (New-ImgConfig -Edition 'Pro') -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        $value = $xml.SelectSingleNode("//u:ImageInstall/u:OSImage/u:InstallFrom/u:MetaData/u:Value", $ns).InnerText
+        $value | Should -Be 'Windows 11 Pro'
+    }
+
+    It 'does not double-prefix an edition that already names Windows' {
+        New-AutounattendXml -Config (New-ImgConfig -Edition 'Windows 11 Enterprise') -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('<Value>Windows 11 Enterprise</Value>'))
+    }
+
+    It 'honours an explicit ImageName override' {
+        New-AutounattendXml -Config (New-ImgConfig -Edition 'Pro' -Autounattend @{ ImageName = 'Windows 11 Pro for Workstations' }) -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('<Value>Windows 11 Pro for Workstations</Value>'))
+    }
+
+    It 'targets the Windows primary partition (DiskID 0, PartitionID 3)' {
+        New-AutounattendXml -Config (New-ImgConfig -Edition 'Pro') -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        $installTo = $xml.SelectSingleNode("//u:ImageInstall/u:OSImage/u:InstallTo", $ns)
+        $installTo.DiskID | Should -Be '0'
+        $installTo.PartitionID | Should -Be '3'
+    }
+}
+

@@ -12,7 +12,7 @@ Two different layers configure the image:
 | Layer | When | What it does |
 |-------|------|--------------|
 | DISM offline servicing | Image build time | Remove provisioned apps, apply registry hive tweaks, enable optional features (e.g. WSL). |
-| **Autounattend.xml** | Install / OOBE time | Skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account, run first-logon/SetupComplete commands. |
+| **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account, run first-logon/SetupComplete commands. |
 
 ## Why per-architecture
 
@@ -43,6 +43,23 @@ Autounattend = @{
 ```
 
 Set `Enabled = $false` to skip generation entirely and ship the stock Microsoft OOBE.
+
+## Fully-automated install (edition + partition + key)
+
+The `windowsPE` pass specifies a complete `ImageInstall/OSImage` block so Windows Setup runs the
+install phase **hands-off** — no interactive *"which edition?"*, *"where to install?"*, or product-key
+pages. This matters on **Windows 11 24H2**, whose redesigned Setup drops to the interactive pages
+whenever the install phase isn't fully specified:
+
+- **Edition** — `InstallFrom/MetaData` sets `/IMAGE/NAME` to the install.wim image name, derived from
+  `Edition` (`Pro` → `Windows 11 Pro`). Override with `Autounattend.ImageName` for non-standard media
+  (e.g. `Windows 11 Enterprise` on a volume-licence WIM).
+- **Target** — `InstallTo` points at disk `DiskId`, partition 3 (the Windows primary created by the
+  `DiskConfiguration` layout: ESP 260 MB + MSR 16 MB + Windows).
+- **Key** — the generic `ProductKey` below selects/validates that edition so the key page is skipped.
+
+All three use `WillShowUI = OnError`, so a genuine mismatch still surfaces the relevant page instead
+of hard-failing.
 
 ## Product key (edition selector)
 
