@@ -85,6 +85,90 @@ Describe 'Invoke-IsoBuild orchestration' {
             Should -Invoke Expand-WindowsImage -Times 0
         }
     }
+
+    Context 'integrity gating' {
+        It 'succeeds (with a warning) when the boot test could not run in this environment' {
+            $cfg = Get-FakeConfig
+            InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
+                param($Cfg)
+                Mock Test-BuildPrerequisite { [pscustomobject]@{ OscdimgPath = 'x'; DismPath = 'x' } }
+                Mock Get-Windows11Iso { [pscustomobject]@{ Path = 'C:\work\win11.iso'; Verified = $true } }
+                Mock Expand-WindowsImage { [pscustomobject]@{ MediaRoot = 'C:\work\media'; ImagePath = 'C:\work\media\sources\install.wim' } }
+                Mock Clear-StaleImageMount { }
+                Mock Mount-WindowsBuildImage { [pscustomobject]@{ MountPath = 'C:\work\mount'; IsMounted = $true } }
+                Mock Invoke-CatalogEntry { [pscustomobject]@{ Id = 'x'; Status = 'Applied' } }
+                Mock Dismount-BuildImage { }
+                Mock New-BootableIso { 'C:\work\win11.iso' }
+                Mock Compress-BuildArtifact { [pscustomobject]@{ ArchivePath = 'C:\out\a.zip' } }
+                Mock Export-ImageBom { [pscustomobject]@{ Path = 'C:\out\bom.json' } }
+                Mock New-RunReport { param($Outcome) [pscustomobject]@{ Outcome = $Outcome } }
+                Mock Test-ImageIntegrity {
+                    [pscustomobject]@{
+                        Passed     = $false
+                        Structural = @([pscustomobject]@{ Name = 'ImageIndexIntegrity'; Passed = $true })
+                        Boot       = [pscustomobject]@{ Passed = $false; Method = 'None'; Detail = 'Hyper-V not available.' }
+                    }
+                }
+                Mock Write-BuildLog { }
+
+                $report = Invoke-IsoBuild -Config $Cfg
+                $report.Outcome | Should -Be 'Succeeded'
+                Should -Invoke Write-BuildLog -ParameterFilter { $Level -eq 'Warning' -and $Message -like '*boot test could not run*' } -Times 1
+            }
+        }
+
+        It 'fails when the image actually would not boot (BootReset)' {
+            $cfg = Get-FakeConfig
+            InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
+                param($Cfg)
+                Mock Test-BuildPrerequisite { [pscustomobject]@{ OscdimgPath = 'x'; DismPath = 'x' } }
+                Mock Get-Windows11Iso { [pscustomobject]@{ Path = 'C:\work\win11.iso'; Verified = $true } }
+                Mock Expand-WindowsImage { [pscustomobject]@{ MediaRoot = 'C:\work\media'; ImagePath = 'C:\work\media\sources\install.wim' } }
+                Mock Clear-StaleImageMount { }
+                Mock Mount-WindowsBuildImage { [pscustomobject]@{ MountPath = 'C:\work\mount'; IsMounted = $true } }
+                Mock Invoke-CatalogEntry { [pscustomobject]@{ Id = 'x'; Status = 'Applied' } }
+                Mock Dismount-BuildImage { }
+                Mock New-BootableIso { 'C:\work\win11.iso' }
+                Mock Compress-BuildArtifact { [pscustomobject]@{ ArchivePath = 'C:\out\a.zip' } }
+                Mock Export-ImageBom { [pscustomobject]@{ Path = 'C:\out\bom.json' } }
+                Mock New-RunReport { param($Outcome) [pscustomobject]@{ Outcome = $Outcome } }
+                Mock Test-ImageIntegrity {
+                    [pscustomobject]@{
+                        Passed     = $false
+                        Structural = @([pscustomobject]@{ Name = 'ImageIndexIntegrity'; Passed = $true })
+                        Boot       = [pscustomobject]@{ Passed = $false; Method = 'BootReset'; Detail = 'VM left Running.' }
+                    }
+                }
+                { Invoke-IsoBuild -Config $Cfg } | Should -Throw '*VM boot test*'
+            }
+        }
+
+        It 'fails when a structural check fails regardless of the boot test' {
+            $cfg = Get-FakeConfig
+            InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
+                param($Cfg)
+                Mock Test-BuildPrerequisite { [pscustomobject]@{ OscdimgPath = 'x'; DismPath = 'x' } }
+                Mock Get-Windows11Iso { [pscustomobject]@{ Path = 'C:\work\win11.iso'; Verified = $true } }
+                Mock Expand-WindowsImage { [pscustomobject]@{ MediaRoot = 'C:\work\media'; ImagePath = 'C:\work\media\sources\install.wim' } }
+                Mock Clear-StaleImageMount { }
+                Mock Mount-WindowsBuildImage { [pscustomobject]@{ MountPath = 'C:\work\mount'; IsMounted = $true } }
+                Mock Invoke-CatalogEntry { [pscustomobject]@{ Id = 'x'; Status = 'Applied' } }
+                Mock Dismount-BuildImage { }
+                Mock New-BootableIso { 'C:\work\win11.iso' }
+                Mock Compress-BuildArtifact { [pscustomobject]@{ ArchivePath = 'C:\out\a.zip' } }
+                Mock Export-ImageBom { [pscustomobject]@{ Path = 'C:\out\bom.json' } }
+                Mock New-RunReport { param($Outcome) [pscustomobject]@{ Outcome = $Outcome } }
+                Mock Test-ImageIntegrity {
+                    [pscustomobject]@{
+                        Passed     = $false
+                        Structural = @([pscustomobject]@{ Name = 'BootFile:efi/microsoft/boot/efisys.bin'; Passed = $false })
+                        Boot       = $null
+                    }
+                }
+                { Invoke-IsoBuild -Config $Cfg } | Should -Throw '*structural integrity*'
+            }
+        }
+    }
 }
 
 Describe 'Clear-StaleImageMount' {

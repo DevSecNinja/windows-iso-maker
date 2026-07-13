@@ -59,6 +59,7 @@
 
     # --- Validation (FR-023) ---
     BootTest = $false             # opt-in VM boot test; default = structural checks only
+    KeepBootTestVm = $false       # with BootTest: keep the VM & pause for manual testing until Enter
 
     # --- Artifact ---
     CompressionFormat = 'zip'     # 'zip' | '7z'

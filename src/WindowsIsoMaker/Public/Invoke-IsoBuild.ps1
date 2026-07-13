@@ -43,6 +43,9 @@ function Invoke-IsoBuild {
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
         Opt-in VM boot validation in addition to structural checks (FR-023).
+    .PARAMETER KeepBootTestVm
+        With -BootTest, keep the throwaway VM alive and pause for manual testing (vmconnect)
+        until you press Enter, then tear it down. No effect unless the boot test runs.
     .EXAMPLE
         Invoke-IsoBuild -ConfigPath config/build.config.psd1 -Architecture amd64
     .EXAMPLE
@@ -92,7 +95,10 @@ function Invoke-IsoBuild {
         [switch] $SkipHeavyBuild,
 
         [Parameter()]
-        [switch] $BootTest
+        [switch] $BootTest,
+
+        [Parameter()]
+        [switch] $KeepBootTestVm
     )
 
     # --- 1. Resolve configuration (config file is primary; params are last-mile overrides). ---
@@ -107,6 +113,9 @@ function Invoke-IsoBuild {
 
     $isPreview = $WhatIfPreference -or $SkipHeavyBuild.IsPresent
     $wantBootTest = $BootTest.IsPresent -or [bool]$Config.BootTest
+    # StrictMode-safe: a Config built by tests may not carry KeepBootTestVm.
+    $configKeepVm = if ($Config.PSObject.Properties.Match('KeepBootTestVm').Count -gt 0) { [bool]$Config.KeepBootTestVm } else { $false }
+    $wantKeepBootTestVm = $KeepBootTestVm.IsPresent -or $configKeepVm
     $toolVersions = Get-BuildToolVersion -Config $Config
 
     Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message "Starting build (Arch=$($Config.Architecture), Edition=$($Config.Edition), Profile=$($Config.Profile), Preview=$isPreview)."
@@ -203,10 +212,31 @@ function Invoke-IsoBuild {
             -Format $Config.CompressionFormat -Edition $Config.Edition -Architecture $Config.Architecture -Release $Config.Release
 
         # 4h. Validate the produced ISO.
-        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest
+        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest -KeepBootTestVm:$wantKeepBootTestVm
         $artifact | Add-Member -NotePropertyName 'IntegrityResult' -NotePropertyValue $integrity -Force
-        if (-not $integrity.Passed) {
-            throw "Produced image failed integrity validation; not presenting it as a successful build (FR-005/FR-023)."
+
+        # Structural checks are authoritative: an image that fails them is bad media -> fatal.
+        # StrictMode-safe access: some tests mock Test-ImageIntegrity with a minimal object.
+        $structural = if ($integrity.PSObject.Properties.Match('Structural').Count) { @($integrity.Structural) } else { @() }
+        $structuralFailed = @($structural | Where-Object { -not $_.Passed })
+        if ($structuralFailed.Count -gt 0) {
+            $failedNames = ($structuralFailed | ForEach-Object { $_.Name }) -join ', '
+            throw "Produced image failed structural integrity validation ($failedNames); not presenting it as a successful build (FR-005/FR-023)."
+        }
+
+        # The opt-in VM boot test is a separate signal. Distinguish a REAL boot failure (the image
+        # would not boot: BootReset/Timeout) from an ENVIRONMENTAL one (Hyper-V unavailable or the
+        # test errored: None/Error). Only a real boot failure fails an otherwise-valid build; an
+        # environmental one is a warning so a structurally-sound ISO is not discarded because the
+        # host could not run the boot test.
+        $boot = if ($integrity.PSObject.Properties.Match('Boot').Count) { $integrity.Boot } else { $null }
+        if ($null -ne $boot -and -not $boot.Passed) {
+            if ($boot.Method -in @('None', 'Error')) {
+                Write-BuildLog -Level Warning -Component 'Invoke-IsoBuild' -Message "VM boot test could not run ($($boot.Method)): $($boot.Detail) Structural checks passed; continuing."
+            }
+            else {
+                throw "Produced image failed the VM boot test ($($boot.Method)): $($boot.Detail) (FR-023)."
+            }
         }
 
         # 4i. Emit the success RunReport, then derive the Image BOM from it (FR-029).

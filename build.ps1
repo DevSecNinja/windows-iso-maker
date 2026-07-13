@@ -46,6 +46,10 @@
 .PARAMETER BootTest
     Opt-in VM boot validation in addition to the default structural integrity checks.
 
+.PARAMETER KeepBootTestVm
+    With -BootTest, keep the throwaway VM running and pause for manual testing (attach with
+    vmconnect) until you press Enter, then power it off and clean up.
+
 .EXAMPLE
     ./build.ps1
     Builds using config/build.config.psd1 (Windows 11 Pro, en-US, latest, amd64).
@@ -104,7 +108,10 @@ param(
     [switch] $SkipHeavyBuild,
 
     [Parameter()]
-    [switch] $BootTest
+    [switch] $BootTest,
+
+    [Parameter()]
+    [switch] $KeepBootTestVm
 )
 
 Set-StrictMode -Version Latest
@@ -144,7 +151,7 @@ foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', '
         $buildParams[$name] = $PSBoundParameters[$name]
     }
 }
-foreach ($switchName in 'SkipHeavyBuild', 'BootTest') {
+foreach ($switchName in 'SkipHeavyBuild', 'BootTest', 'KeepBootTestVm') {
     if ($PSBoundParameters.ContainsKey($switchName)) {
         $buildParams[$switchName] = [switch]$PSBoundParameters[$switchName]
     }

@@ -31,6 +31,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | `WorkingDirectory` / `OutputDirectory` | Scoped working + output locations. |
 | `IsoPath` | Provide a pre-downloaded ISO to skip Fido. |
 | `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway Hyper-V VM and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
+| `KeepBootTestVm` | With `BootTest`: after the test resolves, keep the throwaway VM alive and pause until you press Enter so you can attach with `vmconnect localhost <vm>` and test interactively; the VM (and its VHDX) are still cleaned up afterwards. |
 | `CompressionFormat` | `zip` or `7z`. |
 | `FidoPath` / `OscdimgPath` | Tool locations. `FidoPath` empty = download the pinned Fido at build time (set a path only for offline use); `OscdimgPath` empty = auto-detect from a Windows ADK install. |
 
@@ -55,6 +56,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
+| `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing (vmconnect) until Enter, then clean up. |
 | `-WhatIf` | Dry-run the whole pipeline (no media modified). |
 
 ## Examples

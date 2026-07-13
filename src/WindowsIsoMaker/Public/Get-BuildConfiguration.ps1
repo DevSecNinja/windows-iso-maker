@@ -114,6 +114,7 @@ function Get-BuildConfiguration {
         OutputDirectory   = './out'
         IsoPath           = ''
         BootTest          = $false
+        KeepBootTestVm    = $false
         CompressionFormat = 'zip'
         FidoPath          = ''
         OscdimgPath       = ''
@@ -131,8 +132,9 @@ function Get-BuildConfiguration {
         WIM_PROFILE    = 'Profile'
         WIM_OUTPUT_DIR = 'OutputDirectory'
         WIM_BOOT_TEST  = 'BootTest'
+        WIM_KEEP_BOOT_TEST_VM = 'KeepBootTestVm'
     }
-    $booleanFields = @('BootTest')
+    $booleanFields = @('BootTest', 'KeepBootTestVm')
     foreach ($envName in $envMap.Keys) {
         $field = $envMap[$envName]
         $envItem = Get-Item -Path "Env:$envName" -ErrorAction SilentlyContinue
@@ -234,6 +236,7 @@ function Get-BuildConfiguration {
         OutputDirectory   = [string]$resolved['OutputDirectory']
         IsoPath           = [string]$resolved['IsoPath']
         BootTest          = [bool]$resolved['BootTest']
+        KeepBootTestVm    = [bool]$resolved['KeepBootTestVm']
         CompressionFormat = [string]$resolved['CompressionFormat']
         FidoPath          = [string]$resolved['FidoPath']
         OscdimgPath       = [string]$resolved['OscdimgPath']

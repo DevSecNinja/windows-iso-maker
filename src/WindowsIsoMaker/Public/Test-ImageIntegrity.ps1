@@ -14,6 +14,10 @@ function Test-ImageIntegrity {
         Target architecture: 'amd64' or 'arm64'.
     .PARAMETER BootTest
         Opt-in: boot the ISO in a VM and confirm Windows Setup is reached. OFF by default.
+    .PARAMETER KeepBootTestVm
+        Opt-in: after the boot test resolves, keep the throwaway VM alive and pause until you
+        press Enter so you can attach with vmconnect and test interactively. The VM (and its
+        VHDX) are still torn down afterwards. Only meaningful together with -BootTest.
     .EXAMPLE
         Test-ImageIntegrity -IsoPath C:\out\win11.iso -Architecture amd64
     .OUTPUTS
@@ -31,7 +35,10 @@ function Test-ImageIntegrity {
         [string] $Architecture,
 
         [Parameter()]
-        [switch] $BootTest
+        [switch] $BootTest,
+
+        [Parameter()]
+        [switch] $KeepBootTestVm
     )
 
     if (-not (Test-Path -LiteralPath $IsoPath)) {
@@ -71,7 +78,7 @@ function Test-ImageIntegrity {
     $bootResult = $null
     if ($BootTest) {
         Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message 'Opt-in VM boot test requested.'
-        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture
+        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm
     }
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
@@ -162,7 +169,7 @@ function Invoke-VmBootTest {
         It fails on a boot reset (the VM leaves Running after having started, e.g. firmware could
         not boot the media) or when the timeout elapses without either pass signal. This is a
         heavy, opt-in path (FR-023) requiring Hyper-V and is validated on a live host only; all
-        Hyper-V access is behind mockable seams (Test-HyperVAvailable / Get-VmBootStatus) and the
+        Hyper-V access is behind mockable seams (Get-HyperVReadiness / Get-VmBootStatus) and the
         single wait is Start-Sleep, so the polling logic is exercised in the unit suite.
     .PARAMETER IsoPath
         Path to the ISO.
@@ -176,6 +183,10 @@ function Invoke-VmBootTest {
     .PARAMETER MinRunningSeconds
         Continuous Running time that counts as a successful boot when no heartbeat is seen
         (default 90).
+    .PARAMETER KeepBootTestVm
+        When set, after a pass/fail signal is resolved the VM is left in place and the function
+        blocks (via the mockable Wait-BootTestInspection seam) until the user presses Enter, so
+        they can attach with vmconnect and test manually before the finally block tears it down.
     .OUTPUTS
         PSCustomObject with Passed, Detail, Method, State, and ElapsedSeconds.
     #>
@@ -186,12 +197,17 @@ function Invoke-VmBootTest {
         [Parameter(Mandatory = $true)][string] $Architecture,
         [Parameter()][int] $TimeoutSeconds = 300,
         [Parameter()][int] $PollIntervalSeconds = 10,
-        [Parameter()][int] $MinRunningSeconds = 90
+        [Parameter()][int] $MinRunningSeconds = 90,
+        [Parameter()][switch] $KeepBootTestVm
     )
 
-    # Runtime-only: requires Hyper-V (and an ARM64 host for arm64 media).
-    if (-not (Test-HyperVAvailable)) {
-        return [pscustomobject]@{ Passed = $false; Detail = 'Hyper-V (New-VM) not available; VM boot test could not run.'; Method = 'None'; State = $null; ElapsedSeconds = 0 }
+    # Runtime-only: requires Hyper-V (and an ARM64 host for arm64 media). Probe all prerequisites
+    # (module, service, privilege) up front so an environmental miss yields an actionable reason
+    # rather than a cryptic New-VM failure. This is a 'None' (environmental) result, not a boot fail.
+    $readiness = Get-HyperVReadiness
+    if (-not $readiness.Ready) {
+        Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message $readiness.Reason
+        return [pscustomobject]@{ Passed = $false; Detail = $readiness.Reason; Method = 'None'; State = $null; ElapsedSeconds = 0 }
     }
 
     $vmName = "wim-boottest-$([guid]::NewGuid().ToString('N').Substring(0,8))"
@@ -206,6 +222,7 @@ function Invoke-VmBootTest {
         $elapsed = 0
         $runningSince = $null
         $lastState = $null
+        $result = $null
         while ($elapsed -lt $TimeoutSeconds) {
             $status = Get-VmBootStatus -VmName $vmName
             $lastState = $status.State
@@ -214,17 +231,20 @@ function Invoke-VmBootTest {
                 if ($null -eq $runningSince) { $runningSince = $elapsed }
 
                 if ($status.HeartbeatHealthy) {
-                    return [pscustomobject]@{ Passed = $true; Detail = "Guest heartbeat healthy ('$($status.Heartbeat)') after ${elapsed}s; Windows booted."; Method = 'Heartbeat'; State = $status.State; ElapsedSeconds = $elapsed }
+                    $result = [pscustomobject]@{ Passed = $true; Detail = "Guest heartbeat healthy ('$($status.Heartbeat)') after ${elapsed}s; Windows booted."; Method = 'Heartbeat'; State = $status.State; ElapsedSeconds = $elapsed }
+                    break
                 }
                 if (($elapsed - $runningSince) -ge $MinRunningSeconds) {
-                    return [pscustomobject]@{ Passed = $true; Detail = "VM stayed Running continuously for >= ${MinRunningSeconds}s (past firmware/boot, no reset); reached ${elapsed}s."; Method = 'StayedRunning'; State = $status.State; ElapsedSeconds = $elapsed }
+                    $result = [pscustomobject]@{ Passed = $true; Detail = "VM stayed Running continuously for >= ${MinRunningSeconds}s (past firmware/boot, no reset); reached ${elapsed}s."; Method = 'StayedRunning'; State = $status.State; ElapsedSeconds = $elapsed }
+                    break
                 }
             }
             else {
                 # Left the Running state after having started => boot failed or firmware reset the
                 # machine (e.g. no bootable device on the media).
                 if ($null -ne $runningSince -and $status.State -in @('Off', 'CriticalPause', 'FastSavedCritical', 'SavedCritical')) {
-                    return [pscustomobject]@{ Passed = $false; Detail = "VM left the Running state (now '$($status.State)') after ${elapsed}s; boot did not sustain."; Method = 'BootReset'; State = $status.State; ElapsedSeconds = $elapsed }
+                    $result = [pscustomobject]@{ Passed = $false; Detail = "VM left the Running state (now '$($status.State)') after ${elapsed}s; boot did not sustain."; Method = 'BootReset'; State = $status.State; ElapsedSeconds = $elapsed }
+                    break
                 }
                 $runningSince = $null
             }
@@ -233,7 +253,17 @@ function Invoke-VmBootTest {
             $elapsed += $step
         }
 
-        return [pscustomobject]@{ Passed = $false; Detail = "VM boot test timed out after ${TimeoutSeconds}s (last state '$lastState', no guest heartbeat)."; Method = 'Timeout'; State = $lastState; ElapsedSeconds = $elapsed }
+        if ($null -eq $result) {
+            $result = [pscustomobject]@{ Passed = $false; Detail = "VM boot test timed out after ${TimeoutSeconds}s (last state '$lastState', no guest heartbeat)."; Method = 'Timeout'; State = $lastState; ElapsedSeconds = $elapsed }
+        }
+
+        # Opt-in: hold the VM so the user can connect (vmconnect) and test interactively before
+        # the finally block tears it down. Behind a mockable seam so the unit suite never blocks.
+        if ($KeepBootTestVm) {
+            Wait-BootTestInspection -VmName $vmName -Result $result
+        }
+
+        return $result
     }
     catch {
         return [pscustomobject]@{ Passed = $false; Detail = "VM boot test error: $($_.Exception.Message)"; Method = 'Error'; State = $null; ElapsedSeconds = 0 }
@@ -241,6 +271,36 @@ function Invoke-VmBootTest {
     finally {
         Remove-BootTestVm -VmName $vmName -VhdPath $vhd
     }
+}
+
+function Wait-BootTestInspection {
+    <#
+    .SYNOPSIS
+        Pause after the boot test so the user can connect to the VM and test it manually.
+    .DESCRIPTION
+        Private, runtime-only seam invoked by Invoke-VmBootTest when -KeepBootTestVm is set. It
+        leaves the throwaway boot-test VM in place and blocks until the user presses Enter, so
+        they can attach with vmconnect and interact before Invoke-VmBootTest's finally block tears
+        the VM (and its VHDX) down. Isolated behind one function so it can be mocked to a no-op in
+        the unit suite (Read-Host would otherwise block the tests).
+    .PARAMETER VmName
+        Name of the throwaway boot-test VM the user can connect to.
+    .PARAMETER Result
+        The resolved boot-test result object (for context in the prompt).
+    .OUTPUTS
+        None.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Interactive pause seam for the opt-in boot test; performs no state change.')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $VmName,
+        [Parameter()][object] $Result
+    )
+
+    $state = if ($Result) { $Result.State } else { 'unknown' }
+    Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: vmconnect localhost $VmName"
+    $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off and clean up"
 }
 
 function New-BootTestVm {
@@ -311,6 +371,95 @@ function Remove-BootTestVm {
     if (Test-Path -LiteralPath $VhdPath) { Remove-Item -LiteralPath $VhdPath -Force -ErrorAction SilentlyContinue }
 }
 
+function Get-HyperVReadiness {
+    <#
+    .SYNOPSIS
+        Probe whether this host can actually run the opt-in VM boot test, with an actionable reason.
+    .DESCRIPTION
+        Private helper for Invoke-VmBootTest. Running a boot-test VM needs three things, any of which
+        can be missing even when the Hyper-V boxes look ticked in "Turn Windows features on or off":
+          1. The Hyper-V PowerShell module (New-VM/Get-VM come from the
+             Microsoft-Hyper-V-Management-PowerShell optional feature).
+          2. The Hyper-V Virtual Machine Management service ('vmms'), installed by the Hyper-V
+             platform (Microsoft-Hyper-V) — absent until servicing actually applies (a checkbox that
+             is only staged/EnablePending, i.e. awaiting a reboot, does not install it yet).
+          3. The caller to be elevated OR a member of the built-in "Hyper-V Administrators" group
+             (SID S-1-5-32-578).
+        Each signal is reported individually plus a single Ready flag and a human-readable Reason so
+        the boot test can tell the user exactly what to fix instead of a bare "not available".
+    .OUTPUTS
+        PSCustomObject: Ready, Reason, CmdletsAvailable, ServiceInstalled, ServiceState, Elevated,
+        InHyperVAdmins.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $cmdletsAvailable = [bool](Test-HyperVAvailable)
+
+    $svc = Get-HyperVServiceInfo
+    $serviceInstalled = [bool]$svc.Installed
+    $serviceState = [string]$svc.State
+
+    $priv = Test-HyperVPrivilege
+    $elevated = [bool]$priv.Elevated
+    $inHyperVAdmins = [bool]$priv.InHyperVAdmins
+
+    $problems = [System.Collections.Generic.List[string]]::new()
+    if (-not $cmdletsAvailable) {
+        $problems.Add("the Hyper-V PowerShell module is missing (New-VM/Get-VM not found) - enable it (elevated) with 'Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -All' and reboot")
+    }
+    if (-not $serviceInstalled) {
+        if (Test-PendingReboot) {
+            $problems.Add("the Hyper-V platform is staged but not active yet (the 'vmms' service is absent and a reboot is pending) - reboot to finish enabling Hyper-V, then retry")
+        }
+        else {
+            $problems.Add("the Hyper-V platform is not active (the 'vmms' service is absent) - enable Microsoft-Hyper-V and reboot")
+        }
+    }
+    if (-not ($elevated -or $inHyperVAdmins)) {
+        $problems.Add("this session is not elevated and the user is not in the 'Hyper-V Administrators' group - run elevated, or add the user with 'Add-LocalGroupMember -Group ''Hyper-V Administrators'' -Member <user>' and sign out/in")
+    }
+
+    $ready = ($problems.Count -eq 0)
+    $reason = if ($ready) {
+        'Hyper-V is available for the VM boot test.'
+    }
+    else {
+        'VM boot test cannot run because ' + ($problems -join '; ') + '.'
+    }
+
+    return [pscustomobject]@{
+        Ready            = $ready
+        Reason           = $reason
+        CmdletsAvailable = $cmdletsAvailable
+        ServiceInstalled = $serviceInstalled
+        ServiceState     = $serviceState
+        Elevated         = $elevated
+        InHyperVAdmins   = $inHyperVAdmins
+        PendingReboot    = [bool](Test-PendingReboot)
+    }
+}
+
+function Test-PendingReboot {
+    <#
+    .SYNOPSIS
+        Report whether a servicing reboot is pending (mockable seam).
+    .DESCRIPTION
+        Private helper for Get-HyperVReadiness. When an optional feature such as Hyper-V is enabled,
+        DISM marks it 'Enabled' immediately but stages the runtime bits (the 'vmms' service, the
+        Hyper-V PowerShell module) to be installed on the next boot; the Component Based Servicing
+        'RebootPending' key signals that. Detecting it lets the readiness check tell the user to
+        reboot rather than reporting a misleading "not installed".
+    .OUTPUTS
+        System.Boolean
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    return Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
+}
+
 function Test-HyperVAvailable {
     <#
     .SYNOPSIS
@@ -325,6 +474,51 @@ function Test-HyperVAvailable {
     [OutputType([bool])]
     param()
     return [bool](Get-Command -Name 'New-VM' -ErrorAction SilentlyContinue)
+}
+
+function Get-HyperVServiceInfo {
+    <#
+    .SYNOPSIS
+        Report whether the Hyper-V Virtual Machine Management service (vmms) is installed and its
+        state (mockable seam).
+    .DESCRIPTION
+        Private helper for Get-HyperVReadiness. The 'vmms' service is installed by the Hyper-V
+        platform feature; its absence means the platform is not actually active (e.g. the feature is
+        only staged awaiting a reboot). Isolated so the readiness composition is unit-testable.
+    .OUTPUTS
+        PSCustomObject with Installed (bool) and State (string; 'NotInstalled' when absent).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+    $vmms = Get-Service -Name 'vmms' -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Installed = [bool]$vmms
+        State     = if ($vmms) { [string]$vmms.Status } else { 'NotInstalled' }
+    }
+}
+
+function Test-HyperVPrivilege {
+    <#
+    .SYNOPSIS
+        Report whether the caller may drive Hyper-V: elevated and/or in "Hyper-V Administrators"
+        (mockable seam).
+    .DESCRIPTION
+        Private helper for Get-HyperVReadiness. Hyper-V cmdlets require either an elevated token or
+        membership in the built-in "Hyper-V Administrators" group (SID S-1-5-32-578). Isolated so
+        the readiness composition is unit-testable without depending on the runner's privileges.
+    .OUTPUTS
+        PSCustomObject with Elevated (bool) and InHyperVAdmins (bool).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+    return [pscustomobject]@{
+        Elevated       = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+        InHyperVAdmins = $principal.IsInRole([System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-578'))
+    }
 }
 
 function Get-VmBootStatus {
