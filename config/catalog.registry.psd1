@@ -237,6 +237,33 @@
             Reversal       = 'Set DisableFileSyncNGSC to 0 (or delete it) under SOFTWARE\Policies\Microsoft\Windows\OneDrive.'
             DefaultEnabled = $false
             Arch           = @('amd64', 'arm64')
+        },
+
+        # --- Personalization: macOS-style "natural" (reversed) mouse scrolling -----------
+        # FlipFlopWheel lives per-device under SYSTEM\...\Enum\HID\<device>\Device Parameters,
+        # which do not exist in a generalized offline image (PnP populates them at first boot).
+        # So we bake a machine RunOnce command that, on first boot, sets FlipFlopWheel=1 on every
+        # enumerated HID mouse device. Community-documented value (EvidenceGrade 3 => opt-in).
+        @{
+            Id             = 'reg-reverse-mouse-scroll'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Target         = @{
+                Hive  = 'SOFTWARE'
+                Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'
+                Name  = '!WimReverseMouseScroll'
+                Kind  = 'String'
+                Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Get-ChildItem -Path ''HKLM:\SYSTEM\CurrentControlSet\Enum\HID'' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq ''Device Parameters'' } | ForEach-Object { New-ItemProperty -Path $_.PSPath -Name ''FlipFlopWheel'' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue }"'
+            }
+            Description    = 'Reverses the mouse wheel scroll direction (macOS-style "natural" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.'
+            Rationale      = 'FlipFlopWheel is the well-known per-device control that inverts wheel scroll direction, but it lives under each mouse''s SYSTEM\...\Enum\HID\<device>\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (a Microsoft-documented mechanism) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. The FlipFlopWheel value itself is community-documented (EvidenceGrade 3), so it is opt-in only.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys'
+            EvidenceGrade  = 3
+            Reversible     = $true
+            Reversal       = 'Remove the !WimReverseMouseScroll value under SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce before first boot, or after boot set FlipFlopWheel to 0 (or delete it) under each mouse''s SYSTEM\CurrentControlSet\Enum\HID\<device>\Device Parameters key.'
+            DefaultEnabled = $false
+            Unverified     = $true
+            Arch           = @('amd64', 'arm64')
         }
     )
 }

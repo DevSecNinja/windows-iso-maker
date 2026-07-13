@@ -23,7 +23,7 @@
     # --- Data-driven change selection (FR-024) ---
     Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' (baseline set)
     Toggles          = @{}        # per-id override map, e.g. @{ 'appx-todos' = $false; 'feature-wsl' = $true }
-    EnableCatalogId  = @()        # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
+    EnableCatalogId  = @('reg-reverse-mouse-scroll')  # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
     DisableCatalogId = @()        # force-disable specific catalog entries by Id (explicit ids win)
 
     # --- Autounattend.xml generation (FR-027) ---
