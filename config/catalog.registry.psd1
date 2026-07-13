@@ -53,8 +53,8 @@
                 Value = 0
             }
             Description    = 'Disables the Widgets board (weather/stock/news feed) via the AllowNewsAndInterests policy.'
-            Rationale      = 'The Widgets feed (weather, stocks, news) fetches internet content and adds taskbar surface area not wanted on managed builds. Microsoft documents AllowNewsAndInterests under Policies\Microsoft\Dsh as the control. Spec FR-007 mandates disabling weather/stock Widgets by default; reversible.'
-            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/manage-windows-widgets'
+            Rationale      = 'The Widgets feed (weather, stocks, news) fetches internet content and adds taskbar surface area not wanted on managed builds. The NewsAndInterests Policy CSP documents AllowNewsAndInterests with the exact registry mapping (SOFTWARE\Policies\Microsoft\Dsh, 0 = not allowed) used here. Spec FR-007 mandates disabling weather/stock Widgets by default; reversible.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-newsandinterests'
             EvidenceGrade  = 1
             Reversible     = $true
             Reversal       = 'Set AllowNewsAndInterests to 1 (or delete it) under SOFTWARE\Policies\Microsoft\Dsh.'
@@ -76,8 +76,8 @@
                 Value = 1
             }
             Description    = 'Disables Windows consumer features (auto-installed suggested/promoted apps such as third-party games).'
-            Rationale      = 'The consumer content-delivery experience silently installs promoted third-party apps (e.g. Candy Crush) and suggestions. Disabling it prevents re-appearance of bloat after debloating and is the supported enterprise control.'
-            Citation       = 'https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight'
+            Rationale      = 'The consumer content-delivery experience silently installs promoted third-party apps (e.g. Candy Crush) and suggestions. Disabling it prevents re-appearance of bloat after debloating and is the supported enterprise control. Microsoft documents the corresponding Experience/AllowWindowsConsumerFeatures policy (registry mapping SOFTWARE\Policies\Microsoft\Windows\CloudContent, DisableWindowsConsumerFeatures = 1).'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience'
             EvidenceGrade  = 1
             Reversible     = $true
             Reversal       = 'Set DisableWindowsConsumerFeatures to 0 (or delete it) under SOFTWARE\Policies\Microsoft\Windows\CloudContent.'

@@ -130,6 +130,13 @@ function New-AutounattendXml {
     }
 
     # --- OOBE fragment (skip screens). ---
+    # NOTE (Microsoft Learn review): SkipMachineOOBE and SkipUserOOBE are documented by Microsoft
+    # as DEPRECATED and may not work in future Windows releases, per the unattend OOBE reference
+    # (https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-oobe).
+    # They are retained because, combined with the defined <LocalAccount> and the individual Hide*
+    # settings below, they remain the reliable way to fully skip OOBE for a hands-off install on
+    # current builds (incl. 24H2). Prefer removing them if/when a supported replacement fully skips
+    # OOBE without them; the Hide* settings on their own do not.
     $oobeFragment = ''
     if ($skipOobe) {
         $hideOnline = if ($bypassMsAccount) { 'true' } else { 'false' }

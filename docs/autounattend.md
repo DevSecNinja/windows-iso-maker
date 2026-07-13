@@ -44,6 +44,15 @@ Autounattend = @{
 
 Set `Enabled = $false` to skip generation entirely and ship the stock Microsoft OOBE.
 
+> **Note (OOBE skip flags):** the generated `oobeSystem` pass sets `SkipMachineOOBE` and
+> `SkipUserOOBE`. Microsoft's
+> [unattend OOBE reference](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-oobe)
+> marks both as **deprecated** (they may be removed in a future release). They are kept because —
+> together with the defined local account and the individual `Hide*` settings — they remain the
+> only reliable way to fully skip OOBE for a hands-off install on current builds (including 24H2);
+> the `Hide*` settings alone do not skip the whole experience. This is tracked so the flags can be
+> dropped once a supported replacement fully skips OOBE without them.
+
 ## Fully-automated install (edition + partition + key)
 
 The `windowsPE` pass specifies a complete `ImageInstall/OSImage` block so Windows Setup runs the
