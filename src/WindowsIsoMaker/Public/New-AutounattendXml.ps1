@@ -135,13 +135,18 @@ function New-AutounattendXml {
         $productKey = [string]$productKeyRaw.ToString().Trim()
     }
 
-    # The product key is applied in the windowsPE UserData pass (Microsoft-Windows-Setup/ProductKey),
-    # NOT specialize. On multi-edition consumer media (Home/Home N/Pro/Education/...) 24H2 Setup stops
-    # at the interactive "enter a product key" page when windowsPE has no key - even with the
-    # ImageInstall /IMAGE/NAME metadata - and clicking "I don't have a product key" then fails with
-    # "Setup has failed to validate the product key". A generic key here selects the edition and keeps
-    # the install hands-off (this mirrors known-good community answer files). WillShowUI=Never
-    # suppresses the key page outright.
+    # The product key is applied in the windowsPE UserData pass (Microsoft-Windows-Setup/UserData/
+    # ProductKey), NOT specialize. On multi-edition consumer media (Home/Home N/Pro/Education/...)
+    # 24H2 Setup stops at the interactive "enter a product key" page when windowsPE has no key - even
+    # with the ImageInstall /IMAGE/NAME metadata - and clicking "I don't have a product key" then
+    # fails with "Setup has failed to validate the product key". A generic key here selects the
+    # edition and keeps the install hands-off.
+    #
+    # IMPORTANT: emit ONLY <Key> - do NOT add <WillShowUI>Never</WillShowUI>. With WillShowUI=Never,
+    # if 24H2 Setup treats the generic key as not-yet-valid it cannot fall back to the page and
+    # HARD-STOPS with "Setup has failed to validate the product key" (this repo hit exactly that with
+    # the Key+WillShowUI=Never form). The bare <Key> form is what known-good community answer files
+    # (e.g. dockur/windows win11x64.xml) use for hands-off 24H2 installs.
     if ([string]::IsNullOrWhiteSpace($productKey)) {
         Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "No product key configured; on multi-edition media Setup may stop at the interactive product-key page. Use -UseGenericProductKey (or set Autounattend.ProductKey) for a fully hands-off install of edition '$editionImageName'."
     }
@@ -152,7 +157,6 @@ function New-AutounattendXml {
         $productKeyFragment = @"
         <ProductKey>
           <Key>$safeKey</Key>
-          <WillShowUI>Never</WillShowUI>
         </ProductKey>
 "@
     }

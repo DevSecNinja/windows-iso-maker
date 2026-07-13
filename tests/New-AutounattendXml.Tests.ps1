@@ -136,8 +136,9 @@ Describe 'New-AutounattendXml product key' {
         $peKey = $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:Key", $ns)
         $peKey | Should -Not -BeNullOrEmpty
         $peKey.InnerText | Should -Be 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
-        # WillShowUI=Never suppresses the interactive product-key page.
-        $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:WillShowUI", $ns).InnerText | Should -Be 'Never'
+        # Bare <Key> only: NO <WillShowUI>Never</WillShowUI> (with it, 24H2 hard-stops "failed to
+        # validate the product key"; the bare-key form matches known-good dockur/windows answer files).
+        $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:WillShowUI", $ns) | Should -BeNullOrEmpty
         # And NOT applied in a specialize pass (the key selects the edition in windowsPE).
         $xml.SelectSingleNode("//u:settings[@pass='specialize']/u:component[@name='Microsoft-Windows-Shell-Setup']/u:ProductKey", $ns) | Should -BeNullOrEmpty
     }

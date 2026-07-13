@@ -109,8 +109,14 @@ to stay hands-off:** Windows 11 24H2 Setup stops at the interactive *"enter a pr
 unless the **`windowsPE`** pass also supplies a `<ProductKey>`. Selecting *"I don't have a product
 key"* there then fails with *"Setup has failed to validate the product key"*. So this tool writes any
 configured key into the **`windowsPE`** UserData block
-(`Microsoft-Windows-Setup/UserData/ProductKey`, with `WillShowUI = Never`), where a generic key
-selects the edition and keeps the install hands-off — mirroring known-good community answer files.
+(`Microsoft-Windows-Setup/UserData/ProductKey`) as a **bare `<Key>` element only**, where a generic
+key selects the edition and keeps the install hands-off — mirroring known-good community answer files
+(e.g. `dockur/windows`).
+
+> ⚠️ Do **not** add `<WillShowUI>Never</WillShowUI>` to this `ProductKey` block. With it, if 24H2
+> Setup treats the generic key as not-yet-valid it cannot fall back to the page and hard-stops with
+> *"Setup has failed to validate the product key"* (this repo hit exactly that). The bare `<Key>`
+> form lets Setup accept the key and proceed.
 
 By **default** no key is configured: on multi-edition media Setup may prompt at the product-key page.
 Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
