@@ -13,10 +13,10 @@
     TIMEZONE                Windows time-zone id (e.g. UTC / W. Europe Standard Time)
     DISK_ID                 target disk id for the default single-partition layout
     EDITION_IMAGE_NAME      install.wim image name to deploy (e.g. Windows 11 Pro)
-    SPECIALIZE_FRAGMENT     specialize-pass ProductKey settings block (empty when no key). The
-                            key is applied in `specialize`, NOT `windowsPE`, because Windows 11
-                            24H2 Setup rejects generic keys during windowsPE validation on
-                            multi-edition media ("Setup has failed to validate the product key").
+    PRODUCTKEY_FRAGMENT     windowsPE UserData ProductKey block (empty when no key). The key is
+                            applied in `windowsPE` so that on multi-edition consumer media 24H2
+                            Setup does not stop at the interactive "enter a product key" page; the
+                            key also selects/licenses the edition. Matches known-good answer files.
     OOBE_FRAGMENT           OOBE-skip settings (empty when SkipOobe = $false)
     USERACCOUNTS_FRAGMENT   local-account creation (empty when CreateLocalAccount = $false)
     FIRSTLOGON_FRAGMENT     FirstLogonCommands (empty when none configured)
@@ -95,11 +95,10 @@
       </ImageInstall>
       <UserData>
         <AcceptEula>true</AcceptEula>
+{{PRODUCTKEY_FRAGMENT}}
       </UserData>
     </component>
   </settings>
-
-{{SPECIALIZE_FRAGMENT}}
 
   <settings pass="oobeSystem">
     <component name="Microsoft-Windows-International-Core" processorArchitecture="{{PROCESSOR_ARCHITECTURE}}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">

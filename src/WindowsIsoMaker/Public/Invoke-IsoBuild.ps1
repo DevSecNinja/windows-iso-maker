@@ -43,15 +43,15 @@ function Invoke-IsoBuild {
         Optional force-disable catalog ids.
     .PARAMETER ProductKey
         Optional override for the Autounattend product key (config Autounattend.ProductKey). Applied
-        in the specialize pass (not windowsPE), so it is never subject to 24H2's windowsPE key-
-        validation hard-stop. '' / 'none' install the metadata-selected edition unlicensed; a genuine
-        key activates when valid.
+        in the windowsPE UserData pass so multi-edition 24H2 media does not stop at the interactive
+        product-key page. '' / 'none' omit the key (Setup may prompt on multi-edition media); a
+        genuine key activates when valid.
     .PARAMETER AccountMode
         Optional override for how the first OOBE account is provisioned (config
         Autounattend.AccountMode): 'local' (create a local admin, hands-off) or 'entra' (present
         the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
     .PARAMETER UseGenericProductKey
-        Bake the edition's generic/default retail product key, applied in the specialize pass
+        Bake the edition's generic/default retail product key, applied in the windowsPE UserData pass
         (non-activating). Handy for a fully hands-off Home build. An explicit -ProductKey always
         takes precedence.
     .PARAMETER SkipHeavyBuild
@@ -139,7 +139,7 @@ function Invoke-IsoBuild {
 
     # Last-mile ProductKey / AccountMode overrides apply to the nested Autounattend sub-config (not
     # top-level fields, so Get-BuildConfiguration does not carry them). ProductKey (when set) is
-    # applied in the specialize pass; AccountMode selects local vs Entra-join OOBE provisioning.
+    # applied in the windowsPE UserData pass; AccountMode selects local vs Entra-join OOBE provisioning.
     foreach ($ov in @(
             @{ Name = 'ProductKey';  Key = 'ProductKey' },
             @{ Name = 'AccountMode'; Key = 'AccountMode' })) {
@@ -151,8 +151,8 @@ function Invoke-IsoBuild {
         }
     }
 
-    # -UseGenericProductKey bakes the edition's generic/default retail key, applied in the specialize
-    # pass (non-activating). An explicit -ProductKey always wins over the switch.
+    # -UseGenericProductKey bakes the edition's generic/default retail key, applied in the windowsPE
+    # UserData pass (non-activating). An explicit -ProductKey always wins over the switch.
     if ($UseGenericProductKey.IsPresent -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
         $au = $Config.Autounattend
         if ($au -is [hashtable]) { $au['ProductKey'] = 'generic' }

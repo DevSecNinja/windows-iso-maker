@@ -5,12 +5,13 @@ function Get-GenericSetupProductKey {
     .DESCRIPTION
         These are the public generic "default" keys Microsoft ships to select a Windows 11 edition
         without activating it (activation still happens later via the user's own key, digital
-        licence, or KMS). This tool applies the key in the *specialize* pass, never in windowsPE:
-        Windows 11 24H2's rearchitected Setup ("windlp") performs strict key validation during the
-        windowsPE phase on multi-edition media and hard-stops generic keys with "Setup has failed to
-        validate the product key", so the edition is selected by the ImageInstall /IMAGE/NAME
-        metadata instead and the key is applied afterwards in specialize (where it is not revalidated
-        that way). See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
+        licence, or KMS). This key is applied in the *windowsPE* UserData pass
+        (`Microsoft-Windows-Setup/UserData/ProductKey`): on multi-edition consumer media Windows 11
+        24H2 Setup stops at the interactive "enter a product key" page unless windowsPE supplies a
+        key (the ImageInstall /IMAGE/NAME metadata alone does not suppress it), and clicking "I don't
+        have a product key" then fails with "Setup has failed to validate the product key". A generic
+        key in windowsPE selects the edition and keeps the install hands-off, mirroring known-good
+        community answer files. See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
     .PARAMETER Edition
         The Windows 11 edition name (e.g. 'Pro', 'Pro N', 'Home', 'Education').
     .OUTPUTS
@@ -24,7 +25,7 @@ function Get-GenericSetupProductKey {
         [string] $Edition
     )
 
-    # Public generic / default retail setup keys (edition selectors applied in the specialize pass;
+    # Public generic / default retail setup keys (edition selectors applied in windowsPE UserData;
     # they do NOT activate). Keyed by a normalized edition name.
     $keys = @{
         'home'                    = 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'

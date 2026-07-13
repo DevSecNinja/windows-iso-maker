@@ -90,9 +90,9 @@ whenever the install phase isn't fully specified:
   formats), leaving the ESP RAW and reproducing the `0x800703ED` Finalize failure even though the
   answer file "looks" correct. Microsoft's own sample and known-good answer files use
   `Order, PartitionID, Label, [Letter,] Format`.
-- **Key** — see the *Product key* section below. The key (if any) is applied in the **`specialize`**
-  pass, not `windowsPE`, so 24H2's strict windowsPE key validation can't hard-stop the install; the
-  edition itself is always chosen by the image metadata above.
+- **Key** — see the *Product key* section below. The key (if any) is applied in the **`windowsPE`**
+  UserData pass so 24H2 multi-edition media does not stop at the product-key page; the edition itself
+  is also tagged by the image metadata above.
 
 The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`.
 On **Windows 11 24H2** the rearchitected Setup treats `OnError` as "show the interactive page on any
@@ -101,30 +101,27 @@ hard-fails (and is captured by the boot-test log harvest) instead of silently bl
 
 ## Product key (edition selector)
 
-The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
-`/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass. That
-alone is enough for Setup to skip the *"which edition?"* and product-key pages — no key is needed in
-`windowsPE` to get a hands-off install.
+The image metadata (`ImageInstall/OSImage/InstallFrom/MetaData`, `/IMAGE/NAME` = e.g.
+`Windows 11 Pro`) that this tool always writes into the `windowsPE` pass tags which edition to apply.
 
-**Windows 11 24H2's rearchitected Setup (`windlp`) validates any `windowsPE` product key and rejects
-generic keys on multi-edition media** — it hard-stops with *"Setup has failed to validate the product
-key"* even for the public generic/retail keys, a connected network, and `WillShowUI = Never`. So this
-tool **never writes a `<ProductKey>` into the `windowsPE` pass**. Instead, any configured key is
-applied in the **`specialize`** pass (`Microsoft-Windows-Shell-Setup/ProductKey`), which runs after
-the image is applied and is not subject to the windowsPE validation hard-stop. This is Microsoft's
-documented approach for unattended installs from multi-edition install.wim media.
+**On multi-edition consumer media (Home/Home N/Pro/Education/…), that metadata alone is *not* enough
+to stay hands-off:** Windows 11 24H2 Setup stops at the interactive *"enter a product key"* page
+unless the **`windowsPE`** pass also supplies a `<ProductKey>`. Selecting *"I don't have a product
+key"* there then fails with *"Setup has failed to validate the product key"*. So this tool writes any
+configured key into the **`windowsPE`** UserData block
+(`Microsoft-Windows-Setup/UserData/ProductKey`, with `WillShowUI = Never`), where a generic key
+selects the edition and keeps the install hands-off — mirroring known-good community answer files.
 
-By **default** no key is configured at all: Setup installs the edition chosen by the metadata and the
-OS stays **unlicensed** until a key is entered later (a note is logged at generation time). Configure
-a key to have it applied automatically in `specialize`.
+By **default** no key is configured: on multi-edition media Setup may prompt at the product-key page.
+Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
 
-`ProductKey` controls whether (and which) `<ProductKey>` element is written into the `specialize` pass:
+`ProductKey` controls whether (and which) `<ProductKey>` element is written into the `windowsPE` pass:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) / `'none'` | **No key.** Setup installs the metadata-selected edition hands-off; the OS is unlicensed until a key is entered. |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit, **genuine** key in `specialize` (activates when valid). |
-| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic / default retail** key in `specialize` (non-activating; selects/keeps the edition without prompting). Works for Home and other editions because it is no longer validated in `windowsPE`. |
+| `''` (default) / `'none'` | **No key.** On multi-edition media Setup may stop at the product-key page. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit, **genuine** key in `windowsPE` (activates when valid). |
+| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic / default retail** key in `windowsPE` (non-activating; selects the edition and skips the key page). Works for Home and other editions. |
 
 The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
 shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`

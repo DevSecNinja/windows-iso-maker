@@ -54,8 +54,8 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-Edition` / `-Language` / `-Release` | Base image overrides. |
 | `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming` \| `opinionated`. Accepts a comma-separated list to combine, e.g. `-Profile gaming,opinionated`. |
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
-| `-ProductKey` | Override the Autounattend product key. Applied in the **`specialize`** pass (not `windowsPE`), so it is never subject to 24H2's windowsPE key-validation hard-stop. `''`/`none` install the metadata-selected edition unlicensed; a genuine key activates when valid. |
-| `-UseGenericProductKey` | Bake the edition's generic/default retail key (applied in `specialize`, non-activating). The easy way to make a fully hands-off **Home** build. An explicit `-ProductKey` wins. |
+| `-ProductKey` | Override the Autounattend product key. Applied in the **`windowsPE`** UserData pass so 24H2 multi-edition media does not stop at the product-key page. `''`/`none` omit the key (Setup may prompt on multi-edition media); a genuine key activates when valid. |
+| `-UseGenericProductKey` | Bake the edition's generic/default retail key (applied in `windowsPE`, non-activating). The easy way to make a fully hands-off **Home** build. An explicit `-ProductKey` wins. |
 | `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
@@ -71,13 +71,10 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 # Dry-run to see exactly which changes would be applied
 ./build.ps1 -WhatIf
 
-# Hands-off Home build (installs without a product key)
-./build.ps1 -Edition Home
-
-# Fully hands-off Home build with the generic key baked in (skips the OOBE product-key page)
+# Fully hands-off Home build with the generic key baked in (skips the product-key page)
 ./build.ps1 -Edition Home -UseGenericProductKey
 
-# Keyed Pro build (applies a genuine key in the specialize pass; activates when valid)
+# Keyed Pro build (applies a genuine key in windowsPE; activates when valid)
 ./build.ps1 -Edition Pro -ProductKey '<genuine-key>'
 
 # Corporate image: join Entra ID / auto-enroll into Intune at OOBE

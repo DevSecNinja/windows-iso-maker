@@ -53,16 +53,15 @@
 
 .PARAMETER Edition
     Windows 11 edition to author into the answer file for this run (overrides the config's
-    Edition). Every edition installs hands-off from the image metadata; a key is optional.
+    Edition). On multi-edition media a product key is what keeps the install hands-off.
 
 .PARAMETER ProductKey
     Product key to bake into the answer file (overrides config Autounattend.ProductKey). Applied in
-    the specialize pass (not windowsPE), so it is never subject to 24H2's windowsPE key-validation
-    hard-stop. Optional for every edition: without a key the metadata-selected edition installs
-    hands-off but unlicensed; a genuine key activates when valid.
+    the windowsPE UserData pass so multi-edition 24H2 media does not stop at the product-key page.
+    Without a key Setup may prompt on multi-edition media; a genuine key activates when valid.
 
 .PARAMETER UseGenericProductKey
-    Bake the edition's generic/default retail key (applied in the specialize pass, non-activating) -
+    Bake the edition's generic/default retail key (applied in windowsPE UserData, non-activating) -
     use it for a fully hands-off run. An explicit -ProductKey wins over this switch.
 
 .PARAMETER Profile
@@ -141,9 +140,9 @@ if ($UseGenericProductKey -and -not $PSBoundParameters.ContainsKey('ProductKey')
     Write-Host "[QuickBootTest] Using the edition's generic product key (skips the OOBE product-key page)." -ForegroundColor Cyan
 }
 
-# The edition is selected by the image metadata and any key is applied in the specialize pass, so
-# every edition installs hands-off with or without a key. Without a usable key the OS is simply
-# unlicensed until one is entered - note that, but don't block the run.
+# The edition is tagged by the image metadata but on multi-edition media a key applied in windowsPE
+# UserData is what keeps Setup from stopping at the product-key page. Without a usable key the run
+# may prompt (and the OS stays unlicensed) - note that, but don't block the run.
 $resolvedEdition = [string]$cfg.Edition
 $resolvedKey = [string]$cfg.Autounattend['ProductKey']
 $keyIsUsable = -not [string]::IsNullOrWhiteSpace($resolvedKey) -and $resolvedKey -notmatch '(?i)^\s*(none|generic|auto)\s*$'
