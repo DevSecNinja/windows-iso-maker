@@ -72,6 +72,25 @@ const profileMeta = (name) => (state.manifest?.profiles || []).find((p) => p.nam
 const describeProfile = (name) => profileMeta(name)?.description || '';
 const profileChangeCount = (name) => state.entries.filter((e) => isDefaultFor(e, name)).length;
 
+// The inclusive profile chain (minimal ⊂ default ⊂ aggressive ⊂ opinionated). An entry's "scope
+// tier" is the earliest link in this chain that enables it; 'gaming' is a variant of 'default'
+// (same debloat minus the Xbox stack), not an extra tier, so it is not part of the ranking.
+const PROFILE_TIERS = [
+  { key: 'minimal', label: 'Minimal', note: 'registry policy defaults' },
+  { key: 'default', label: 'Default', note: 'the balanced baseline' },
+  { key: 'aggressive', label: 'Aggressive', note: 'extra grade 1-2 removals' },
+  { key: 'opinionated', label: 'Opinionated', note: 'personal-taste extras' },
+];
+const OPTIN_TIER = { key: '', label: 'Opt-in only', note: 'in no baseline profile — enable explicitly' };
+const entryProfileRank = (entry) => {
+  const profs = entry.profiles || [];
+  for (let i = 0; i < PROFILE_TIERS.length; i++) {
+    if (profs.includes(PROFILE_TIERS[i].key)) return i;
+  }
+  return PROFILE_TIERS.length; // opt-in only (no baseline)
+};
+const entryProfileTier = (entry) => PROFILE_TIERS[entryProfileRank(entry)] || OPTIN_TIER;
+
 // ============================================================================
 // Boot
 // ============================================================================
@@ -155,7 +174,7 @@ function buildOverview() {
     typeSel.appendChild(el('option', { value: t, text: t }));
   }
 
-  ['#search', '#filter-profile', '#filter-type', '#filter-grade'].forEach((s) =>
+  ['#search', '#filter-profile', '#filter-type', '#filter-grade', '#sort-by'].forEach((s) =>
     $(s).addEventListener('input', renderEntries)
   );
   $('#filter-reversible').addEventListener('change', renderEntries);
@@ -185,8 +204,23 @@ function currentFilters() {
     profile: $('#filter-profile').value,
     type: $('#filter-type').value,
     grade: $('#filter-grade').value,
+    sort: $('#sort-by')?.value || '',
     reversible: $('#filter-reversible').checked,
   };
+}
+
+// Stable comparison helpers for the Sort control.
+function sortEntries(list, sort) {
+  const byId = (a, b) => String(a.id).localeCompare(String(b.id));
+  const arr = list.slice();
+  if (sort === 'profile') {
+    arr.sort((a, b) => entryProfileRank(a) - entryProfileRank(b) || String(a.type).localeCompare(String(b.type)) || byId(a, b));
+  } else if (sort === 'type') {
+    arr.sort((a, b) => String(a.type).localeCompare(String(b.type)) || byId(a, b));
+  } else if (sort === 'grade') {
+    arr.sort((a, b) => (a.evidenceGrade || 0) - (b.evidenceGrade || 0) || byId(a, b));
+  }
+  return arr;
 }
 
 // Explain the selected profile inline so users don't have to reverse-engineer it from the rows.
@@ -230,7 +264,33 @@ function renderEntries() {
     container.replaceChildren(el('div', { class: 'empty', text: 'No changes match your filters.' }));
     return;
   }
-  container.replaceChildren(...list.map(renderEntryCard));
+
+  const sorted = sortEntries(list, f.sort);
+  if (f.sort === 'profile') {
+    // Group under tier headers so the minimal → default → aggressive → opinionated progression
+    // (and the pure opt-in tail) is visible at a glance.
+    const nodes = [];
+    let lastRank = -1;
+    for (const entry of sorted) {
+      const rank = entryProfileRank(entry);
+      if (rank !== lastRank) {
+        nodes.push(renderTierHeader(entry));
+        lastRank = rank;
+      }
+      nodes.push(renderEntryCard(entry));
+    }
+    container.replaceChildren(...nodes);
+    return;
+  }
+  container.replaceChildren(...sorted.map(renderEntryCard));
+}
+
+function renderTierHeader(entry) {
+  const tier = entryProfileTier(entry);
+  return el('div', { class: 'tier-header' }, [
+    el('span', { class: 'tier-label', text: tier.label }),
+    el('span', { class: 'tier-note', text: tier.note }),
+  ]);
 }
 
 function gradeLabel(g) {

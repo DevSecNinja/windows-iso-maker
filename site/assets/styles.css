@@ -142,6 +142,7 @@ code, pre { font-family: var(--mono); }
   border-radius: var(--radius-sm); padding: 0.6rem 0.85rem; margin: 1rem 0 0.2rem;
 }
 .profile-summary.compact { margin: 0.2rem 0 1rem; padding: 0.5rem 0.7rem; }
+.profile-summary[hidden] { display: none; }
 .profile-summary .profile-pill {
   text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.72rem; font-weight: 700;
   color: var(--accent-contrast); background: var(--accent-strong);
@@ -149,6 +150,19 @@ code, pre { font-family: var(--mono); }
 }
 .profile-summary .profile-desc { flex: 1 1 220px; color: var(--text-dim); font-size: 0.88rem; }
 .profile-summary .profile-count { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+
+/* ---------- Profile-scope tier headers (Sort: profile scope) ---------- */
+.tier-header {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  margin: 1.1rem 0 0.4rem; padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.tier-header:first-child { margin-top: 0.2rem; }
+.tier-header .tier-label {
+  font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.tier-header .tier-note { color: var(--text-muted); font-size: 0.8rem; }
 
 /* ---------- Entry list ---------- */
 .entry-list { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: 3rem; }
