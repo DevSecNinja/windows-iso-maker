@@ -309,9 +309,16 @@ function New-BootTestVm {
         Create and start a throwaway Gen2 VM booted from an ISO (runtime-only Hyper-V seam).
     .DESCRIPTION
         Private helper for Invoke-VmBootTest. Isolates every Hyper-V provisioning cmdlet
-        (New-VM/Add-VMDvdDrive/Set-VMFirmware/Start-VM) behind one function so the boot-test
-        orchestration can be unit-tested by mocking this seam on hosts without the Hyper-V module.
-        Secure Boot is disabled so unsigned/dev media boots; the DVD is the first boot device.
+        (New-VM/Set-VMProcessor/Set-VMMemory/Add-VMDvdDrive/Set-VMFirmware/Set-VMKeyProtector/
+        Enable-VMTPM/Start-VM) behind one function so the boot-test orchestration can be
+        unit-tested by mocking this seam on hosts without the Hyper-V module.
+
+        The VM is provisioned to satisfy Windows 11 Setup's hardware checks so real Windows 11
+        media proceeds past the "processor needs two or more cores / TPM 2.0 / 4 GB memory" gate:
+        2 virtual processors, 4 GB startup memory, a virtual TPM 2.0 (backed by a local key
+        protector), and Secure Boot enabled with the default Microsoft Windows template (official
+        Windows boot media is Microsoft-signed, so it still boots). The DVD is the first boot
+        device.
     .PARAMETER VmName
         Name for the throwaway VM.
     .PARAMETER IsoPath
@@ -330,10 +337,18 @@ function New-BootTestVm {
         [Parameter(Mandatory = $true)][string] $VhdPath
     )
 
-    New-VM -Name $VmName -Generation 2 -MemoryStartupBytes 2GB -NewVHDPath $VhdPath -NewVHDSizeBytes 20GB -ErrorAction Stop | Out-Null
+    # 4 GB startup memory (Windows 11 minimum). Static memory so the guest always sees >= 4 GB.
+    New-VM -Name $VmName -Generation 2 -MemoryStartupBytes 4GB -NewVHDPath $VhdPath -NewVHDSizeBytes 64GB -ErrorAction Stop | Out-Null
+    Set-VMMemory -VMName $VmName -DynamicMemoryEnabled $false -StartupBytes 4GB -ErrorAction Stop
+    # >= 2 processors (Windows 11 minimum).
+    Set-VMProcessor -VMName $VmName -Count 2 -ErrorAction Stop
     Add-VMDvdDrive -VMName $VmName -Path $IsoPath -ErrorAction Stop
     $dvd = Get-VMDvdDrive -VMName $VmName
-    Set-VMFirmware -VMName $VmName -FirstBootDevice $dvd -EnableSecureBoot Off -ErrorAction Stop
+    # Secure Boot on with the default Microsoft Windows template; boot from the DVD first.
+    Set-VMFirmware -VMName $VmName -FirstBootDevice $dvd -EnableSecureBoot On -SecureBootTemplate 'MicrosoftWindows' -ErrorAction Stop
+    # Virtual TPM 2.0: a local key protector satisfies Enable-VMTPM without Host Guardian Service.
+    Set-VMKeyProtector -VMName $VmName -NewLocalKeyProtector -ErrorAction Stop
+    Enable-VMTPM -VMName $VmName -ErrorAction Stop
     Start-VM -Name $VmName -ErrorAction Stop
 }
 
