@@ -155,6 +155,16 @@ Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
         # Partition 2 (MSR) must NOT be formatted.
         $msr = $xml.SelectSingleNode("//u:ModifyPartitions/u:ModifyPartition[u:PartitionID='2']", $ns)
         $msr.SelectSingleNode('u:Format', $ns) | Should -BeNullOrEmpty
+        # Guard against invalid children (e.g. <Type>, which belongs on CreatePartition only):
+        # an unknown element makes Windows Setup reject the whole answer file and fall back to a
+        # fully interactive install (product-key page). Only allow the documented ModifyPartition
+        # elements.
+        $allowed = @('Order', 'PartitionID', 'Format', 'Label', 'Letter', 'Active', 'Extend', 'TypeID')
+        foreach ($mp in $xml.SelectNodes('//u:ModifyPartitions/u:ModifyPartition', $ns)) {
+            foreach ($child in $mp.ChildNodes) {
+                $allowed | Should -Contain $child.LocalName
+            }
+        }
     }
 }
 
