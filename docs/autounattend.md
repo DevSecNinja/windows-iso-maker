@@ -113,11 +113,15 @@ a real key to make a non-Home build hands-off.
 | --- | --- |
 | `''` (default) / `'none'` | **Omit** the `<ProductKey>` element. Home installs hands-off; non-Home Setup stops for a key (a generation-time warning is logged). |
 | `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit, **genuine** key. Required for a hands-off non-Home install. |
-| `'generic'` / `'auto'` | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. Selects the edition on **older media only** — it **fails 24H2 validation**. Does not activate Windows. |
+| `'generic'` / `'auto'` | Inject the resolved `Edition`'s public **generic / default retail** key (skips the OOBE product-key page without activating). **Home**'s generic key is confirmed to pass 24H2's online validation and install hands-off; non-Home generic keys may still be rejected on 24H2, so prefer a genuine key there. |
 
-`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition` and `-ProductKey` overrides and **requires**
-`-ProductKey` for any non-Home edition, so you can test the no-key path with `-Edition Home` and do a
-keyed build with `-ProductKey '<your-key>'`.
+The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
+shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`
+takes precedence). Use it for a fully hands-off **Home** build.
+
+`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, and `-UseGenericProductKey`
+overrides and **requires** a usable key for any non-Home edition, so you can test the hands-off path
+with `-Edition Home -UseGenericProductKey` and do a keyed build with `-ProductKey '<your-key>'`.
 
 When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
 published by Microsoft — see

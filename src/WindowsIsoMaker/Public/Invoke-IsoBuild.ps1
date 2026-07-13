@@ -48,6 +48,11 @@ function Invoke-IsoBuild {
         Optional override for how the first OOBE account is provisioned (config
         Autounattend.AccountMode): 'local' (create a local admin, hands-off) or 'entra' (present
         the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
+    .PARAMETER UseGenericProductKey
+        Bake the edition's generic/default retail product key (which selects the edition and skips
+        the OOBE product-key page without activating). Handy for a fully hands-off Home build.
+        An explicit -ProductKey always takes precedence. Non-Home generic keys may still fail
+        24H2's online validation, so pass a genuine -ProductKey for Pro/Enterprise/etc.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -109,6 +114,9 @@ function Invoke-IsoBuild {
         [string] $AccountMode,
 
         [Parameter()]
+        [switch] $UseGenericProductKey,
+
+        [Parameter()]
         [switch] $SkipHeavyBuild,
 
         [Parameter()]
@@ -140,6 +148,14 @@ function Invoke-IsoBuild {
             if ($au -is [hashtable]) { $au[$ov.Key] = $value }
             elseif ($null -ne $au) { $au | Add-Member -NotePropertyName $ov.Key -NotePropertyValue $value -Force }
         }
+    }
+
+    # -UseGenericProductKey bakes the edition's generic/default retail key (skips the OOBE
+    # product-key page). An explicit -ProductKey always wins over the switch.
+    if ($UseGenericProductKey.IsPresent -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
+        $au = $Config.Autounattend
+        if ($au -is [hashtable]) { $au['ProductKey'] = 'generic' }
+        elseif ($null -ne $au) { $au | Add-Member -NotePropertyName 'ProductKey' -NotePropertyValue 'generic' -Force }
     }
 
     $isPreview = $WhatIfPreference -or $SkipHeavyBuild.IsPresent

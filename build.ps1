@@ -48,6 +48,12 @@
     Optional override for OOBE account provisioning: 'local' (create a local admin, hands-off) or
     'entra' (present the work/school sign-in to join Entra ID and auto-enroll into Intune).
 
+.PARAMETER UseGenericProductKey
+    Bake the edition's generic/default retail key so Setup skips the OOBE product-key page without
+    activating - the easy way to make a fully hands-off Home build. An explicit -ProductKey wins
+    over this switch. Non-Home generic keys may still fail 24H2 validation, so use a genuine
+    -ProductKey for Pro/Enterprise/etc.
+
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
 
@@ -121,6 +127,9 @@ param(
     [string] $AccountMode,
 
     [Parameter()]
+    [switch] $UseGenericProductKey,
+
+    [Parameter()]
     [switch] $SkipHeavyBuild,
 
     [Parameter()]
@@ -167,7 +176,7 @@ foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', '
         $buildParams[$name] = $PSBoundParameters[$name]
     }
 }
-foreach ($switchName in 'SkipHeavyBuild', 'BootTest', 'KeepBootTestVm') {
+foreach ($switchName in 'SkipHeavyBuild', 'BootTest', 'KeepBootTestVm', 'UseGenericProductKey') {
     if ($PSBoundParameters.ContainsKey($switchName)) {
         $buildParams[$switchName] = [switch]$PSBoundParameters[$switchName]
     }

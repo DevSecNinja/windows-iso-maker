@@ -52,6 +52,11 @@
     for any non-Home edition: Windows 11 24H2 Setup only installs hands-off without a key on Home;
     Pro/Enterprise/etc. need a genuine key (the generic KMS key fails 24H2's new validation).
 
+.PARAMETER UseGenericProductKey
+    Bake the edition's generic/default retail key so Setup skips the OOBE product-key page without
+    activating - use it for a fully hands-off Home run (no key prompt). An explicit -ProductKey wins
+    over this switch; non-Home generic keys may still fail 24H2 validation.
+
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
     Auto-discovers everything, rebuilds the ISO, and boot-tests it, pausing for manual inspection.
@@ -73,7 +78,8 @@ param(
     [switch] $NoKeep,
     [switch] $ConnectVm,
     [string] $Edition,
-    [string] $ProductKey
+    [string] $ProductKey,
+    [switch] $UseGenericProductKey
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,6 +105,11 @@ if ($PSBoundParameters.ContainsKey('ProductKey')) {
     if ($cfg.Autounattend -isnot [hashtable]) { throw 'Config Autounattend section is not a hashtable; cannot apply -ProductKey.' }
     $cfg.Autounattend['ProductKey'] = $ProductKey
 }
+if ($UseGenericProductKey -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
+    if ($cfg.Autounattend -isnot [hashtable]) { throw 'Config Autounattend section is not a hashtable; cannot apply -UseGenericProductKey.' }
+    $cfg.Autounattend['ProductKey'] = 'generic'
+    Write-Host "[QuickBootTest] Using the edition's generic product key (skips the OOBE product-key page)." -ForegroundColor Cyan
+}
 
 # Windows 11 24H2 only installs hands-off WITHOUT a product key on Home. Non-Home editions need a
 # genuine key (the generic KMS key fails 24H2's new online validation), so require one up front.
@@ -107,7 +118,7 @@ $resolvedKey = [string]$cfg.Autounattend['ProductKey']
 $isHomeEdition = $resolvedEdition -match '(?i)home'
 $keyIsUsable = -not [string]::IsNullOrWhiteSpace($resolvedKey) -and $resolvedKey -notmatch '(?i)^\s*(none|generic|auto)\s*$'
 if (-not $SkipRebuild -and -not $isHomeEdition -and -not $keyIsUsable) {
-    throw "Edition '$resolvedEdition' needs a genuine product key for an unattended 24H2 install (the generic KMS key fails 24H2's new validation). Re-run with -ProductKey '<your-key>', or test the no-key path with -Edition Home."
+    throw "Edition '$resolvedEdition' needs a genuine product key for an unattended 24H2 install (the generic key fails 24H2's new validation for non-Home editions). Re-run with -ProductKey '<your-key>', or test the fully hands-off path with -Edition Home -UseGenericProductKey."
 }
 
 # --- Resolve the working directory that holds the serviced media. ---

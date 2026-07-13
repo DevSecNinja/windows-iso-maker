@@ -27,9 +27,10 @@ Describe 'Get-GenericSetupProductKey' {
         }
     }
 
-    It 'returns the generic Home key for "Home"' {
+    It 'returns the generic (default retail) Home key for "Home"' {
         InModuleScope WindowsIsoMaker {
-            Get-GenericSetupProductKey -Edition 'Home' | Should -Be 'TX9XD-98N7V-6WMQ6-BX7FG-H8Q99'
+            Get-GenericSetupProductKey -Edition 'Home'             | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+            Get-GenericSetupProductKey -Edition 'Windows 11 Home'  | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
         }
     }
 
@@ -84,6 +85,14 @@ Describe 'New-AutounattendXml product key' {
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
         $xml | Should -Match '<ProductKey>'
         $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
+    }
+
+    It 'injects the generic (page-skipping) retail key for Home when ProductKey is "generic"' {
+        $cfg = New-TestConfig -Edition 'Home' -Autounattend @{ ProductKey = 'generic' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Match '<ProductKey>'
+        $xml | Should -Match ([regex]::Escape('YTMG3-N6DKC-DKB77-7M9GH-8HVX7'))
     }
 
     It 'picks the generic key matching the resolved edition for "auto"' {

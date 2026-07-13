@@ -112,16 +112,16 @@ function New-AutounattendXml {
 
     # --- ProductKey fragment (edition selector, NOT an activation key). ---
     # Windows 11 24H2's rearchitected Setup ("windlp") validates a product key online during
-    # windowsPE. The public generic (KMS client setup) keys FAIL that new validation and hard-stop
-    # with "Setup has failed to validate the product key" - even with WillShowUI=Never and a
-    # network connection - so they are no longer emitted by default. Windows 11 *Home* installs
-    # fully unattended WITHOUT any key, so the default (omit) works for Home. Non-Home editions
-    # (Pro, Enterprise, ...) require a genuine key: supply it via Autounattend.ProductKey (a real
-    # key), or via the -ProductKey parameter of scripts/Invoke-QuickBootTest.ps1.
-    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (Home installs hands-off;
-    #                                                    non-Home Setup will stop for a key)
-    #   ProductKey = 'generic' | 'auto'               -> generic key for the edition (NOTE: fails
-    #                                                    24H2 validation; kept for older media only)
+    # windowsPE. The KMS client setup keys FAIL that new validation and hard-stop with "Setup has
+    # failed to validate the product key" - so no key is emitted by default. Windows 11 *Home*
+    # installs hands-off without any key (though Setup still shows a "do you have a key?" page you
+    # must click through); non-Home editions (Pro, Enterprise, ...) require a genuine key.
+    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (Home installs hands-off but
+    #                                                    shows the key page; non-Home Setup stops)
+    #   ProductKey = 'generic' | 'auto'               -> generic/default retail key for the edition
+    #                                                    (skips the OOBE key page; Home's is
+    #                                                    confirmed to pass 24H2, non-Home may fail).
+    #                                                    Set via build.ps1 -UseGenericProductKey.
     #   ProductKey = 'XXXXX-...'                       -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''

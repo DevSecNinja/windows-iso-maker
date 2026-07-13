@@ -1,17 +1,20 @@
 function Get-GenericSetupProductKey {
     <#
     .SYNOPSIS
-        Return the public generic (KMS client setup) product key for a Windows 11 edition.
+        Return the generic (default retail) setup product key for a Windows 11 edition.
     .DESCRIPTION
         Windows Setup uses the <ProductKey> in the windowsPE pass only to decide WHICH edition
-        to install and to skip the interactive product-key page. Microsoft publishes generic
-        "KMS client setup keys" for exactly this purpose — they select an edition but do NOT
-        activate Windows (activation still happens later via the user's own key, digital
-        licence, or KMS). Baking the correct generic key in lets fully-unattended Pro (and
-        other non-Home) installs proceed past the "Setup has failed to validate the product
-        key" page that appears when a key is required but none is supplied.
+        to install and to skip the interactive product-key page. These are the public generic
+        "default" keys Microsoft ships for exactly that purpose — they select an edition but do
+        NOT activate Windows (activation still happens later via the user's own key, digital
+        licence, or KMS). Baking the correct generic key in lets a fully-unattended install
+        proceed past the "Setup has failed to validate the product key" / "Do you have a product
+        key?" page that appears when a key is required but none is supplied.
 
-        See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
+        NOTE on Windows 11 24H2: its rearchitected Setup ("windlp") validates the key online in
+        windowsPE. The *Home* generic key below is confirmed to pass that check and install
+        hands-off; the non-Home generic keys may still be rejected there, so for Pro/Enterprise/etc.
+        prefer a genuine key. See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
     .PARAMETER Edition
         The Windows 11 edition name (e.g. 'Pro', 'Pro N', 'Home', 'Education').
     .OUTPUTS
@@ -25,12 +28,12 @@ function Get-GenericSetupProductKey {
         [string] $Edition
     )
 
-    # Public generic Volume Licensing / KMS client setup keys (edition selectors, not
-    # activation keys). Keyed by a normalized edition name.
+    # Public generic / default retail setup keys (edition selectors that skip the OOBE
+    # product-key page; they do NOT activate). Keyed by a normalized edition name.
     $keys = @{
-        'home'                    = 'TX9XD-98N7V-6WMQ6-BX7FG-H8Q99'
-        'homen'                   = '3KHY7-WNT83-DGQKR-F7HPR-844BM'
-        'homesinglelanguage'      = '7HNRX-D7KGG-3K4RQ-4WPJ4-YTDFH'
+        'home'                    = 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+        'homen'                   = '4CPRK-NM3K3-X6XXQ-RXX86-WXCHW'
+        'homesinglelanguage'      = 'BT79Q-G7N6G-PGBYW-4YWX6-6F4BT'
         'pro'                     = 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
         'pron'                    = '2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'
         'proforworkstations'      = 'DXG7C-N36C4-C4HTG-X4T3X-2YV77'
