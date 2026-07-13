@@ -22,14 +22,14 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 
 | Field | Meaning |
 |-------|---------|
-| `Edition` / `Language` / `Release` / `Architecture` | Base image selection (Fido inputs). `Architecture` is `amd64` or `arm64`. |
+| `Edition` / `Language` / `Release` / `Architecture` | Base image selection (Fido inputs). `Architecture` is `amd64` or `arm64`. Consumer editions (Home, Pro, Education, ...) all come from the **same** Fido consumer ISO — the edition is picked at install time — so the download is cached once per architecture/release and shared across them. **Enterprise / LTSC / IoT** editions aren't downloadable via Fido; supply `IsoPath` with a business-editions ISO. |
 | `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + personal-taste extras: reversed scroll, Start web-search off, Spotlight off, WSL, and the United States-International keyboard layout for English (US)). Accepts a list to combine profiles, e.g. `@('gaming','opinionated')` — the baselines are UNIONed and `gaming` keeps the gaming stack. |
 | `Toggles` | Per-id override map, e.g. `@{ 'appx-todos' = $false; 'feature-wsl' = $true }`. |
 | `EnableCatalogId` / `DisableCatalogId` | Force-enable / force-disable specific entries by `Id` (explicit ids win). |
 | `Autounattend` | Install/OOBE-time options (see [autounattend.md](autounattend.md)). |
 | `AzureUpload` | Optional off-box artifact storage (see [azure-upload.md](azure-upload.md)). |
 | `WorkingDirectory` / `OutputDirectory` | Scoped working + output locations. |
-| `IsoPath` | Provide a pre-downloaded ISO to skip Fido. |
+| `IsoPath` | Provide a pre-downloaded ISO to skip Fido. **Required for Enterprise / LTSC / IoT** editions (Fido only serves the consumer ISO). |
 | `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway Hyper-V VM and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
 | `KeepBootTestVm` | With `BootTest`: after the test resolves, keep the throwaway VM alive and pause until you press Enter so you can attach with `vmconnect localhost <vm>` and test interactively; the VM (and its VHDX) are still cleaned up afterwards. |
 | `CompressionFormat` | `zip` or `7z`. |
