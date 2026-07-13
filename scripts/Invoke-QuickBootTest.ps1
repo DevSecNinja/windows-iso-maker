@@ -1,0 +1,127 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Rebuild ONLY the ISO from already-serviced media and run the Hyper-V boot test — with all
+    paths auto-discovered.
+
+.DESCRIPTION
+    A local convenience wrapper for the inner loop of "I already have serviced media in TEMP,
+    just re-author the Autounattend.xml + ISO and boot it". It:
+
+      1. Imports the WindowsIsoMaker module (from the manifest, so all public functions load).
+      2. Auto-discovers the working directory (config.WorkingDirectory or <TEMP>\WindowsIsoMaker),
+         the serviced media/ folder, and the output ISO path.
+      3. Regenerates Autounattend.xml from config/build.config.psd1 (so the latest region/time-zone,
+         product-key and other settings are baked in).
+      4. Rebuilds the bootable ISO from the existing media (no re-mount / no re-servicing — fast).
+      5. Runs Test-ImageIntegrity with the opt-in VM boot test, keeping the VM up for manual poking
+         until you press Enter (unless -NoKeep is passed).
+
+    It never downloads or re-services an image; it only re-authors the ISO and boots it. Run it in
+    an ELEVATED PowerShell session (the boot test needs Hyper-V privileges).
+
+.PARAMETER ConfigPath
+    Build configuration file. Defaults to config/build.config.psd1 in the repo.
+
+.PARAMETER WorkingDirectory
+    Directory that holds the serviced media/ folder. Defaults to the config's WorkingDirectory,
+    or <TEMP>\WindowsIsoMaker when that is blank.
+
+.PARAMETER Architecture
+    'amd64' | 'arm64'. Defaults to the config's Architecture.
+
+.PARAMETER IsoPath
+    Output ISO path. Defaults to <WorkingDirectory>\Windows11-<Edition>-<Arch>-bootcheck.iso.
+
+.PARAMETER SkipRebuild
+    Skip re-authoring the Autounattend.xml + ISO and boot-test the existing -IsoPath as-is.
+
+.PARAMETER NoKeep
+    Do not keep the VM / pause for manual inspection (runs the boot test unattended).
+
+.EXAMPLE
+    ./scripts/Invoke-QuickBootTest.ps1
+    Auto-discovers everything, rebuilds the ISO, and boot-tests it, pausing for manual inspection.
+
+.EXAMPLE
+    ./scripts/Invoke-QuickBootTest.ps1 -SkipRebuild
+    Just boot-test the ISO that is already on disk.
+#>
+[CmdletBinding(SupportsShouldProcess = $true)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+    Justification = 'Interactive local helper: coloured status lines are written to the host on purpose.')]
+param(
+    [string] $ConfigPath,
+    [string] $WorkingDirectory,
+    [ValidateSet('amd64', 'arm64')]
+    [string] $Architecture,
+    [string] $IsoPath,
+    [switch] $SkipRebuild,
+    [switch] $NoKeep
+)
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$manifest = Join-Path $repoRoot 'src/WindowsIsoMaker/WindowsIsoMaker.psd1'
+Write-Host "[QuickBootTest] Importing module from '$manifest'." -ForegroundColor Cyan
+Import-Module $manifest -Force
+
+if (-not $ConfigPath) { $ConfigPath = Join-Path $repoRoot 'config/build.config.psd1' }
+if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "Config file not found: '$ConfigPath'." }
+$cfg = Get-BuildConfiguration -Path $ConfigPath
+
+if (-not $Architecture) { $Architecture = [string]$cfg.Architecture }
+if (-not $Architecture) { $Architecture = 'amd64' }
+
+# --- Resolve the working directory that holds the serviced media. ---
+if (-not $WorkingDirectory) {
+    $cfgWork = [string]$cfg.WorkingDirectory
+    $WorkingDirectory = if ([string]::IsNullOrWhiteSpace($cfgWork)) {
+        Join-Path ([System.IO.Path]::GetTempPath()) 'WindowsIsoMaker'
+    }
+    else { $cfgWork }
+}
+Write-Host "[QuickBootTest] Working directory: '$WorkingDirectory'." -ForegroundColor Cyan
+
+$mediaRoot = Join-Path $WorkingDirectory 'media'
+$autounattend = Join-Path $WorkingDirectory 'Autounattend.xml'
+if (-not $IsoPath) {
+    $edition = ([string]$cfg.Edition) -replace '[^A-Za-z0-9]', ''
+    if (-not $edition) { $edition = 'Pro' }
+    $IsoPath = Join-Path $WorkingDirectory ("Windows11-$edition-$Architecture-bootcheck.iso")
+}
+
+if (-not $SkipRebuild) {
+    if (-not (Test-Path -LiteralPath $mediaRoot)) {
+        throw "Serviced media not found at '$mediaRoot'. Run a full build first (build.ps1) so the media/ folder exists, or pass -SkipRebuild to boot an existing ISO."
+    }
+
+    Write-Host "[QuickBootTest] Regenerating Autounattend.xml -> '$autounattend'." -ForegroundColor Cyan
+    New-AutounattendXml -Config $cfg -Architecture $Architecture -OutputPath $autounattend | Out-Null
+
+    Write-Host "[QuickBootTest] Rebuilding ISO (no re-servicing) -> '$IsoPath'." -ForegroundColor Cyan
+    New-BootableIso -MediaRoot $mediaRoot -Architecture $Architecture -OutputIsoPath $IsoPath -AutounattendPath $autounattend | Out-Null
+}
+elseif (-not (Test-Path -LiteralPath $IsoPath)) {
+    throw "-SkipRebuild was set but the ISO '$IsoPath' does not exist."
+}
+
+# --- Readiness preflight (clear, actionable message before we try to spin a VM). ---
+# Get-HyperVReadiness is an internal helper; invoke it inside the module's scope.
+$module = Get-Module WindowsIsoMaker | Select-Object -First 1
+$readiness = & $module { Get-HyperVReadiness }
+if (-not $readiness.Ready) {
+    Write-Warning "[QuickBootTest] Hyper-V is not ready for a boot test: $($readiness.Reason)"
+    Write-Warning "[QuickBootTest] The ISO was still (re)built at '$IsoPath'; fix the above and re-run, or pass -SkipRebuild."
+    return
+}
+
+$keep = -not $NoKeep
+Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
+$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -Verbose
+
+$icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
+$color = if ($result.Passed) { 'Green' } else { 'Red' }
+Write-Host "[QuickBootTest] Result: $icon" -ForegroundColor $color
+return $result
