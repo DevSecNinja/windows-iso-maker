@@ -54,6 +54,8 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-Edition` / `-Language` / `-Release` | Base image overrides. |
 | `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming`. |
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
+| `-ProductKey` | Override the Autounattend product key. **Required for a hands-off non-Home 24H2 install** — only Home installs without a key (the generic KMS keys fail 24H2's online validation). `''`/`none` omit it; a genuine key is baked in verbatim. |
+| `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
 | `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing (vmconnect) until Enter, then clean up. |
@@ -67,6 +69,15 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 
 # Dry-run to see exactly which changes would be applied
 ./build.ps1 -WhatIf
+
+# Hands-off Home build (installs without a product key)
+./build.ps1 -Edition Home
+
+# Keyed Pro build (a genuine key is required for a hands-off non-Home 24H2 install)
+./build.ps1 -Edition Pro -ProductKey '<genuine-key>'
+
+# Corporate image: join Entra ID / auto-enroll into Intune at OOBE
+./build.ps1 -Edition Pro -ProductKey '<genuine-key>' -AccountMode entra
 
 # Aggressive profile, but keep the Xbox game overlay
 ./build.ps1 -Profile aggressive -DisableCatalogId appx-xbox-game-overlay

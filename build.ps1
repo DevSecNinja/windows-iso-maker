@@ -44,6 +44,10 @@
     Optional override for the Autounattend product key. Required for a hands-off non-Home 24H2
     install (only Home installs without a key; the generic KMS keys fail 24H2 validation).
 
+.PARAMETER AccountMode
+    Optional override for OOBE account provisioning: 'local' (create a local admin, hands-off) or
+    'entra' (present the work/school sign-in to join Entra ID and auto-enroll into Intune).
+
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
 
@@ -113,6 +117,10 @@ param(
     [string] $ProductKey,
 
     [Parameter()]
+    [ValidateSet('local', 'entra', 'entraid', 'azuread')]
+    [string] $AccountMode,
+
+    [Parameter()]
     [switch] $SkipHeavyBuild,
 
     [Parameter()]
@@ -154,7 +162,7 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'ProductKey') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'ProductKey', 'AccountMode') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }

@@ -263,6 +263,82 @@
             Arch           = @('amd64', 'arm64')
         },
 
+        @{
+            Id             = 'appx-xbox-app'
+            Type           = 'Appx'
+            Action         = 'RemoveAppx'
+            Target         = 'Microsoft.GamingApp'
+            Category       = 'Gaming'
+            Description    = 'Removes the Xbox app (Microsoft.GamingApp) provisioned package.'
+            Rationale      = 'The Xbox app (game library, Game Pass, cloud gaming) is a consumer gaming client unnecessary on managed/non-gaming builds. Tagged Category=Gaming so the gaming profile keeps it; removed by the default profile for a clean baseline. Reinstallable from the Store.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Reinstall the Xbox app from the Microsoft Store.'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        @{
+            Id             = 'appx-phone-link'
+            Type           = 'Appx'
+            Action         = 'RemoveAppx'
+            Target         = 'Microsoft.YourPhone'
+            Description    = 'Removes the Phone Link (Microsoft.YourPhone) provisioned app.'
+            Rationale      = 'Phone Link mirrors a paired phone (calls, messages, photos) and is a consumer feature not needed on a minimal managed baseline. Reinstallable from the Store.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Reinstall Phone Link from the Microsoft Store.'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        @{
+            Id             = 'appx-family'
+            Type           = 'Appx'
+            Action         = 'RemoveAppx'
+            Target         = 'MicrosoftCorporationII.MicrosoftFamily'
+            Description    = 'Removes the Microsoft Family (Family Safety) provisioned app.'
+            Rationale      = 'The Family app manages parental controls / family group settings tied to a consumer Microsoft account; it is not part of a managed baseline. Reinstallable from the Store.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Reinstall the Family app from the Microsoft Store.'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        @{
+            Id             = 'appx-linkedin'
+            Type           = 'Appx'
+            Action         = 'RemoveAppx'
+            Target         = '*LinkedIn*'
+            Description    = 'Removes the LinkedIn provisioned/promoted app if present.'
+            Rationale      = 'LinkedIn is a third-party app promoted via the Windows consumer content-delivery experience and pinned to Start on consumer images; advertising bloat on a clean baseline. Removed if present; skipped as NotApplicable if absent.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Reinstall LinkedIn from the Microsoft Store if desired.'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        @{
+            Id             = 'appx-whatsapp'
+            Type           = 'Appx'
+            Action         = 'RemoveAppx'
+            Target         = '*WhatsApp*'
+            Description    = 'Removes the WhatsApp provisioned/promoted app if present.'
+            Rationale      = 'WhatsApp is a third-party app promoted via the Windows consumer content-delivery experience and pinned to Start on consumer images; advertising bloat on a clean baseline. Removed if present; skipped as NotApplicable if absent.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Reinstall WhatsApp from the Microsoft Store if desired.'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
         # --- Opt-in, impactful removal (FR-008 / Principle VI: DefaultEnabled = $false) ---
         # The offline removal of Edge is a community-documented technique, not an officially
         # supported single procedure; Microsoft treats Edge as an integrated OS component

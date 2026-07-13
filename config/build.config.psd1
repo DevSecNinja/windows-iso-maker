@@ -32,7 +32,15 @@
     Autounattend = @{
         Enabled          = $true
         SkipOobe         = $true          # skip the out-of-box experience screens
-        BypassMsAccount  = $true          # bypass the Microsoft-account requirement (FR-027)
+        # AccountMode: how the first account is provisioned during OOBE.
+        #   'local' = create the local admin account below and bypass the online-account screens
+        #             (fully hands-off; ideal for a standalone/gaming PC).
+        #   'entra' = don't create a local account; let OOBE present the "Set up for work or school"
+        #             sign-in so you join Entra ID (Azure AD) and auto-enroll into Intune. This step
+        #             is interactive (you enter your Entra credentials); a fully silent join needs
+        #             Autopilot or a provisioning package.
+        AccountMode      = 'local'         # 'local' | 'entra'
+        BypassMsAccount  = $true          # bypass the Microsoft-account requirement (FR-027; local mode)
         CreateLocalAccount = $true        # create a local account instead (default on, toggleable)
         LocalAccountName = 'Admin'        # local account username (no password stored in the file)
         Locale           = 'en-US'        # UI / system language (kept English (United States))

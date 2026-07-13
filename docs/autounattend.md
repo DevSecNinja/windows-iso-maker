@@ -12,7 +12,7 @@ Two different layers configure the image:
 | Layer | When | What it does |
 |-------|------|--------------|
 | DISM offline servicing | Image build time | Remove provisioned apps, apply registry hive tweaks, enable optional features (e.g. WSL). |
-| **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account, run first-logon/SetupComplete commands. |
+| **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account **or present the Entra ID sign-in**, run first-logon/SetupComplete commands. |
 
 ## Why per-architecture
 
@@ -28,8 +28,9 @@ The `Autounattend` block in `config/build.config.psd1`:
 Autounattend = @{
     Enabled            = $true
     SkipOobe           = $true          # skip the out-of-box experience
-    BypassMsAccount    = $true          # bypass the Microsoft-account requirement (default on)
-    CreateLocalAccount = $true          # create a local account instead
+    AccountMode        = 'local'        # 'local' (local admin) | 'entra' (join Entra ID / Intune)
+    BypassMsAccount    = $true          # bypass the Microsoft-account requirement (local mode)
+    CreateLocalAccount = $true          # create a local account (local mode)
     LocalAccountName   = 'Admin'        # username (NO password is stored in the file)
     Locale             = 'en-US'        # UI / system language
     UserLocale         = 'en-US'        # region format (dates/times/numbers); defaults to Locale
@@ -43,6 +44,27 @@ Autounattend = @{
 ```
 
 Set `Enabled = $false` to skip generation entirely and ship the stock Microsoft OOBE.
+
+## Account provisioning (local vs Entra ID join)
+
+`AccountMode` chooses how the first account is set up during OOBE:
+
+| Mode | Behaviour | Use it for |
+| --- | --- | --- |
+| `'local'` (default) | Creates the local admin account (`LocalAccountName`) and hides the online-account screens. Fully hands-off — no sign-in required. | Standalone / gaming PCs, lab images. |
+| `'entra'` (aliases `entraid`, `azuread`) | Does **not** create a local account. Leaves the *"Set up for work or school"* sign-in visible (and allows Wi-Fi setup) so you sign in with your **Entra ID** identity, which **joins Entra ID (Azure AD)** and **auto-enrolls into Intune** where configured. | Managed / corporate devices. |
+
+> **Entra join is interactive by design.** A real Entra join needs credentials, so this mode
+> *prepares* OOBE to present the Entra sign-in instead of forcing a local account — you still type
+> your credentials once. A fully silent, zero-touch Entra join requires **Windows Autopilot** or a
+> **provisioning package (PPKG)**, which are out of scope for the answer file.
+
+You can also set it per build without editing the config:
+
+```powershell
+./build.ps1 -Edition Pro -ProductKey '<genuine-key>' -AccountMode entra
+./scripts/Invoke-QuickBootTest.ps1 -Edition Home -AccountMode entra
+```
 
 ## Fully-automated install (edition + partition + key)
 

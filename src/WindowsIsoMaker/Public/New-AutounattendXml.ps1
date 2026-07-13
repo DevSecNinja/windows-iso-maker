@@ -86,6 +86,30 @@ function New-AutounattendXml {
     $localAccountName = [string](& $get 'LocalAccountName' 'Admin')
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
+    # --- Account provisioning mode (FR-027). ---
+    #   'local' (default) -> create a local admin account and bypass the online-account screens.
+    #                        Fully hands-off; ideal for standalone/gaming PCs.
+    #   'entra' ('entraid'/'azuread') -> DON'T create a local account and DON'T hide the online-
+    #                        account screens: let OOBE present the "Set up for work or school"
+    #                        flow so the user signs in with their Entra ID (Azure AD join), which
+    #                        triggers Intune MDM auto-enrollment where configured. Note: a genuine
+    #                        hands-free Entra join needs credentials and is only fully automated via
+    #                        Windows Autopilot or a provisioning package - this image simply prepares
+    #                        OOBE to present the Entra sign-in instead of forcing a local account.
+    $accountModeRaw = [string](& $get 'AccountMode' 'local')
+    $accountMode = $accountModeRaw.Trim().ToLowerInvariant()
+    if ($accountMode -notin @('local', 'entra', 'entraid', 'azuread')) {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "Unknown AccountMode '$accountModeRaw'; defaulting to 'local'. Valid values: local, entra."
+        $accountMode = 'local'
+    }
+    $isEntraJoin = $accountMode -in @('entra', 'entraid', 'azuread')
+    if ($isEntraJoin) {
+        # Entra join is interactive at OOBE: no local account, and the online-account screens must
+        # be visible so the user can sign in with their work/school (Entra) identity.
+        $createLocalAccount = $false
+        $bypassMsAccount = $false
+    }
+
     # --- ProductKey fragment (edition selector, NOT an activation key). ---
     # Windows 11 24H2's rearchitected Setup ("windlp") validates a product key online during
     # windowsPE. The public generic (KMS client setup) keys FAIL that new validation and hard-stop
@@ -133,15 +157,21 @@ function New-AutounattendXml {
     $oobeFragment = ''
     if ($skipOobe) {
         $hideOnline = if ($bypassMsAccount) { 'true' } else { 'false' }
+        # For an Entra join we must let the user OOBE run so the "work or school" sign-in appears,
+        # and allow wireless setup so a Wi-Fi-only device can reach Entra/Intune. A local install
+        # keeps the fully hands-off skip.
+        $hideWireless = if ($isEntraJoin) { 'false' } else { 'true' }
+        $skipUserOobe = if ($isEntraJoin) { 'false' } else { 'true' }
+        $skipMachineOobe = if ($isEntraJoin) { 'false' } else { 'true' }
         $oobeFragment = @"
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
         <HideOnlineAccountScreens>$hideOnline</HideOnlineAccountScreens>
-        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <HideWirelessSetupInOOBE>$hideWireless</HideWirelessSetupInOOBE>
         <ProtectYourPC>3</ProtectYourPC>
-        <SkipMachineOOBE>true</SkipMachineOOBE>
-        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>$skipMachineOobe</SkipMachineOOBE>
+        <SkipUserOOBE>$skipUserOobe</SkipUserOOBE>
       </OOBE>
 "@
     }

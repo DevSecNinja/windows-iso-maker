@@ -272,6 +272,7 @@ function Resolve-AutounattendConfig {
     $defaults = @{
         Enabled               = $true
         SkipOobe              = $true
+        AccountMode           = 'local'
         BypassMsAccount       = $true
         CreateLocalAccount    = $true
         LocalAccountName      = 'Admin'

@@ -483,6 +483,11 @@ function New-BootTestVm {
 
     # 4 GB startup memory (Windows 11 minimum). Static memory so the guest always sees >= 4 GB.
     New-VM -Name $VmName -Generation 2 -MemoryStartupBytes 4GB -NewVHDPath $VhdPath -NewVHDSizeBytes 64GB -ErrorAction Stop | Out-Null
+    # Disable automatic checkpoints. Client Hyper-V enables them by default, which snapshots the VM
+    # on start into an .avhdx and leaves Hyper-V busy merging/creating it - that race made the
+    # post-teardown VHDX log harvest fail (the base .vhdx was locked while the snapshot was created).
+    # A throwaway boot-test VM never needs checkpoints, so turn them off up front.
+    Set-VM -Name $VmName -AutomaticCheckpointsEnabled $false -CheckpointType Disabled -ErrorAction SilentlyContinue
     Set-VMMemory -VMName $VmName -DynamicMemoryEnabled $false -StartupBytes 4GB -ErrorAction Stop
     # >= 2 processors (Windows 11 minimum).
     Set-VMProcessor -VMName $VmName -Count 2 -ErrorAction Stop

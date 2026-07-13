@@ -44,6 +44,10 @@ function Invoke-IsoBuild {
         Required for a hands-off non-Home 24H2 install (only Home installs without a key; the
         generic KMS keys fail 24H2's online validation). '' / 'none' omit it; a genuine key is
         baked in verbatim.
+    .PARAMETER AccountMode
+        Optional override for how the first OOBE account is provisioned (config
+        Autounattend.AccountMode): 'local' (create a local admin, hands-off) or 'entra' (present
+        the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -101,6 +105,10 @@ function Invoke-IsoBuild {
         [string] $ProductKey,
 
         [Parameter()]
+        [ValidateSet('local', 'entra', 'entraid', 'azuread')]
+        [string] $AccountMode,
+
+        [Parameter()]
         [switch] $SkipHeavyBuild,
 
         [Parameter()]
@@ -120,13 +128,18 @@ function Invoke-IsoBuild {
         $Config = Get-BuildConfiguration @cfgParams
     }
 
-    # Last-mile ProductKey override applies to the nested Autounattend sub-config (it is not a
-    # top-level field, so Get-BuildConfiguration does not carry it). Required for a hands-off
-    # non-Home 24H2 install; only Home installs without a key.
-    if ($PSBoundParameters.ContainsKey('ProductKey')) {
-        $au = $Config.Autounattend
-        if ($au -is [hashtable]) { $au['ProductKey'] = $ProductKey }
-        elseif ($null -ne $au) { $au | Add-Member -NotePropertyName 'ProductKey' -NotePropertyValue $ProductKey -Force }
+    # Last-mile ProductKey / AccountMode overrides apply to the nested Autounattend sub-config (not
+    # top-level fields, so Get-BuildConfiguration does not carry them). ProductKey is required for a
+    # hands-off non-Home 24H2 install; AccountMode selects local vs Entra-join OOBE provisioning.
+    foreach ($ov in @(
+            @{ Name = 'ProductKey';  Key = 'ProductKey' },
+            @{ Name = 'AccountMode'; Key = 'AccountMode' })) {
+        if ($PSBoundParameters.ContainsKey($ov.Name)) {
+            $value = $PSBoundParameters[$ov.Name]
+            $au = $Config.Autounattend
+            if ($au -is [hashtable]) { $au[$ov.Key] = $value }
+            elseif ($null -ne $au) { $au | Add-Member -NotePropertyName $ov.Key -NotePropertyValue $value -Force }
+        }
     }
 
     $isPreview = $WhatIfPreference -or $SkipHeavyBuild.IsPresent

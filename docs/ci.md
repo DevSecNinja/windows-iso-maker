@@ -24,6 +24,12 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
   `disable_catalog_id`, `skip_heavy_build`, `boot_test`. There are deliberately **no**
   `remove_edge`/`remove_onedrive` inputs — pass `enable_catalog_id: remove-edge,remove-onedrive`
   instead (data-driven selection, FR-024).
+- **Product key (optional secret)**: CI ships **no product key by default** — a keyless build
+  produces a hands-off **Home** image (non-Home CI builds simply stop at the product-key page in a
+  boot test, which is expected). If you ever need a keyed non-Home CI build, set the optional
+  `WINDOWS_PRODUCT_KEY` repo secret; the build step reads it from an environment variable (so the
+  key is masked and never appears on a command line) and passes it as `-ProductKey`. Leaving the
+  secret unset keeps the key out of CI entirely.
 - **Permissions** (least privilege): `contents: read`, plus `id-token: write` and
   `attestations: write` for provenance/OIDC.
 - **Matrix**:
@@ -58,8 +64,10 @@ Start-Process adksetup.exe -Wait -ArgumentList '/quiet','/norestart','/features'
 - **Time**: within the 6-hour job cap, but monitored.
 - **arm64 tooling**: ADK/`oscdimg`/PowerShell availability on `windows-11-arm` should be
   verified for your ADK version; `adksetup` runs under emulation on that runner.
-- **No secrets**: the build needs none. Azure upload uses OIDC federation (no stored keys) and
-  is skipped unless the `AZURE_*` repository variables are set.
+- **No secrets by default**: the build needs none. Azure upload uses OIDC federation (no stored
+  keys) and is skipped unless the `AZURE_*` repository variables are set. The only optional secret
+  is `WINDOWS_PRODUCT_KEY` (see above), used solely for a keyed non-Home build; leave it unset to
+  keep product keys out of CI.
 
 ## Parity guarantee
 

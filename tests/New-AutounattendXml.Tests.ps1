@@ -126,6 +126,65 @@ Describe 'New-AutounattendXml product key' {
     }
 }
 
+Describe 'New-AutounattendXml account provisioning (local vs Entra join)' {
+
+    BeforeEach {
+        $script:OutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("au-acct-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.xml')
+    }
+    AfterEach {
+        Remove-Item $script:OutPath -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeAll {
+        function script:New-AcctConfig {
+            param([hashtable]$Autounattend = @{})
+            [pscustomobject]@{ Edition = 'Home'; Language = 'en-US'; Architecture = 'amd64'; Autounattend = $Autounattend }
+        }
+    }
+
+    It 'creates a local admin account and hides the online-account screens by default (local mode)' {
+        $cfg = New-AcctConfig -Autounattend @{ LocalAccountName = 'Admin' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<Name>Admin</Name>'))
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>true</HideOnlineAccountScreens>'))
+        $xml | Should -Match ([regex]::Escape('<SkipUserOOBE>true</SkipUserOOBE>'))
+    }
+
+    It 'omits the local account and shows the online sign-in for AccountMode=entra (Entra join)' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'entra' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Not -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>false</HideOnlineAccountScreens>'))
+        $xml | Should -Match ([regex]::Escape('<SkipUserOOBE>false</SkipUserOOBE>'))
+        $xml | Should -Match ([regex]::Escape('<HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>'))
+    }
+
+    It 'accepts azuread/entraid aliases for the Entra join mode' {
+        foreach ($mode in 'entraid', 'azuread') {
+            $cfg = New-AcctConfig -Autounattend @{ AccountMode = $mode }
+            New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+            (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Not -Match '<UserAccounts>'
+        }
+    }
+
+    It 'warns and falls back to local for an unknown AccountMode' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'bogus' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match '<UserAccounts>'
+        "$warnings" | Should -Match 'AccountMode'
+    }
+
+    It 'produces well-formed XML in Entra mode' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'entra' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
+    }
+}
+
 Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
 
     BeforeEach {
