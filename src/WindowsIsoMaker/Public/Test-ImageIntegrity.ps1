@@ -22,6 +22,10 @@ function Test-ImageIntegrity {
         Opt-in: launch the interactive VM console (vmconnect.exe) as soon as the boot-test VM
         starts, so you can watch Windows Setup and press Shift+F10 to capture logs on a stall.
         Best-effort (skipped on headless/CI hosts). Only meaningful together with -BootTest.
+    .PARAMETER ConnectNetwork
+        Opt-in: give the boot-test VM a network connection (External switch preferred). Off by
+        default so the VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does
+        not depend on a flaky WinPE-phase DNS/NAT proxy. Only meaningful together with -BootTest.
         Test-ImageIntegrity -IsoPath C:\out\win11.iso -Architecture amd64
     .OUTPUTS
         PSCustomObject with Passed, Structural (per-check results), an optional Boot result, and
@@ -46,6 +50,9 @@ function Test-ImageIntegrity {
 
         [Parameter()]
         [switch] $ConnectVm,
+
+        [Parameter()]
+        [switch] $ConnectNetwork,
 
         [Parameter()]
         [string] $DiagnosticsPath
@@ -94,7 +101,7 @@ function Test-ImageIntegrity {
     $bootResult = $null
     if ($BootTest) {
         Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message 'Opt-in VM boot test requested.'
-        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -ConnectVm:$ConnectVm -DiagnosticsPath $DiagnosticsPath
+        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -ConnectVm:$ConnectVm -ConnectNetwork:$ConnectNetwork -DiagnosticsPath $DiagnosticsPath
     }
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
@@ -222,11 +229,16 @@ function Invoke-VmBootTest {
     .PARAMETER ConnectVm
         When set, launches vmconnect.exe against the VM as soon as it starts (via the mockable
         Start-BootTestVmConnect seam) so the operator can watch Setup interactively.
+    .PARAMETER ConnectNetwork
+        When set, attaches a virtual switch (External preferred) so the boot-test VM has network.
+        Off by default: the VM boots fully offline so ConX (the redesigned Setup on 24H2+ media)
+        takes its offline path and does not depend on a flaky WinPE-phase DNS/NAT proxy.
     .PARAMETER DiagnosticsPath
         Directory to harvest Windows Setup logs into. After the VM is stopped (and before it is
-        removed) the throwaway VHDX is mounted offline and any Windows Setup Panther logs
-        (setupact.log / setuperr.log from \$WINDOWS.~BT\Sources\Panther and \Windows\Panther, plus
-        setupapi.dev.log) are copied here so an unattended-install failure can be diagnosed - in
+        removed) the throwaway VHDX is mounted offline and any Windows Setup logs (Panther
+        setupact.log / setuperr.log from \$WINDOWS.~BT\Sources\Panther and \Windows\Panther, the ConX
+        \Windows\Logs\MoSetup\BlueBox.log, setupapi.dev.log, plus any pe-logs the operator copied off
+        the WinPE RAM disk) are copied here so an unattended-install failure can be diagnosed - in
         CI too, where there is no interactive VM. When empty, harvesting is skipped.
     .OUTPUTS
         PSCustomObject with Passed, Detail, Method, State, ElapsedSeconds, and (when a diagnostics
@@ -242,6 +254,7 @@ function Invoke-VmBootTest {
         [Parameter()][int] $MinRunningSeconds = 90,
         [Parameter()][switch] $KeepBootTestVm,
         [Parameter()][switch] $ConnectVm,
+        [Parameter()][switch] $ConnectNetwork,
         [Parameter()][string] $DiagnosticsPath
     )
 
@@ -257,7 +270,7 @@ function Invoke-VmBootTest {
     $vmName = "wim-boottest-$([guid]::NewGuid().ToString('N').Substring(0,8))"
     $vhd = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "$vmName.vhdx"
     try {
-        New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd
+        New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd -ConnectNetwork:$ConnectNetwork
 
         # Opt-in: open the interactive VM console (vmconnect) so the operator can watch Setup and,
         # on a windowsPE stall, press Shift+F10 to capture logs. Behind a mockable seam so the unit
@@ -352,7 +365,7 @@ function Invoke-VmBootTest {
                     if ($null -ne $result) {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue ([pscustomobject]@{ Path = $vmDiagnosticsPath; Files = @(); SetupErrorTail = $null }) -Force
                     }
-                    Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk. To capture them: at the failing screen press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\' (the DiskConfiguration creates C:), then let this teardown re-harvest - the pe-* logs will land in '$vmDiagnosticsPath'."
+                    Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "No Windows Setup logs were written to the VHDX (looked in '$vmDiagnosticsPath'). This usually means Setup failed in the windowsPE phase before writing to disk (e.g. answer-file/product-key rejection); those logs live on the WinPE RAM disk (X:). To capture them: at the failing screen press Shift+F10 and, once a C: partition exists, run 'robocopy X:\Windows\Logs C:\pe-logs /E' then 'copy X:\Windows\*.log C:\pe-logs\' (include ConX's X:\Windows\Logs\MoSetup\BlueBox.log); let this teardown re-harvest and the logs will land in '$vmDiagnosticsPath'."
                 }
 
                 # Extra check: a VM can "stay running" while stuck at an interactive Setup page (e.g.
@@ -367,7 +380,7 @@ function Invoke-VmBootTest {
                     if ($result.Passed -and $result.Method -eq 'StayedRunning' -and -not $installProgressed) {
                         $result.Passed = $false
                         $result.Method = 'NoInstallProgress'
-                        $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath'. To capture the windowsPE logs, at the stuck screen press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\', then press Enter here to re-harvest."
+                        $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath'. To capture the windowsPE logs, at the stuck screen press Shift+F10 and run 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\', then press Enter here to re-harvest."
                         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message $result.Detail
                     }
                 }
@@ -440,7 +453,7 @@ function Start-BootTestVmConnect {
     }
     try {
         Start-Process -FilePath $vmconnect -ArgumentList @('localhost', $VmName) -ErrorAction Stop | Out-Null
-        Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "ConnectVm: opened the VM console for '$VmName'. On a Setup stall, press Shift+F10 and run 'copy X:\Windows\Panther\setup*.log C:\' to capture the windowsPE logs."
+        Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "ConnectVm: opened the VM console for '$VmName'. On a Setup stall, press Shift+F10 and run 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\' to capture the windowsPE/ConX logs (incl. MoSetup\BlueBox.log)."
     }
     catch {
         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "ConnectVm: could not launch vmconnect for '$VmName' ($($_.Exception.Message)). Connect manually with: vmconnect localhost $VmName"
@@ -478,7 +491,8 @@ function New-BootTestVm {
     param(
         [Parameter(Mandatory = $true)][string] $VmName,
         [Parameter(Mandatory = $true)][string] $IsoPath,
-        [Parameter(Mandatory = $true)][string] $VhdPath
+        [Parameter(Mandatory = $true)][string] $VhdPath,
+        [Parameter()][switch] $ConnectNetwork
     )
 
     # 4 GB startup memory (Windows 11 minimum). Static memory so the guest always sees >= 4 GB.
@@ -498,31 +512,41 @@ function New-BootTestVm {
     # Virtual TPM 2.0: a local key protector satisfies Enable-VMTPM without Host Guardian Service.
     Set-VMKeyProtector -VMName $VmName -NewLocalKeyProtector -ErrorAction Stop
     Enable-VMTPM -VMName $VmName -ErrorAction Stop
-    # Give the guest network access. Windows 11 24H2's redesigned Setup attempts ONLINE product-key
-    # validation during windowsPE when a specific (MAK/retail) key is baked, and fails with "Setup
-    # has failed to validate the product key" when it cannot reach Microsoft (setuperr.log then shows
-    # only network errors: OneSettings 0x80072EE7, metered network, DeviceId retrieval). New-VM adds a
-    # NIC but leaves it disconnected, so wire it to a switch with connectivity. Prefer an *External*
-    # switch (bridged to a physical NIC, so the guest gets the LAN's real DHCP + DNS) over the
-    # client-Hyper-V 'Default Switch' (NAT), whose ICS DNS proxy is unreliable in WinPE - a symptom is
-    # a guest that can ping 8.8.8.8 but cannot resolve names, which still fails online key validation.
-    # Best-effort: a host without a usable switch still runs the boot test offline. NOTE: a GVLK build
-    # (-UseGenericProductKey) is NOT validated online and installs hands-off even with no DNS.
-    try {
-        $switch = Get-VMSwitch -ErrorAction Stop |
-            Sort-Object -Property @{ Expression = { $_.SwitchType -eq 'External' }; Descending = $true },
-                                  @{ Expression = { $_.Name -eq 'Default Switch' }; Descending = $true } |
-            Select-Object -First 1
-        if ($switch) {
-            Connect-VMNetworkAdapter -VMName $VmName -SwitchName $switch.Name -ErrorAction Stop
-            Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "Connected boot-test VM '$VmName' network adapter to switch '$($switch.Name)' ($($switch.SwitchType)) so 24H2 Setup can validate a specific product key online. If DNS fails in the VM (ping works, name resolution does not), prefer an External switch or use -UseGenericProductKey for an offline GVLK install."
+    # Network: keep the VM OFFLINE by default. Windows 11's redesigned "ConX" (Connected Experience)
+    # Setup - used by 24H2/25H2/26H1 media (setupact.log: "Will launch ConX setup experience") - is
+    # sensitive to a half-connected network: a boot-test VM on client Hyper-V's 'Default Switch' (NAT)
+    # routes IP but its ICS DNS proxy is unreliable in WinPE (can ping 8.8.8.8 yet fail name
+    # resolution), and that flaky state can trip an online genuine/product-key check. Leaving the NIC
+    # disconnected removes that variable so a boot test only exercises the offline install path, which
+    # is all it needs to verify structural bootability. NOTE: offline is NOT a cure-all - 26H1
+    # business media has been observed to hard-stop at "Setup has failed to validate the product key"
+    # even fully offline; that ConX-specific failure is tracked separately and is not caused by the
+    # switch state here. New-VM adds a NIC but leaves it disconnected, so "offline" is just not
+    # connecting it.
+    #
+    # -ConnectNetwork opts back in for testing ONLINE activation, but only makes sense with real DNS
+    # (an External switch bridged to a physical NIC); on the Default Switch it reproduces the flaky
+    # WinPE DNS.
+    if ($ConnectNetwork) {
+        try {
+            $switch = Get-VMSwitch -ErrorAction Stop |
+                Sort-Object -Property @{ Expression = { $_.SwitchType -eq 'External' }; Descending = $true },
+                                      @{ Expression = { $_.Name -eq 'Default Switch' }; Descending = $true } |
+                Select-Object -First 1
+            if ($switch) {
+                Connect-VMNetworkAdapter -VMName $VmName -SwitchName $switch.Name -ErrorAction Stop
+                Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "ConnectNetwork: wired boot-test VM '$VmName' to switch '$($switch.Name)' ($($switch.SwitchType)). Online activation needs working DNS - the Default Switch's WinPE DNS is unreliable and can make ConX Setup hard-stop at 'Setup has failed to validate the product key'; use an External switch (real DNS) for online tests."
+            }
+            else {
+                Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "ConnectNetwork requested but no Hyper-V switch was found; boot-test VM '$VmName' will run offline."
+            }
         }
-        else {
-            Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "No Hyper-V switch found; boot-test VM '$VmName' will run offline. Windows 11 24H2 Setup may fail online validation of a specific product key without network - use -UseGenericProductKey (GVLK, not validated online) for a hands-off offline install."
+        catch {
+            Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "ConnectNetwork requested but connecting boot-test VM '$VmName' to a switch failed ($($_.Exception.Message)); it will run offline."
         }
     }
-    catch {
-        Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "Could not connect boot-test VM '$VmName' to a network switch ($($_.Exception.Message)); it will run offline."
+    else {
+        Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "Boot-test VM '$VmName' runs OFFLINE (NIC left disconnected) so Windows 11 'ConX' Setup takes the offline/legacy path and installs hands-off. Pass -ConnectNetwork (with an External switch for real DNS) only to test online activation."
     }
     Start-VM -Name $VmName -ErrorAction Stop
 }
@@ -602,9 +626,12 @@ function Save-BootTestSetupLog {
           * \$WINDOWS.~BT\Sources\Panther\setupact.log / setuperr.log  (down-level/offline phase;
             this is where a failed install before first boot records its error)
           * \Windows\Panther\setupact.log / setuperr.log               (specialize/oobe phase)
+          * \Windows\Logs\MoSetup\BlueBox.log                          (ConX "Connected Experience"
+            Setup engine log on 24H2/25H2/26H1 media - where a ConX product-key rejection is recorded)
           * \Windows\INF\setupapi.dev.log                              (driver install)
-          * pe-setupact.log / pe-setuperr.log / setupact.log / setuperr.log at the disk root
-            (windowsPE-phase logs the operator copied from the WinPE RAM disk X: via Shift+F10)
+          * pe-setupact.log / pe-setuperr.log / setupact.log / setuperr.log / BlueBox.log at the disk
+            root, or a whole pe-logs\ tree (windowsPE-phase logs the operator copied from the WinPE
+            RAM disk X: via Shift+F10, e.g. 'robocopy X:\Windows\Logs C:\pe-logs /E')
           * the matching diagerr.xml / diagwrn.xml / miglog.xml diagnostics
 
         Every Hyper-V/storage cmdlet (Mount-VHD/Get-Disk/Get-Partition/Get-Volume/Dismount-VHD) is
@@ -647,18 +674,32 @@ function Save-BootTestSetupLog {
         '$WINDOWS.~BT\Sources\Panther\diagerr.xml'
         '$WINDOWS.~BT\Sources\Panther\diagwrn.xml'
         '$WINDOWS.~BT\Sources\Panther\UnattendGC\setupact.log'
+        '$WINDOWS.~BT\Sources\Panther\setupapi.dev.log'
+        '$WINDOWS.~BT\Sources\Panther\setupapi.offline.log'
         'Windows\Panther\setupact.log'
         'Windows\Panther\setuperr.log'
         'Windows\Panther\UnattendGC\setupact.log'
         'Windows\INF\setupapi.dev.log'
+        # ConX (the redesigned "Connected Experience" Setup used by 24H2/25H2/26H1 media) logs to
+        # MoSetup\BlueBox.log; a "Setup has failed to validate the product key" from ConX records
+        # its real reason there rather than in Panther\setuperr.log.
+        'Windows\Logs\MoSetup\BlueBox.log'
+        'Windows\Logs\DISM\dism.log'
+        'Windows\debug\NetSetup.LOG'
         # windowsPE-phase logs live on the WinPE RAM disk (X:) and never reach the VHDX, so a
         # product-key/answer-file rejection writes nothing above. To capture them, Shift+F10 at the
-        # failing screen and copy X:\Windows\Panther\setup*.log to the target disk root (C:\); these
-        # well-known drop names are then harvested here automatically.
+        # failing screen and copy the WinPE logs to the target disk root (C:\) - either the individual
+        # well-known names below, or (best) the whole tree via 'robocopy X:\Windows\Logs C:\pe-logs
+        # /E' plus 'copy X:\Windows\*.log C:\pe-logs\', which the recursive pe-logs harvest picks up.
         'pe-setupact.log'
         'pe-setuperr.log'
         'setupact.log'
         'setuperr.log'
+        'BlueBox.log'
+        'pe-BlueBox.log'
+        'winpeshl.log'
+        'setupapi.offline.log'
+        'NetSetup.LOG'
     )
 
     $mounted = $null
@@ -687,6 +728,22 @@ function Save-BootTestSetupLog {
                         Copy-Item -LiteralPath $src -Destination $dest -Force -ErrorAction SilentlyContinue
                         if (Test-Path -LiteralPath $dest) { $collected.Add($dest) }
                     }
+                }
+
+                # Operator convenience: if the whole WinPE log tree was dropped at <root>\pe-logs
+                # (e.g. 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\'
+                # from Shift+F10), harvest it recursively so the ConX/MoSetup BlueBox.log and every
+                # X:\Windows\*.log come across even though the RAM disk X: itself is gone by teardown.
+                $peLogsDir = Join-Path -Path $root -ChildPath 'pe-logs'
+                if (Test-Path -LiteralPath $peLogsDir) {
+                    Get-ChildItem -LiteralPath $peLogsDir -Recurse -File -ErrorAction SilentlyContinue |
+                        ForEach-Object {
+                            $rel = $_.FullName.Substring($peLogsDir.Length).TrimStart('\', '/')
+                            $flat = ($rel -replace '[\\/]', '_') -replace '\$', ''
+                            $dest = Join-Path -Path $DestinationDirectory -ChildPath "$($root.TrimEnd(':'))_pe-logs_$flat"
+                            Copy-Item -LiteralPath $_.FullName -Destination $dest -Force -ErrorAction SilentlyContinue
+                            if (Test-Path -LiteralPath $dest) { $collected.Add($dest) }
+                        }
                 }
             }
         }

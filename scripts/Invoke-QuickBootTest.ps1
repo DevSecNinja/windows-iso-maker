@@ -43,6 +43,12 @@
     Open the interactive VM console (vmconnect) as soon as the boot-test VM starts, so you can
     watch Setup and press Shift+F10 to capture logs on a stall.
 
+.PARAMETER ConnectNetwork
+    Give the boot-test VM a network connection (External switch preferred). Off by default so the
+    VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does not depend on a flaky
+    WinPE-phase DNS/NAT proxy. Only pass this (with an External switch for real DNS) to test online
+    activation.
+
 .PARAMETER Isolated
     Make this run safe to execute in parallel with other Invoke-QuickBootTest runs against the same
     working directory. Each isolated run gets its own uniquely-named Autounattend.xml and output ISO
@@ -98,6 +104,7 @@ param(
     [switch] $SkipRebuild,
     [switch] $NoKeep,
     [switch] $ConnectVm,
+    [switch] $ConnectNetwork,
     [switch] $Isolated,
     [string] $Edition,
     [string] $ProductKey,
@@ -230,7 +237,7 @@ $keep = -not $NoKeep
 $diagnostics = Join-Path $WorkingDirectory 'boottest-diagnostics'
 Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
 Write-Host "[QuickBootTest] Windows Setup logs (if any) will be harvested to '$diagnostics'." -ForegroundColor Cyan
-$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -DiagnosticsPath $diagnostics -Verbose
+$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -ConnectNetwork:$ConnectNetwork -DiagnosticsPath $diagnostics -Verbose
 
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }
@@ -258,7 +265,7 @@ if ($boot -and $boot.PSObject.Properties.Match('Diagnostics').Count -and $boot.D
     }
     else {
         Write-Host "[QuickBootTest] No Setup logs were written to the VHDX (looked in '$($boot.Diagnostics.Path)')." -ForegroundColor Yellow
-        Write-Host "[QuickBootTest] That points to a windowsPE-phase failure (answer-file/product-key rejection) whose logs live on the WinPE RAM disk: Shift+F10 -> X:\Windows\Panther\setupact.log." -ForegroundColor Yellow
+        Write-Host "[QuickBootTest] That points to a windowsPE-phase failure (answer-file/product-key rejection) whose logs live on the WinPE RAM disk (X:). Shift+F10 at the failing screen, then: 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\' (incl. ConX's X:\Windows\Logs\MoSetup\BlueBox.log) and re-run teardown to harvest them." -ForegroundColor Yellow
     }
 }
 return $result
