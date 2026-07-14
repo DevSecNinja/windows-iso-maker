@@ -17,12 +17,20 @@ AfterAll {
 }
 
 Describe 'New-VMwareVmxConfiguration' {
-    It 'provisions EFI + Secure Boot + software TPM + CD-ROM first boot' {
+    It 'provisions EFI + Secure Boot + PCI bridges + CD-ROM first boot (no vTPM)' {
         InModuleScope WindowsIsoMaker {
             $vmx = New-VMwareVmxConfiguration -VmName 'wim-x' -IsoPath 'C:\out\win11.iso' -VmdkFileName 'wim-x.vmdk' -ConnectNetwork
             $vmx | Should -Match 'firmware = "efi"'
             $vmx | Should -Match 'uefi\.secureBoot\.enabled = "TRUE"'
-            $vmx | Should -Match 'managedvm\.autoAddVTPM = "software"'
+            # VMware cannot add a vTPM headlessly, so the .vmx must not request one (a bare
+            # vtpm.present / managedvm.autoAddVTPM either no-ops or hard-fails power-on on v26).
+            $vmx | Should -Not -Match 'autoAddVTPM'
+            $vmx | Should -Not -Match 'vtpm\.present'
+            # Standard PCI bridge / PCIe root-port block: without it device registration runs out of
+            # PCIe slots and vmware-vmx crashes on power-on.
+            $vmx | Should -Match 'pciBridge0\.present = "TRUE"'
+            $vmx | Should -Match 'pciBridge4\.virtualDev = "pcieRootPort"'
+            $vmx | Should -Match 'pciBridge7\.functions = "8"'
             $vmx | Should -Match 'guestOS = "windows11-64"'
             $vmx | Should -Match 'bios\.bootOrder = "cdrom,hdd"'
             $vmx | Should -Match 'sata0:0\.fileName = "C:\\out\\win11\.iso"'

@@ -125,12 +125,20 @@ The opt-in boot test (`-BootTest`) can run under either hypervisor via `-Hypervi
   *"failed to validate the product key"* failure (issue #5), which needs real online validation.
   Pass `-ConnectNetwork:$false` to force it offline.
 
+> **No virtual TPM under VMware.** Unlike the Hyper-V VM (which gets a real vTPM 2.0 via a local key
+> protector), the VMware boot-test VM has **no vTPM**: VMware Workstation can only add one to an
+> *encrypted* VM through the GUI, and `vmrun`/`vmcli` expose no TPM or encryption command, so it
+> can't be scripted headlessly. This is fine for the boot test — the generated media runs a fully
+> scripted `windowsPE` image apply, which never invokes the Windows 11 hardware appraiser (the
+> CPU/TPM/RAM "This PC can't run Windows 11" gate only runs in *interactive* Setup), so the
+> unattended install proceeds without one. Secure Boot is still enabled on both hypervisors.
+
 If `-Hypervisor VMware` is selected but VMware Workstation is not installed, the build cannot install
 it for you: Broadcom puts VMware Workstation Pro behind a **free-account login**, so it is not on
 winget and can't be scripted. The build prints the download link and step-by-step guidance:
 
 1. Open the Broadcom portal (sign in / create a free account when prompted) and download
-   **VMware Workstation Pro** (17.x):
+   **VMware Workstation Pro**:
    <https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true>
 2. Run the installer — VMware Workstation Pro is **free for personal, non-commercial use**.
 3. First-run setup: accept the EULA and select *"Use VMware Workstation Pro for Personal Use"*.

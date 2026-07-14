@@ -227,7 +227,7 @@ function Install-VMwareWorkstation {
         'VMware Workstation Pro must be downloaded and installed manually - Broadcom gates it behind a',
         'free account login, so it cannot be installed unattended (winget no longer carries it):',
         '  1. Open the Broadcom portal (sign in / create a free account when prompted) and download',
-        '     "VMware Workstation Pro" (17.x):',
+        '     "VMware Workstation Pro":',
         "       $script:VMwareDownloadUrl",
         '  2. Run the installer - VMware Workstation Pro is free for personal, non-commercial use.',
         '  3. First-run setup: accept the EULA, select "Use VMware Workstation Pro for Personal Use", and let it finish.',
@@ -292,11 +292,18 @@ function New-VMwareVmxConfiguration {
     .SYNOPSIS
         Build the .vmx configuration text for a throwaway Windows 11 boot-test VM (pure function).
     .DESCRIPTION
-        Returns the full contents of a VMware .vmx file provisioned to satisfy Windows 11 Setup's
-        hardware checks so real Windows 11 media proceeds past the CPU/TPM/RAM gate: EFI firmware
-        with Secure Boot on, an auto-added software TPM 2.0 (managedvm.autoAddVTPM), 2 vCPUs, 4 GB
-        RAM, an NVMe system disk, and a SATA CD-ROM holding the ISO as the first boot device. No
-        VMware/Hyper-V calls, so it is unit-tested directly.
+        Returns the full contents of a VMware .vmx file provisioned to boot real Windows 11 media:
+        EFI firmware with Secure Boot on, 2 vCPUs, 4 GB RAM, an NVMe system disk, and a SATA CD-ROM
+        holding the ISO as the first boot device. No VMware/Hyper-V calls, so it is unit-tested
+        directly.
+
+        Note: unlike the Hyper-V path (which adds a real vTPM 2.0 via a local key protector), this
+        VM has NO virtual TPM. VMware Workstation cannot provision a vTPM headlessly - vmrun/vmcli
+        expose no encryption or TPM command, and a vTPM requires an encrypted VM, so the only way to
+        add one is interactively in the Workstation GUI. This is acceptable for the boot test: our
+        generated media drives a fully scripted windowsPE ImageInstall apply, which does not invoke
+        the Windows 11 hardware appraiser (the CPU/TPM/RAM "This PC can't run Windows 11" gate only
+        runs in interactive Setup), so the unattended install proceeds without a TPM.
     .PARAMETER VmName
         Display name for the VM.
     .PARAMETER IsoPath
@@ -328,12 +335,29 @@ function New-VMwareVmxConfiguration {
         'guestOS = "windows11-64"'
         'firmware = "efi"'
         'uefi.secureBoot.enabled = "TRUE"'
-        # Auto-add a software TPM 2.0 without full VM encryption (Workstation 17.5+); satisfies
-        # Windows 11 Setup's TPM check. Harmless on hosts that ignore it.
-        'managedvm.autoAddVTPM = "software"'
+        # No virtual TPM: VMware Workstation cannot add one headlessly (vmrun/vmcli have no TPM or
+        # encryption command, and a vTPM requires an encrypted VM). Our scripted windowsPE apply
+        # doesn't run the Windows 11 hardware appraiser, so Setup proceeds without a TPM anyway.
         'numvcpus = "2"'
         'cpuid.coresPerSocket = "2"'
         'memsize = "4096"'
+        # Standard VMware PCI bridge / PCIe root-port block. Workstation adds this to every modern
+        # VM; without it there are not enough secondary PCIe slots for the NVMe + SATA + NIC devices
+        # below, and device registration fails ("No PCIe slot available") - which crashes vmware-vmx
+        # on power-on. pciBridge4-7 each expose 8 functions (slots) via a pcieRootPort.
+        'pciBridge0.present = "TRUE"'
+        'pciBridge4.present = "TRUE"'
+        'pciBridge4.virtualDev = "pcieRootPort"'
+        'pciBridge4.functions = "8"'
+        'pciBridge5.present = "TRUE"'
+        'pciBridge5.virtualDev = "pcieRootPort"'
+        'pciBridge5.functions = "8"'
+        'pciBridge6.present = "TRUE"'
+        'pciBridge6.virtualDev = "pcieRootPort"'
+        'pciBridge6.functions = "8"'
+        'pciBridge7.present = "TRUE"'
+        'pciBridge7.virtualDev = "pcieRootPort"'
+        'pciBridge7.functions = "8"'
         # NVMe system disk (inbox Windows PE driver, no extra storage driver needed).
         'nvme0.present = "TRUE"'
         'nvme0:0.present = "TRUE"'
