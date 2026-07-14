@@ -50,13 +50,13 @@ Describe 'Get-VMwareReadiness' {
         }
     }
 
-    It 'is not Ready and names the winget command when VMware is missing' {
+    It 'is not Ready and points to the Broadcom download when VMware is missing' {
         InModuleScope WindowsIsoMaker {
             Mock Get-VMwareInstallPath { [pscustomobject]@{ Installed = $false; InstallDirectory = $null; VmrunPath = $null; VdiskManagerPath = $null; VmwarePath = $null } }
             $r = Get-VMwareReadiness
             $r.Ready | Should -BeFalse
-            $r.Reason | Should -Match 'winget install --id VMware\.WorkstationPro'
-            $r.Reason | Should -Match 'getworkstation'
+            $r.Reason | Should -Match 'support\.broadcom\.com'
+            $r.Reason | Should -Match 'VMware Workstation Pro'
         }
     }
 }

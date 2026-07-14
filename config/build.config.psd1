@@ -87,8 +87,9 @@
     #                        Default Switch DNS proxy).
     #   'VMware'           = VMware Workstation; boots NETWORKED (NAT) by default so WinPE has real
     #                        DNS for a 24H2+ ConX online product-key/edition check (see issue #5).
-    #                        If VMware isn't installed, the boot test shows the winget install
-    #                        command it would run + guided manual-download/setup steps.
+    #                        VMware Workstation Pro must be downloaded manually (Broadcom login-gated,
+    #                        not on winget); if it's missing the boot test prints the download link +
+    #                        guided setup steps and stops.
     Hypervisor = 'HyperV'         # 'HyperV' | 'VMware'
 
     # --- Artifact ---

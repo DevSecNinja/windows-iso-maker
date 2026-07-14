@@ -31,7 +31,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | `WorkingDirectory` / `OutputDirectory` | Scoped working + output locations. |
 | `IsoPath` | Provide a pre-downloaded ISO to skip Fido. **Required for every non-Home edition** (Pro / Education / Enterprise / LTSC / IoT — Fido only serves the consumer ISO, whose Pro/Education images won't activate with a volume/GVLK key). |
 | `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway VM (Hyper-V or VMware, see `Hypervisor`) and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
-| `Hypervisor` | Which hypervisor runs the opt-in boot test: `HyperV` (default) or `VMware` (VMware Workstation Pro). Hyper-V boots the VM **offline** by default; VMware boots it **NAT-connected** by default so WinPE has real DNS for 24H2 "ConX" online product-key/edition validation (issue #5). If VMware is selected but not installed, the build offers to install it via winget (showing the exact command) and prints Broadcom manual-download + first-run guidance. |
+| `Hypervisor` | Which hypervisor runs the opt-in boot test: `HyperV` (default) or `VMware` (VMware Workstation Pro). Hyper-V boots the VM **offline** by default; VMware boots it **NAT-connected** by default so WinPE has real DNS for 24H2 "ConX" online product-key/edition validation (issue #5). VMware Workstation Pro must be **downloaded manually** (Broadcom login-gated; not installable via winget) — if it's missing the build prints the Broadcom download link + first-run guidance. |
 | `KeepBootTestVm` | With `BootTest`: after the test resolves, keep the throwaway VM alive and pause until you press Enter so you can attach interactively (`vmconnect localhost <vm>` for Hyper-V, `vmware -t <vmx>` for VMware); the VM and its disk are still cleaned up afterwards. |
 | `CompressionFormat` | `zip` or `7z`. |
 | `FidoPath` / `OscdimgPath` | Tool locations. `FidoPath` empty = download the pinned Fido at build time (set a path only for offline use); `OscdimgPath` empty = auto-detect from a Windows ADK install. |
@@ -61,7 +61,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
-| `-Hypervisor` | `HyperV` (default) \| `VMware`. Selects the boot-test hypervisor. `VMware` uses VMware Workstation Pro and boots NAT-connected by default (real WinPE DNS for 24H2 ConX validation); if it is not installed the build offers a winget install (showing the command) and manual-download guidance. |
+| `-Hypervisor` | `HyperV` (default) \| `VMware`. Selects the boot-test hypervisor. `VMware` uses VMware Workstation Pro and boots NAT-connected by default (real WinPE DNS for 24H2 ConX validation); it must be **downloaded manually** (Broadcom login-gated, no winget), and the build prints the download link + guidance when it's missing. |
 | `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing until Enter, then clean up. Attach with `vmconnect` (Hyper-V) or the VMware console (`vmware -t <vmx>`). |
 | `-WhatIf` | Dry-run the whole pipeline (no media modified). |
 
@@ -106,7 +106,7 @@ $env:WIM_ARCH = 'arm64'; $env:WIM_ENABLE_CATALOG_ID = 'feature-wsl'; ./build.ps1
 ./build.ps1 -BootTest
 
 # Boot-test in VMware Workstation instead (NAT-connected: real WinPE DNS for 24H2 ConX validation).
-# If VMware isn't installed you'll be shown the winget command and asked to confirm the install.
+# If VMware isn't installed you'll get the Broadcom download link + setup guidance and the build stops.
 ./build.ps1 -BootTest -Hypervisor VMware
 
 # Keep the VMware VM up after the test so you can watch Setup / press Shift+F10 for logs
@@ -125,17 +125,19 @@ The opt-in boot test (`-BootTest`) can run under either hypervisor via `-Hypervi
   *"failed to validate the product key"* failure (issue #5), which needs real online validation.
   Pass `-ConnectNetwork:$false` to force it offline.
 
-If `-Hypervisor VMware` is selected but VMware Workstation is not installed, the build prints the
-exact winget command it would run and asks for consent:
+If `-Hypervisor VMware` is selected but VMware Workstation is not installed, the build cannot install
+it for you: Broadcom puts VMware Workstation Pro behind a **free-account login**, so it is not on
+winget and can't be scripted. The build prints the download link and step-by-step guidance:
 
-```text
-winget install --id VMware.WorkstationPro --exact --accept-source-agreements --accept-package-agreements
-```
+1. Open the Broadcom portal (sign in / create a free account when prompted) and download
+   **VMware Workstation Pro** (17.x):
+   <https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true>
+2. Run the installer — VMware Workstation Pro is **free for personal, non-commercial use**.
+3. First-run setup: accept the EULA and select *"Use VMware Workstation Pro for Personal Use"*.
+4. Re-run with `-Hypervisor VMware` once `vmrun.exe` exists under the VMware Workstation folder.
 
-Broadcom now gates the VMware download, so the winget package may be delisted and the install can
-fail. In that case the build prints step-by-step manual guidance: download the **free-for-personal-use**
-VMware Workstation Pro from <https://www.vmware.com/go/getworkstation>, install it, accept the
-personal-use licence at first launch, then re-run with `-Hypervisor VMware`.
+For reference the build also shows the (delisted) winget command and, if you insist, will attempt it —
+but it almost always fails with *"No package found"*, so prefer the manual download above.
 
 > **Log harvest note:** modern VMware Workstation dropped `vmware-mount`, so the build cannot mount
 > the VM's virtual disk offline to harvest Setup logs. Use `-KeepBootTestVm` to keep the VM up, then

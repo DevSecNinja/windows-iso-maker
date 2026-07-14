@@ -52,8 +52,9 @@
 .PARAMETER Hypervisor
     Which hypervisor runs the boot-test VM: 'HyperV' (default, or the config's Hypervisor) or
     'VMware' (VMware Workstation). VMware's NAT gives WinPE real DNS for a 24H2+ ConX online
-    product-key/edition check; when VMware isn't installed this shows the winget install command it
-    would run and guided manual-download/setup steps.
+    product-key/edition check; VMware Workstation Pro must be downloaded manually (Broadcom
+    login-gated, not on winget), and when it's missing this prints the download link + guided setup
+    steps and stops.
 
 .PARAMETER Isolated
     Make this run safe to execute in parallel with other Invoke-QuickBootTest runs against the same

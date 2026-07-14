@@ -17,9 +17,14 @@
 #>
 
 # The winget package id VMware historically shipped. Broadcom has since delisted it (the installer
-# now sits behind an authenticated Broadcom download), so a winget install may fail with
-# "No package found" - the install helper shows this command AND a manual-download fallback.
+# now sits behind an authenticated Broadcom download), so a winget install almost always fails with
+# "No package found". The install helper still SHOWS this command (as requested) but leads with the
+# login-gated Broadcom portal download below, which is the only reliable way to get it today.
 $script:VMwareWingetId = 'VMware.WorkstationPro'
+
+# Free-for-personal-use VMware Workstation Pro download. Broadcom requires a (free) account login,
+# so this cannot be scripted/automated - the user must sign in and download the installer manually.
+$script:VMwareDownloadUrl = 'https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true'
 
 function Get-VMwareInstallPath {
     <#
@@ -126,9 +131,9 @@ function Get-VMwareReadiness {
     }
     else {
         "VM boot test cannot run because VMware Workstation is not installed (vmrun.exe not found). " +
-        "Install it with 'winget install --id $script:VMwareWingetId --exact --accept-source-agreements --accept-package-agreements', " +
-        "or - if winget cannot fetch it (Broadcom now gates the download) - download the free-for-personal-use " +
-        "'VMware Workstation Pro' from https://www.vmware.com/go/getworkstation and install it, then re-run."
+        "Download the free-for-personal-use 'VMware Workstation Pro' from the Broadcom portal (a free " +
+        "login is required, so it cannot be automated): $script:VMwareDownloadUrl - install it, then re-run. " +
+        "(winget's '$script:VMwareWingetId' package is delisted and will usually not find it.)"
     }
 
     return [pscustomobject]@{
@@ -192,18 +197,18 @@ function Invoke-Winget {
 function Install-VMwareWorkstation {
     <#
     .SYNOPSIS
-        Offer to install VMware Workstation via winget, with a manual-download fallback.
+        Guide the user to install VMware Workstation, leading with the login-gated Broadcom download.
     .DESCRIPTION
         Interactive helper invoked when a VMware boot test is requested but VMware Workstation is
-        not installed. It ALWAYS prints the exact winget command it would run, asks for consent
-        (Read-VMwareInstallConsent seam), and on yes runs it (Invoke-Winget seam). Because Broadcom
-        delisted the winget package (the installer is now behind an authenticated download), a
-        winget failure is expected and non-fatal: the helper then prints step-by-step guidance to
-        download the free-for-personal-use VMware Workstation Pro from Broadcom and complete first
-        run (accept the personal-use licence, and note the Hyper-V/VMware co-existence caveat).
-        Returns whether VMware is installed afterwards so the caller can proceed or bail cleanly.
+        not installed. Broadcom delisted the winget package and now puts the installer behind an
+        authenticated (free-account) download that CANNOT be automated, so this helper leads with
+        step-by-step manual-download guidance (the exact Broadcom portal URL, personal-use licence,
+        and the Hyper-V/VMware co-existence caveat). It still SHOWS the winget command (as requested)
+        and, if the user opts in, best-effort runs it in case a winget package ever returns - but a
+        failure is expected and non-fatal. Returns whether VMware is installed afterwards so the
+        caller can proceed or bail cleanly.
     .PARAMETER NonInteractive
-        Skip the consent prompt and only print the winget command + manual guidance (used by CI /
+        Skip the consent prompt and only print the manual guidance + winget command (used by CI /
         automated callers). No install is attempted.
     .OUTPUTS
         System.Boolean - $true when VMware Workstation is installed after this runs.
@@ -218,28 +223,30 @@ function Install-VMwareWorkstation {
     $wingetArgs = @('install', '--id', $script:VMwareWingetId, '--exact', '--accept-source-agreements', '--accept-package-agreements')
     $wingetCommand = "winget $($wingetArgs -join ' ')"
 
-    Write-BuildLog -Level Warning -Component 'Install-VMwareWorkstation' -Message "VMware Workstation is not installed. To use -Hypervisor VMware it must be installed first."
-    Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message "The winget command I would run is: $wingetCommand"
-
     $manualGuidance = @(
-        'If winget cannot install it (Broadcom now gates the VMware download, so the winget package may be delisted):',
-        '  1. Sign in / register (free) at the Broadcom support portal and download "VMware Workstation Pro" (17.x):',
-        '       https://www.vmware.com/go/getworkstation',
-        '  2. Run the installer (VMware Workstation Pro is free for personal, non-commercial use - choose that licence at first launch).',
+        'VMware Workstation Pro must be downloaded and installed manually - Broadcom gates it behind a',
+        'free account login, so it cannot be installed unattended (winget no longer carries it):',
+        '  1. Open the Broadcom portal (sign in / create a free account when prompted) and download',
+        '     "VMware Workstation Pro" (17.x):',
+        "       $script:VMwareDownloadUrl",
+        '  2. Run the installer - VMware Workstation Pro is free for personal, non-commercial use.',
         '  3. First-run setup: accept the EULA, select "Use VMware Workstation Pro for Personal Use", and let it finish.',
         '  4. Co-existence note: recent VMware Workstation (17.5+) runs alongside Windows Hyper-V/WSL2; on older versions you may',
         '     need to keep Hyper-V enabled OR disabled consistently - if VMs fail to power on, that is the usual cause.',
         '  5. Re-run your build/boot test with -Hypervisor VMware once vmrun.exe exists under the VMware Workstation folder.'
     ) -join [Environment]::NewLine
 
+    Write-BuildLog -Level Warning -Component 'Install-VMwareWorkstation' -Message "VMware Workstation is not installed. To use -Hypervisor VMware it must be installed first."
+    Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message $manualGuidance
+    Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message "(winget generally cannot fetch it, but for reference the command would be: $wingetCommand)"
+
     if ($NonInteractive) {
-        Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message $manualGuidance
         return $false
     }
 
-    $consent = Read-VMwareInstallConsent -Prompt "Install VMware Workstation now with winget? [$wingetCommand] (y/N)"
+    $consent = Read-VMwareInstallConsent -Prompt "Try 'winget install' anyway? It usually fails because the package is delisted - prefer the manual download above. [$wingetCommand] (y/N)"
     if (-not $consent) {
-        Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message "Skipped the winget install. $manualGuidance"
+        Write-BuildLog -Level Information -Component 'Install-VMwareWorkstation' -Message "Skipped winget; download VMware Workstation Pro from the Broadcom portal above, then re-run with -Hypervisor VMware."
         return (Get-VMwareInstallPath).Installed
     }
 
@@ -250,7 +257,7 @@ function Install-VMwareWorkstation {
         return $true
     }
 
-    Write-BuildLog -Level Warning -Component 'Install-VMwareWorkstation' -Message "winget could not install VMware Workstation (exit $($result.ExitCode)). $($result.Output)`n$manualGuidance"
+    Write-BuildLog -Level Warning -Component 'Install-VMwareWorkstation' -Message "winget could not install VMware Workstation (exit $($result.ExitCode)). $($result.Output)`nUse the manual Broadcom download above instead:`n$manualGuidance"
     return (Get-VMwareInstallPath).Installed
 }
 

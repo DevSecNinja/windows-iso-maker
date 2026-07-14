@@ -69,9 +69,10 @@
 
 .PARAMETER Hypervisor
     Which hypervisor runs the -BootTest VM: 'HyperV' (default) or 'VMware' (VMware Workstation).
-    VMware's NAT gives WinPE real DNS for a 24H2+ ConX online product-key/edition check. If VMware
-    is selected but not installed, the boot test shows the winget install command it would run and
-    guided manual-download/setup steps instead of failing hard.
+    VMware's NAT gives WinPE real DNS for a 24H2+ ConX online product-key/edition check. VMware
+    Workstation Pro must be downloaded manually (Broadcom login-gated, not on winget); if it is
+    selected but missing, the boot test prints the Broadcom download link + guided setup steps and
+    stops rather than failing hard.
 
 .PARAMETER KeepBootTestVm
     With -BootTest, keep the throwaway VM running and pause for manual testing (attach with
