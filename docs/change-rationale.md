@@ -18,6 +18,7 @@ explains the model and highlights the notable defaults.
     Id             = 'reg-disable-recall'          # unique, stable id
     Type           = 'Registry'                    # Appx | Capability | Registry | OptionalFeature (informational)
     Action         = 'SetRegistry'                 # dispatch key: RemoveAppx | RemoveCapability | SetRegistry | EnableOptionalFeature | AddCapability
+    Category       = 'Privacy & telemetry'         # required: semantic taxonomy (display/grouping only)
     Target         = @{ Hive='SOFTWARE'; Path='...'; Name='...'; Kind='DWord'; Value=1 }  # or a package/feature name string
     Description    = 'WHAT the change does.'       # required (Principle II)
     Rationale      = 'WHY it is safe/desirable.'   # required
@@ -26,9 +27,17 @@ explains the model and highlights the notable defaults.
     Reversible     = $true
     Reversal       = 'How to undo it.'
     DefaultEnabled = $true                         # grade-3 entries must be $false
+    Profiles       = @('opinionated')              # optional: profile-membership tags (gaming | opinionated)
     Arch           = @('amd64','arm64')
 }
 ```
+
+`Category` is a **semantic label** used purely for display and grouping (on the showcase site and
+in reports); the allowed taxonomy is: `Browser`, `Bundled apps`, `Cloud storage`, `Development`,
+`Gaming`, `Legacy components`, `Personalization`, `Privacy & telemetry`. It is deliberately kept
+**separate** from `Profiles`, the curated profile-membership tag (`gaming` and/or `opinionated`),
+so an entry can be, e.g., `Category = 'Development'` (WSL, Virtual Machine Platform) while still
+belonging to the `opinionated` profile. Profile selection keys off `Profiles`, never `Category`.
 
 The `Action` is the dispatch key: [`Invoke-CatalogEntry`](../src/WindowsIsoMaker/Public/Invoke-CatalogEntry.ps1)
 routes each entry to the correct handler. **Adding a new change means adding an entry — never a
@@ -39,8 +48,15 @@ new code path or parameter** (FR-024/FR-025).
 Selection is resolved by [`Resolve-CatalogSelection`](../src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1)
 from three inputs, in order of increasing precedence:
 
-1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming`, where `gaming`
-   is `default` minus the `Category = 'Gaming'` entries so Xbox / Game Bar are preserved).
+1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming` / `opinionated`,
+   where `gaming` is `default` minus the entries tagged `Profiles = @('gaming')` so Xbox / Game Bar
+   are preserved, and `opinionated` is `aggressive` plus the entries tagged
+   `Profiles = @('opinionated')` personal-taste extras — reversed mouse scroll, Start web-search
+   off, lock-screen Spotlight off, WSL, and the United States-International keyboard layout for
+   English (US)). `Profile` also accepts a list to combine baselines (e.g. `gaming,opinionated`):
+   the selected profiles are UNIONed, and when `gaming` is one of them the `Profiles = @('gaming')`
+   entries stay preserved — so `gaming,opinionated` gives aggressive debloat + opinionated tweaks
+   with a working gaming stack.
 2. `Toggles` — a per-id `@{ id = $true/$false }` map.
 3. `EnableCatalogId` / `DisableCatalogId` — explicit ids always win.
 

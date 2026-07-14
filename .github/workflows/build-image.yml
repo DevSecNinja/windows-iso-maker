@@ -3,9 +3,12 @@ name: Build Windows 11 Image
 # Release image build. Runs MANUALLY only (workflow_dispatch) — NEVER on push/PR
 # (FR-012, US2 scenario 4). Builds amd64 and arm64 in a matrix using the SAME
 # shipped build path as local runs (build.ps1 -> Invoke-IsoBuild; FR-010,
-# Principle V). Produces a compressed ISO artifact, SHA256SUMS, a RunReport, an
-# Image BOM, and SLSA build provenance, then publishes to Azure Blob (optional,
-# OIDC) or falls back to a workflow artifact.
+# Principle V). Defaults to Home (the only edition Fido can download); non-Home
+# editions require a business/volume ISO URL (iso_url_amd64 / iso_url_arm64) and
+# are rejected fast by the pre-flight step if none is supplied. Produces a
+# compressed ISO artifact, SHA256SUMS, a RunReport, an Image BOM, and SLSA build
+# provenance, then publishes to Azure Blob (optional, OIDC) or falls back to a
+# workflow artifact.
 #
 # Supply-chain (constitution v1.1.0, Principle VII): every `uses:` is pinned by
 # commit SHA; renovate.json5 keeps the digests current.
@@ -14,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       edition:
-        description: 'Windows edition (e.g. Pro, Home, Enterprise)'
+        description: 'Windows edition. Home builds from the auto-downloaded consumer ISO; every other edition (Pro/Education/Enterprise/...) needs a business ISO URL below.'
         type: string
-        default: 'Pro'
+        default: 'Home'
       language:
         description: 'Display language (e.g. en-US)'
         type: string
@@ -25,6 +28,14 @@ on:
         description: 'Windows release (e.g. latest, 24H2)'
         type: string
         default: 'latest'
+      iso_url_amd64:
+        description: 'URL to a business (volume) amd64 base ISO. REQUIRED for non-Home amd64 builds (Fido cannot fetch it); ignored for Home. Prefer a short-lived SAS URL.'
+        type: string
+        default: ''
+      iso_url_arm64:
+        description: 'URL to a business (volume) arm64 base ISO. REQUIRED for non-Home arm64 builds; ignored for Home. Prefer a short-lived SAS URL.'
+        type: string
+        default: ''
       profile:
         description: 'Catalog profile subset'
         type: choice
@@ -71,6 +82,85 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Validate inputs (pre-flight; fail fast before ADK install / ISO download)
+        id: preflight
+        shell: pwsh
+        env:
+          WINDOWS_PRODUCT_KEY: ${{ secrets.WINDOWS_PRODUCT_KEY }}
+          EDITION: ${{ inputs.edition }}
+          LANGUAGE: ${{ inputs.language }}
+          RELEASE: ${{ inputs.release }}
+          ISO_URL_AMD64: ${{ inputs.iso_url_amd64 }}
+          ISO_URL_ARM64: ${{ inputs.iso_url_arm64 }}
+          ENABLE_CATALOG_ID: ${{ inputs.enable_catalog_id }}
+          DISABLE_CATALOG_ID: ${{ inputs.disable_catalog_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errs = New-Object System.Collections.Generic.List[string]
+
+          $edition   = if ($env:EDITION)  { $env:EDITION.Trim() }  else { '' }
+          $language  = if ($env:LANGUAGE) { $env:LANGUAGE.Trim() } else { '' }
+          $release   = if ($env:RELEASE)  { $env:RELEASE.Trim() }  else { '' }
+          $arch      = '${{ matrix.arch }}'
+          $skipHeavy = '${{ inputs.skip_heavy_build }}' -eq 'true'
+          $isoUrl    = if ($arch -eq 'arm64') { $env:ISO_URL_ARM64 } else { $env:ISO_URL_AMD64 }
+          $isoUrl    = if ($isoUrl) { $isoUrl.Trim() } else { '' }
+
+          # --- Basic field checks ---
+          if ([string]::IsNullOrWhiteSpace($edition))  { $errs.Add('edition must not be empty.') }
+          if ([string]::IsNullOrWhiteSpace($release))  { $errs.Add('release must not be empty.') }
+          if ([string]::IsNullOrWhiteSpace($language)) {
+              $errs.Add('language must not be empty.')
+          } elseif ($language -notmatch '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$') {
+              $errs.Add("language '$language' is not a valid BCP-47 tag (e.g. en-US).")
+          }
+
+          # --- Catalog id shape + enable/disable conflict ---
+          function Split-Ids([string]$raw) { $raw -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+          $enableIds  = Split-Ids $env:ENABLE_CATALOG_ID
+          $disableIds = Split-Ids $env:DISABLE_CATALOG_ID
+          foreach ($id in @($enableIds + $disableIds)) {
+              if ($id -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { $errs.Add("catalog id '$id' is malformed (expected e.g. remove-edge).") }
+          }
+          $conflicts = @($enableIds | Where-Object { $disableIds -contains $_ })
+          if ($conflicts.Count -gt 0) { Write-Host "::warning::Catalog id(s) in BOTH enable and disable: $($conflicts -join ', '). Disable wins." }
+
+          # --- Consumer (Home) vs business (everything else): single source of truth in the module ---
+          $family = 'business'
+          if (-not [string]::IsNullOrWhiteSpace($edition)) {
+              Import-Module (Join-Path $PWD 'src/WindowsIsoMaker') -Force
+              $family = & (Get-Module WindowsIsoMaker) { param($e) Get-Windows11IsoFamily -Edition $e } $edition
+          }
+          Write-Host "Edition '$edition' -> $family family ($arch)."
+
+          $downloadUrl = ''
+          if ($family -eq 'business') {
+              if ([string]::IsNullOrWhiteSpace($isoUrl)) {
+                  if ($skipHeavy) {
+                      Write-Host "::warning::'$edition' is a business edition needing a $arch business ISO, but iso_url_$arch is empty. Allowed because skip_heavy_build=true (preview only)."
+                  } else {
+                      $errs.Add("'$edition' is a business edition: Fido cannot download it, so you must supply iso_url_$arch (a $arch business/volume ISO URL). Only 'Home' builds without one.")
+                  }
+              } elseif ($isoUrl -notmatch '^https?://') {
+                  $errs.Add("iso_url_$arch must be an http(s) URL.")
+              } elseif (-not $skipHeavy) {
+                  $downloadUrl = $isoUrl
+              }
+              if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) {
+                  Write-Host "::warning::No WINDOWS_PRODUCT_KEY secret set. A business ('$edition') build needs a genuine GVLK/MAK to install hands-off and activate; a keyless build may stall at the product-key page."
+              }
+          } elseif (-not [string]::IsNullOrWhiteSpace($isoUrl)) {
+              Write-Host "::warning::iso_url_$arch is set but edition '$edition' is Home (consumer); the supplied ISO is ignored (Home downloads via Fido)."
+          }
+
+          if ($errs.Count -gt 0) {
+              $msg = "Pre-flight validation failed:`n - " + ($errs -join "`n - ")
+              Write-Host "::error::$msg"
+              throw $msg
+          }
+          Write-Host 'Pre-flight validation passed.'
+          "iso_url=$downloadUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Install Windows ADK Deployment Tools (provides oscdimg)
         if: ${{ inputs.skip_heavy_build == false }}
         shell: pwsh
@@ -103,9 +193,30 @@ jobs:
               throw "Insufficient free disk space (${freeGb} GB < 25 GB). Re-run with skip_heavy_build=true or use a larger runner."
           }
 
+      - name: Download business base ISO (non-Home editions)
+        if: ${{ inputs.skip_heavy_build == false && steps.preflight.outputs.iso_url != '' }}
+        shell: pwsh
+        env:
+          ISO_URL: ${{ steps.preflight.outputs.iso_url }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $env:RUNNER_TEMP 'base-image.iso'
+          Write-Host "Downloading business base ISO for ${{ matrix.arch }}..."
+          Invoke-WebRequest -Uri $env:ISO_URL -OutFile $dest -UseBasicParsing
+          $bytes = (Get-Item -LiteralPath $dest).Length
+          $sizeGb = [math]::Round($bytes / 1GB, 2)
+          if ($bytes -lt 1GB) { throw "Downloaded file is only ${sizeGb} GB - not a valid Windows ISO?" }
+          Write-Host "Downloaded ${sizeGb} GB base ISO -> $dest"
+          "BUILD_ISO_PATH=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build the image (build.ps1 runs the same Invoke-IsoBuild path as local)
         id: build
         shell: pwsh
+        env:
+          # Genuine product key (optional; sourced from a repo secret so it is masked and never
+          # placed on a command line). Required for a hands-off non-Home 24H2 install: only Home
+          # installs without a key, and the generic KMS keys fail 24H2's online validation.
+          WINDOWS_PRODUCT_KEY: ${{ secrets.WINDOWS_PRODUCT_KEY }}
         run: |
           $ErrorActionPreference = 'Stop'
           $params = @{
@@ -119,6 +230,8 @@ jobs:
           if ('${{ inputs.disable_catalog_id }}'.Trim()) { $params['DisableCatalogId'] = '${{ inputs.disable_catalog_id }}' -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
           if ('${{ inputs.skip_heavy_build }}' -eq 'true') { $params['SkipHeavyBuild'] = $true }
           if ('${{ inputs.boot_test }}' -eq 'true')        { $params['BootTest']       = $true }
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) { $params['ProductKey'] = $env:WINDOWS_PRODUCT_KEY }
+          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_ISO_PATH))      { $params['IsoPath']    = $env:BUILD_ISO_PATH }
 
           ./build.ps1 @params
 

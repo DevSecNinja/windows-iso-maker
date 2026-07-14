@@ -23,7 +23,8 @@
     Optional last-mile override for the target architecture ('amd64' or 'arm64').
 
 .PARAMETER Edition
-    Optional last-mile override for the Windows edition (e.g. 'Pro').
+    Optional last-mile override for the Windows edition (e.g. 'Pro'). Only Home ships on the
+    downloadable consumer ISO; every other edition needs a business ISO via -IsoPath.
 
 .PARAMETER Language
     Optional last-mile override for the display language (e.g. 'en-US').
@@ -32,13 +33,33 @@
     Optional last-mile override for the Windows release (e.g. 'latest').
 
 .PARAMETER Profile
-    Optional last-mile override for the catalog profile ('minimal' | 'default' | 'aggressive' | 'gaming').
+    Optional last-mile override for the catalog profile(s): one or more of 'minimal' | 'default' |
+    'aggressive' | 'gaming' | 'opinionated' (e.g. -Profile gaming,opinionated). Multiple values are
+    UNIONed; 'gaming' preserves the gaming stack.
 
 .PARAMETER EnableCatalogId
     Opt-in catalog ids to enable (data-driven; e.g. 'remove-edge','remove-onedrive','feature-wsl').
 
 .PARAMETER DisableCatalogId
     Catalog ids to force-disable (explicit ids win).
+
+.PARAMETER IsoPath
+    Path to a pre-downloaded base ISO (skips the Fido download). Required for every non-Home
+    edition (Pro / Education / Enterprise / ...), which only ship on the business/volume ISO —
+    supply the matching business ISO (e.g. from a Visual Studio / volume-licensing subscription).
+
+.PARAMETER ProductKey
+    Optional override for the Autounattend product key. Applied in the specialize pass (not
+    windowsPE), so it is never subject to 24H2's windowsPE key-validation hard-stop. '' / 'none'
+    install the metadata-selected edition unlicensed; a genuine key activates when valid.
+
+.PARAMETER AccountMode
+    Optional override for OOBE account provisioning: 'local' (create a local admin, hands-off) or
+    'entra' (present the work/school sign-in to join Entra ID and auto-enroll into Intune).
+
+.PARAMETER UseGenericProductKey
+    Bake the edition's generic/default retail key, applied in the specialize pass (non-activating) -
+    the easy way to make a fully hands-off Home build. Mutually exclusive with -ProductKey.
 
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
@@ -95,14 +116,28 @@ param(
     [string] $Release,
 
     [Parameter()]
-    [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
-    [string] $Profile,
+    [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
+    [string[]] $Profile,
 
     [Parameter()]
     [string[]] $EnableCatalogId,
 
     [Parameter()]
     [string[]] $DisableCatalogId,
+
+    [Parameter()]
+    [string] $IsoPath,
+
+    [Parameter()]
+    [AllowEmptyString()]
+    [string] $ProductKey,
+
+    [Parameter()]
+    [ValidateSet('local', 'entra', 'entraid', 'azuread')]
+    [string] $AccountMode,
+
+    [Parameter()]
+    [switch] $UseGenericProductKey,
 
     [Parameter()]
     [switch] $SkipHeavyBuild,
@@ -116,6 +151,14 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Fail fast on mutually exclusive product-key inputs before importing the module or checking
+# elevation: -ProductKey bakes a specific key, -UseGenericProductKey bakes the edition's generic
+# key; supplying both is contradictory.
+if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+    throw '-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey ' +
+        "'<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+}
 
 # Resolve the config path precedence for the DISPATCHER only: explicit param wins, else the
 # WIM_CONFIG_PATH env var, else the shipped default. Get-BuildConfiguration re-applies the
@@ -146,12 +189,12 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath', 'ProductKey', 'AccountMode') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }
 }
-foreach ($switchName in 'SkipHeavyBuild', 'BootTest', 'KeepBootTestVm') {
+foreach ($switchName in 'SkipHeavyBuild', 'BootTest', 'KeepBootTestVm', 'UseGenericProductKey') {
     if ($PSBoundParameters.ContainsKey($switchName)) {
         $buildParams[$switchName] = [switch]$PSBoundParameters[$switchName]
     }

@@ -1,17 +1,26 @@
 function Get-GenericSetupProductKey {
     <#
     .SYNOPSIS
-        Return the public generic (KMS client setup) product key for a Windows 11 edition.
+        Return the generic (non-activating) setup product key for a Windows 11 edition.
     .DESCRIPTION
-        Windows Setup uses the <ProductKey> in the windowsPE pass only to decide WHICH edition
-        to install and to skip the interactive product-key page. Microsoft publishes generic
-        "KMS client setup keys" for exactly this purpose — they select an edition but do NOT
-        activate Windows (activation still happens later via the user's own key, digital
-        licence, or KMS). Baking the correct generic key in lets fully-unattended Pro (and
-        other non-Home) installs proceed past the "Setup has failed to validate the product
-        key" page that appears when a key is required but none is supplied.
+        Returns the public generic key that selects a Windows 11 edition during Setup without
+        activating it (activation still happens later via the user's own key, digital licence, or
+        KMS). The key is applied in the *windowsPE* UserData pass
+        (`Microsoft-Windows-Setup/UserData/ProductKey`): on multi-edition media Windows 11 24H2
+        Setup stops at the interactive "enter a product key" page unless windowsPE supplies a key
+        (the ImageInstall /IMAGE/NAME metadata alone does not suppress it), and clicking "I don't
+        have a product key" then fails with "Setup has failed to validate the product key". A
+        generic key in windowsPE selects the edition and keeps the install hands-off.
 
-        See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
+        IMPORTANT — the key CLASS must match the media family (see Get-Windows11IsoFamily):
+          * Consumer media (the Fido retail Home ISO) accepts the public **retail generic** keys
+            (Home / Home N / Home Single Language). A GVLK is REJECTED on retail media with
+            "the product key entered doesn't work" — it "won't activate or serve as a retail
+            license key".
+          * Business/volume media (caller-supplied -IsoPath) accepts the **GVLK / KMS client**
+            keys (Pro, Education, Enterprise, ...). A retail generic key is rejected there.
+        Because only Home ships on retail consumer media, every non-Home edition below uses its
+        GVLK. See https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
     .PARAMETER Edition
         The Windows 11 edition name (e.g. 'Pro', 'Pro N', 'Home', 'Education').
     .OUTPUTS
@@ -25,22 +34,32 @@ function Get-GenericSetupProductKey {
         [string] $Edition
     )
 
-    # Public generic Volume Licensing / KMS client setup keys (edition selectors, not
-    # activation keys). Keyed by a normalized edition name.
+    # Generic setup keys (edition selectors applied in windowsPE UserData; they do NOT activate).
+    # Keyed by a normalized edition name. Home variants use the public RETAIL generic keys (they
+    # ship on the Fido consumer ISO); every other edition uses its GVLK / KMS client key because
+    # it only installs from business/volume media (see Get-Windows11IsoFamily). Keys verified
+    # against https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys.
     $keys = @{
-        'home'                    = 'TX9XD-98N7V-6WMQ6-BX7FG-H8Q99'
-        'homen'                   = '3KHY7-WNT83-DGQKR-F7HPR-844BM'
-        'homesinglelanguage'      = '7HNRX-D7KGG-3K4RQ-4WPJ4-YTDFH'
-        'pro'                     = 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
-        'pron'                    = '2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'
-        'proforworkstations'      = 'DXG7C-N36C4-C4HTG-X4T3X-2YV77'
-        'pronforworkstations'     = 'WYPNQ-8C467-V2W6J-TX4WX-WT2RQ'
-        'proeducation'            = '8PTT6-RNW4C-6V7J2-C2D3X-MHBPB'
-        'proeducationn'           = 'GJTYN-HDMQY-FRR76-HVGC7-QPF8P'
+        # --- Consumer (retail generic keys; Fido consumer ISO) ---
+        'home'                    = 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+        'homen'                   = '4CPRK-NM3K3-X6XXQ-RXX86-WXCHW'
+        'homesinglelanguage'      = 'BT79Q-G7N6G-PGBYW-4YWX6-6F4BT'
+        # --- Business (GVLK / KMS client keys; business/volume ISO via -IsoPath) ---
+        'pro'                     = 'W269N-WFGWX-YVC9B-4J6C9-T83GX'
+        'pron'                    = 'MH37W-N47XK-V7XM9-C7227-GCQG9'
+        'proforworkstations'      = 'NRG8B-VKK3Q-CXVCJ-9G2XF-6Q84J'
+        'pronforworkstations'     = '9FNHH-K3HBT-3W4TD-6383H-6XYWF'
+        'proeducation'            = '6TP4R-GNPTD-KYYHQ-7B7DP-J447Y'
+        'proeducationn'           = 'YVWGF-BXNMC-HTQYQ-CPQ99-66QFC'
         'education'               = 'NW6C2-QMPVW-D7KKK-3GKT6-VCFB2'
-        'educationn'              = '2WH4N-8QGP4-HBJTJ-XDR9G-VYT6W'
+        'educationn'              = '2WH4N-8QGBV-H22JP-CT43Q-MDWWJ'
         'enterprise'              = 'NPPR9-FWDCX-D2C8J-H872K-2YT43'
         'enterprisen'             = 'DPH2V-TTNVB-4X9Q3-TJR4H-KHJW4'
+        'enterpriseg'             = 'YYVX9-NTFWV-6MDM3-9PT4T-4M68B'
+        'enterprisegn'            = '44RPN-FTY23-9VTTB-MP9BX-T84FV'
+        'enterpriseltsc2024'      = 'M7XTQ-FN8P6-TTKYV-9D4CC-J462D'
+        'enterprisenltsc2024'     = '92NFX-8DJQP-P6BBQ-THF9C-7CG2H'
+        'iotenterpriseltsc2024'   = 'KBN8V-HFGQ4-MGXVD-347P6-PDQGT'
     }
 
     # Normalize: drop a leading "Windows 11" prefix and any non-alphanumeric characters

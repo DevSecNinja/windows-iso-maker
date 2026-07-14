@@ -1,0 +1,67 @@
+name: Deploy site (GitHub Pages)
+
+# Publishes the static showcase + config-builder site under site/ to GitHub Pages.
+# Before uploading, it REGENERATES site/data/catalog.json from the live module
+# (Export-CatalogManifest) so the published catalog can never drift from the tool's
+# real behaviour — the same guarantee the site itself documents. Pure data read: no
+# Windows image is downloaded, mounted, or modified.
+#
+# Supply-chain (constitution v1.1.0, Principle VII): every `uses:` is pinned by
+# commit SHA; renovate.json5 keeps the digests current.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'config/catalog.*.psd1'
+      - 'src/WindowsIsoMaker/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; never cancel an in-progress Pages deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site (regenerate catalog manifest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Regenerate the catalog manifest from the live module (never drift)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Import the manifest (.psd1) — a bare folder import exports no functions.
+          Import-Module ./src/WindowsIsoMaker/WindowsIsoMaker.psd1 -Force
+          $out = Export-CatalogManifest -OutputPath ./site/data/catalog.json
+          Write-Host "Regenerated $out"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ./site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

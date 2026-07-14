@@ -12,24 +12,31 @@ BeforeAll {
 
 Describe 'Get-GenericSetupProductKey' {
 
-    It 'returns the generic Pro key for "Pro"' {
+    It 'returns the Pro GVLK for "Pro"' {
         InModuleScope WindowsIsoMaker {
-            Get-GenericSetupProductKey -Edition 'Pro' | Should -Be 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
+            Get-GenericSetupProductKey -Edition 'Pro' | Should -Be 'W269N-WFGWX-YVC9B-4J6C9-T83GX'
         }
     }
 
     It 'normalizes edition variants to the same key' {
         InModuleScope WindowsIsoMaker {
-            $expected = '2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'
+            $expected = 'MH37W-N47XK-V7XM9-C7227-GCQG9'
             Get-GenericSetupProductKey -Edition 'Pro N'          | Should -Be $expected
             Get-GenericSetupProductKey -Edition 'pro-n'          | Should -Be $expected
             Get-GenericSetupProductKey -Edition 'Windows 11 Pro N' | Should -Be $expected
         }
     }
 
-    It 'returns the generic Home key for "Home"' {
+    It 'returns the generic (default retail) Home key for "Home"' {
         InModuleScope WindowsIsoMaker {
-            Get-GenericSetupProductKey -Edition 'Home' | Should -Be 'TX9XD-98N7V-6WMQ6-BX7FG-H8Q99'
+            Get-GenericSetupProductKey -Edition 'Home'             | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+            Get-GenericSetupProductKey -Edition 'Windows 11 Home'  | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+        }
+    }
+
+    It 'returns the corrected Education N GVLK' {
+        InModuleScope WindowsIsoMaker {
+            Get-GenericSetupProductKey -Edition 'Education N' | Should -Be '2WH4N-8QGBV-H22JP-CT43Q-MDWWJ'
         }
     }
 
@@ -61,7 +68,7 @@ Describe 'New-AutounattendXml product key' {
         }
     }
 
-    It 'omits the ProductKey by default (generic fails 24H2; Home installs hands-off without one)' {
+    It 'omits the ProductKey by default (no key configured; opt in via -UseGenericProductKey for hands-off)' {
         $cfg = New-TestConfig -Edition 'Home' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
@@ -70,12 +77,13 @@ Describe 'New-AutounattendXml product key' {
         $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Home</Value>'))
     }
 
-    It 'warns for a non-Home edition with no key (Setup would stop at the key page)' {
+    It 'renders no ProductKey for a non-Home edition with no key (edition still tagged via image metadata)' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{}
-        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
-            Where-Object { $_ -is [System.Management.Automation.WarningRecord] -or "$_" -match 'product key' }
-        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Not -Match '<ProductKey>'
-        "$warnings" | Should -Match 'product-key page'
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Not -Match '<ProductKey>'
+        # Edition is still tagged via the image metadata.
+        $xml | Should -Match ([regex]::Escape('<Value>Windows 11 Pro</Value>'))
     }
 
     It 'injects the generic key for the edition when ProductKey is "generic"' {
@@ -83,13 +91,21 @@ Describe 'New-AutounattendXml product key' {
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
         $xml | Should -Match '<ProductKey>'
-        $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
+        $xml | Should -Match ([regex]::Escape('W269N-WFGWX-YVC9B-4J6C9-T83GX'))
+    }
+
+    It 'injects the generic (page-skipping) retail key for Home when ProductKey is "generic"' {
+        $cfg = New-TestConfig -Edition 'Home' -Autounattend @{ ProductKey = 'generic' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Match '<ProductKey>'
+        $xml | Should -Match ([regex]::Escape('YTMG3-N6DKC-DKB77-7M9GH-8HVX7'))
     }
 
     It 'picks the generic key matching the resolved edition for "auto"' {
         $cfg = New-TestConfig -Edition 'Pro N' -Autounattend @{ ProductKey = 'auto' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
-        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'))
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('MH37W-N47XK-V7XM9-C7227-GCQG9'))
     }
 
     It 'omits the ProductKey element when set to "none"' {
@@ -104,6 +120,29 @@ Describe 'New-AutounattendXml product key' {
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'))
     }
 
+    It 'warns that a specific (non-generic) key is validated online during Setup' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'ABCDE-FGHIJ-KLMNO-PQRST-UVWXY' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Match 'validate'
+        "$warnings" | Should -Match '(?i)online'
+        "$warnings" | Should -Match 'UseGenericProductKey'
+    }
+
+    It 'does NOT emit the online-validation warning for a generic (GVLK) key' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Not -Match '(?i)validated ONLINE'
+    }
+
+    It 'treats an explicit key equal to the edition GVLK as offline-safe (no online-validation warning)' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'W269N-WFGWX-YVC9B-4J6C9-T83GX' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Not -Match '(?i)validated ONLINE'
+    }
+
     It 'produces well-formed XML by default (no product key, Home)' {
         $cfg = New-TestConfig -Edition 'Home' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
@@ -116,13 +155,91 @@ Describe 'New-AutounattendXml product key' {
         { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
 
-    It 'sets WillShowUI=Never on an explicit/generic ProductKey so 24H2 Setup never drops to the key page' {
+    It 'applies the ProductKey in the windowsPE UserData pass so 24H2 multi-edition media does not stop at the key page' {
         $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
         $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
         $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
-        $xml.SelectSingleNode("//u:UserData/u:ProductKey/u:WillShowUI", $ns).InnerText | Should -Be 'Never'
+        # Key lives under windowsPE / Microsoft-Windows-Setup / UserData / ProductKey / Key.
+        $peKey = $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:Key", $ns)
+        $peKey | Should -Not -BeNullOrEmpty
+        $peKey.InnerText | Should -Be 'W269N-WFGWX-YVC9B-4J6C9-T83GX'
+        # Bare <Key> only: NO <WillShowUI>Never</WillShowUI> (with it, 24H2 hard-stops "failed to
+        # validate the product key"; the bare-key form matches known-good dockur/windows answer files).
+        $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:WillShowUI", $ns) | Should -BeNullOrEmpty
+        # And NOT applied in a specialize pass (the key selects the edition in windowsPE).
+        $xml.SelectSingleNode("//u:settings[@pass='specialize']/u:component[@name='Microsoft-Windows-Shell-Setup']/u:ProductKey", $ns) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'New-AutounattendXml account provisioning (local vs Entra join)' {
+
+    BeforeEach {
+        $script:OutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("au-acct-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.xml')
+    }
+    AfterEach {
+        Remove-Item $script:OutPath -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeAll {
+        function script:New-AcctConfig {
+            param([hashtable]$Autounattend = @{}, [string]$Edition = 'Pro')
+            [pscustomobject]@{ Edition = $Edition; Language = 'en-US'; Architecture = 'amd64'; Autounattend = $Autounattend }
+        }
+    }
+
+    It 'creates a local admin account and hides the online-account screens by default (local mode)' {
+        $cfg = New-AcctConfig -Autounattend @{ LocalAccountName = 'Admin' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<Name>Admin</Name>'))
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>true</HideOnlineAccountScreens>'))
+        $xml | Should -Match ([regex]::Escape('<SkipUserOOBE>true</SkipUserOOBE>'))
+    }
+
+    It 'omits the local account and shows the online sign-in for AccountMode=entra (Entra join)' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'entra' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        $xml | Should -Not -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>false</HideOnlineAccountScreens>'))
+        $xml | Should -Match ([regex]::Escape('<SkipUserOOBE>false</SkipUserOOBE>'))
+        $xml | Should -Match ([regex]::Escape('<HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>'))
+    }
+
+    It 'accepts azuread/entraid aliases for the Entra join mode' {
+        foreach ($mode in 'entraid', 'azuread') {
+            $cfg = New-AcctConfig -Autounattend @{ AccountMode = $mode }
+            New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+            (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Not -Match '<UserAccounts>'
+        }
+    }
+
+    It 'warns and falls back to local for an unknown AccountMode' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'bogus' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match '<UserAccounts>'
+        "$warnings" | Should -Match 'AccountMode'
+    }
+
+    It 'forces local for a Home edition even when AccountMode=entra (Home cannot Entra-join)' {
+        $cfg = New-AcctConfig -Edition 'Home' -Autounattend @{ AccountMode = 'entra' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        # Coerced to local: a local account IS created and the online-account screens ARE hidden.
+        $xml | Should -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>true</HideOnlineAccountScreens>'))
+        "$warnings" | Should -Match 'Entra'
+    }
+
+    It 'produces well-formed XML in Entra mode' {
+        $cfg = New-AcctConfig -Autounattend @{ AccountMode = 'entra' }
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        { [xml](Get-Content -LiteralPath $script:OutPath -Raw) } | Should -Not -Throw
     }
 }
 
@@ -197,6 +314,26 @@ Describe 'New-AutounattendXml ImageInstall (edition + install target)' {
         foreach ($mp in $xml.SelectNodes('//u:ModifyPartitions/u:ModifyPartition', $ns)) {
             foreach ($child in $mp.ChildNodes) {
                 $allowed | Should -Contain $child.LocalName
+            }
+        }
+    }
+
+    It 'orders <Label> before <Format> in every ModifyPartition (Setup silently drops an out-of-sequence Format)' {
+        # The Windows unattend parser is XSD-sequence-sensitive: when <Format> appears before
+        # <Label> the format directive is silently dropped, leaving the ESP RAW. Setup then fails
+        # at Finalize with BFSVC ServicingBootFiles 0x800703ED (ERROR_UNRECOGNIZED_VOLUME).
+        # Microsoft's own sample and known-good answer files place Label before Format.
+        $cfg = New-TestConfig
+        New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
+        $xml = [xml](Get-Content -LiteralPath $script:OutPath -Raw)
+        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        foreach ($mp in $xml.SelectNodes('//u:ModifyPartitions/u:ModifyPartition', $ns)) {
+            $names = @($mp.ChildNodes | ForEach-Object { $_.LocalName })
+            $labelIdx = $names.IndexOf('Label')
+            $formatIdx = $names.IndexOf('Format')
+            if ($labelIdx -ge 0 -and $formatIdx -ge 0) {
+                $labelIdx | Should -BeLessThan $formatIdx
             }
         }
     }

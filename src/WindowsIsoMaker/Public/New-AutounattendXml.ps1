@@ -86,36 +86,92 @@ function New-AutounattendXml {
     $localAccountName = [string](& $get 'LocalAccountName' 'Admin')
     $firstLogonCommands = @(& $get 'FirstLogonCommands' @())
 
-    # --- ProductKey fragment (edition selector, NOT an activation key). ---
-    # Windows 11 24H2's rearchitected Setup ("windlp") validates a product key online during
-    # windowsPE. The public generic (KMS client setup) keys FAIL that new validation and hard-stop
-    # with "Setup has failed to validate the product key" - even with WillShowUI=Never and a
-    # network connection - so they are no longer emitted by default. Windows 11 *Home* installs
-    # fully unattended WITHOUT any key, so the default (omit) works for Home. Non-Home editions
-    # (Pro, Enterprise, ...) require a genuine key: supply it via Autounattend.ProductKey (a real
-    # key), or via the -ProductKey parameter of scripts/Invoke-QuickBootTest.ps1.
-    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (Home installs hands-off;
-    #                                                    non-Home Setup will stop for a key)
-    #   ProductKey = 'generic' | 'auto'               -> generic key for the edition (NOTE: fails
-    #                                                    24H2 validation; kept for older media only)
+    # --- Account provisioning mode (FR-027). ---
+    #   'local' (default) -> create a local admin account and bypass the online-account screens.
+    #                        Fully hands-off; ideal for standalone/gaming PCs.
+    #   'entra' ('entraid'/'azuread') -> DON'T create a local account and DON'T hide the online-
+    #                        account screens: let OOBE present the "Set up for work or school"
+    #                        flow so the user signs in with their Entra ID (Azure AD join), which
+    #                        triggers Intune MDM auto-enrollment where configured. Note: a genuine
+    #                        hands-free Entra join needs credentials and is only fully automated via
+    #                        Windows Autopilot or a provisioning package - this image simply prepares
+    #                        OOBE to present the Entra sign-in instead of forcing a local account.
+    $accountModeRaw = [string](& $get 'AccountMode' 'local')
+    $accountMode = $accountModeRaw.Trim().ToLowerInvariant()
+    if ($accountMode -notin @('local', 'entra', 'entraid', 'azuread')) {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "Unknown AccountMode '$accountModeRaw'; defaulting to 'local'. Valid values: local, entra."
+        $accountMode = 'local'
+    }
+    $isEntraJoin = $accountMode -in @('entra', 'entraid', 'azuread')
+    # Windows 11 Home cannot join Entra ID / Azure AD - "Set up for work or school" (Entra/domain
+    # join) needs Pro, Enterprise or Education. On consumer (Home) media force a local account so the
+    # build stays hands-off instead of stalling at an OOBE sign-in Home can never complete.
+    $editionName = [string]$Config.Edition
+    if ($isEntraJoin -and -not [string]::IsNullOrWhiteSpace($editionName) -and
+        (Get-Windows11IsoFamily -Edition $editionName) -eq 'consumer') {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "AccountMode '$accountMode' was requested for Home edition '$editionName', but Windows 11 Home does not support Entra ID (Azure AD) join; forcing 'local'. Use Pro/Enterprise/Education for Entra join."
+        $accountMode = 'local'
+        $isEntraJoin = $false
+    }
+    if ($isEntraJoin) {
+        # Entra join is interactive at OOBE: no local account, and the online-account screens must
+        # be visible so the user can sign in with their work/school (Entra) identity.
+        $createLocalAccount = $false
+        $bypassMsAccount = $false
+    }
+
+    # --- ProductKey (edition-selecting generic setup key, NOT an activation key). ---
+    # On multi-edition install.wim media (Home/Home N/Pro/Education/...) Windows 11 24H2 Setup stops
+    # at the interactive "enter a product key" page unless the windowsPE UserData pass supplies a key
+    # - the ImageInstall /IMAGE/NAME metadata alone does NOT suppress it - and selecting "I don't have
+    # a product key" then fails with "Setup has failed to validate the product key". So the key is
+    # emitted in windowsPE UserData (Microsoft-Windows-Setup/UserData/ProductKey) where it selects the
+    # edition and keeps the install hands-off, mirroring known-good community answer files.
+    #   ProductKey not set / '' / whitespace / 'none' -> omit entirely (install-only; no key applied)
+    #   ProductKey = 'generic' | 'auto'               -> generic/default retail key for the edition
+    #                                                    (applied in windowsPE UserData; set via
+    #                                                    build.ps1 -UseGenericProductKey)
     #   ProductKey = 'XXXXX-...'                       -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
+    # Track whether the baked key is a generic KMS client setup key (GVLK) / retail generic. Those
+    # are NOT validated online by Setup, so they keep a build hands-off even with no network/DNS. A
+    # specific MAK/retail key IS validated online during windowsPE and fails without connectivity.
+    $keyIsGeneric = $false
     if ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
         [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
         $productKey = ''
     }
     elseif ([string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
         $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
+        $keyIsGeneric = $true
     }
     else {
         $productKey = [string]$productKeyRaw.ToString().Trim()
+        # A user-supplied key that equals the edition's generic/GVLK is still offline-safe.
+        $editionGenericKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
+        if (-not [string]::IsNullOrWhiteSpace($editionGenericKey) -and $productKey -eq $editionGenericKey) {
+            $keyIsGeneric = $true
+        }
     }
 
-    # A non-Home edition with no key will stop at Setup's product-key page. Surface that early so a
-    # direct caller (CI, Invoke-IsoBuild) is not surprised by an interactive stall in the boot test.
-    if ([string]::IsNullOrWhiteSpace($productKey) -and ([string]$Config.Edition) -notmatch '(?i)home') {
-        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "Edition '$($Config.Edition)' has no product key, so Windows 11 24H2 Setup will stop at the product-key page. Set Autounattend.ProductKey to a genuine key (only Home installs hands-off without one)."
+    # The product key is applied in the windowsPE UserData pass (Microsoft-Windows-Setup/UserData/
+    # ProductKey), NOT specialize. On multi-edition consumer media (Home/Home N/Pro/Education/...)
+    # 24H2 Setup stops at the interactive "enter a product key" page when windowsPE has no key - even
+    # with the ImageInstall /IMAGE/NAME metadata - and clicking "I don't have a product key" then
+    # fails with "Setup has failed to validate the product key". A generic key here selects the
+    # edition and keeps the install hands-off.
+    #
+    # IMPORTANT: emit ONLY <Key> - do NOT add <WillShowUI>Never</WillShowUI>. With WillShowUI=Never,
+    # if 24H2 Setup treats the generic key as not-yet-valid it cannot fall back to the page and
+    # HARD-STOPS with "Setup has failed to validate the product key" (this repo hit exactly that with
+    # the Key+WillShowUI=Never form). The bare <Key> form is what known-good community answer files
+    # (e.g. dockur/windows win11x64.xml) use for hands-off 24H2 installs.
+    if ([string]::IsNullOrWhiteSpace($productKey)) {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "No product key configured; on multi-edition media Setup may stop at the interactive product-key page. Use -UseGenericProductKey (or set Autounattend.ProductKey) for a fully hands-off install of edition '$editionImageName'."
+    }
+    elseif (-not $keyIsGeneric) {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "A specific product key is baked into the windowsPE UserData pass. Windows 11 24H2+ Setup validates such keys ONLINE during install and hard-stops with 'Setup has failed to validate the product key' when the machine has no working network/DNS (a MAK/retail key needs Microsoft's activation servers reachable - note that a Hyper-V VM may route IP yet still have no DNS). For a fully offline, hands-off install use -UseGenericProductKey (bakes the edition's GVLK, which Setup does NOT validate online), then apply your MAK/retail key AFTER install: slmgr.vbs /ipk <key>; slmgr.vbs /ato."
     }
 
     $productKeyFragment = ''
@@ -124,7 +180,6 @@ function New-AutounattendXml {
         $productKeyFragment = @"
         <ProductKey>
           <Key>$safeKey</Key>
-          <WillShowUI>Never</WillShowUI>
         </ProductKey>
 "@
     }
@@ -140,15 +195,21 @@ function New-AutounattendXml {
     $oobeFragment = ''
     if ($skipOobe) {
         $hideOnline = if ($bypassMsAccount) { 'true' } else { 'false' }
+        # For an Entra join we must let the user OOBE run so the "work or school" sign-in appears,
+        # and allow wireless setup so a Wi-Fi-only device can reach Entra/Intune. A local install
+        # keeps the fully hands-off skip.
+        $hideWireless = if ($isEntraJoin) { 'false' } else { 'true' }
+        $skipUserOobe = if ($isEntraJoin) { 'false' } else { 'true' }
+        $skipMachineOobe = if ($isEntraJoin) { 'false' } else { 'true' }
         $oobeFragment = @"
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
         <HideOnlineAccountScreens>$hideOnline</HideOnlineAccountScreens>
-        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <HideWirelessSetupInOOBE>$hideWireless</HideWirelessSetupInOOBE>
         <ProtectYourPC>3</ProtectYourPC>
-        <SkipMachineOOBE>true</SkipMachineOOBE>
-        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>$skipMachineOobe</SkipMachineOOBE>
+        <SkipUserOOBE>$skipUserOobe</SkipUserOOBE>
       </OOBE>
 "@
     }

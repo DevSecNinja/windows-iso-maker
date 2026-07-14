@@ -12,7 +12,7 @@ Two different layers configure the image:
 | Layer | When | What it does |
 |-------|------|--------------|
 | DISM offline servicing | Image build time | Remove provisioned apps, apply registry hive tweaks, enable optional features (e.g. WSL). |
-| **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account, run first-logon/SetupComplete commands. |
+| **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account **or present the Entra ID sign-in**, run first-logon/SetupComplete commands. |
 
 ## Why per-architecture
 
@@ -28,12 +28,13 @@ The `Autounattend` block in `config/build.config.psd1`:
 Autounattend = @{
     Enabled            = $true
     SkipOobe           = $true          # skip the out-of-box experience
-    BypassMsAccount    = $true          # bypass the Microsoft-account requirement (default on)
-    CreateLocalAccount = $true          # create a local account instead
+    AccountMode        = 'local'        # 'local' (local admin) | 'entra' (join Entra ID / Intune)
+    BypassMsAccount    = $true          # bypass the Microsoft-account requirement (local mode)
+    CreateLocalAccount = $true          # create a local account (local mode)
     LocalAccountName   = 'Admin'        # username (NO password is stored in the file)
     Locale             = 'en-US'        # UI / system language
     UserLocale         = 'en-US'        # region format (dates/times/numbers); defaults to Locale
-    KeyboardLayout     = '0409:00000409'
+    KeyboardLayout     = '0409:00000409'  # input locale; 'opinionated' profile defaults to '0409:00020409' (US-International)
     TimeZone           = 'UTC'          # e.g. 'W. Europe Standard Time'
     ProductKey         = ''             # edition selector (see below)
     DiskId             = 0
@@ -44,14 +45,36 @@ Autounattend = @{
 
 Set `Enabled = $false` to skip generation entirely and ship the stock Microsoft OOBE.
 
-> **Note (OOBE skip flags):** the generated `oobeSystem` pass sets `SkipMachineOOBE` and
-> `SkipUserOOBE`. Microsoft's
+> **Note (OOBE skip flags):** for a `local` install the generated `oobeSystem` pass sets
+> `SkipMachineOOBE` and `SkipUserOOBE`. Microsoft's
 > [unattend OOBE reference](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-oobe)
 > marks both as **deprecated** (they may be removed in a future release). They are kept because —
 > together with the defined local account and the individual `Hide*` settings — they remain the
 > only reliable way to fully skip OOBE for a hands-off install on current builds (including 24H2);
 > the `Hide*` settings alone do not skip the whole experience. This is tracked so the flags can be
-> dropped once a supported replacement fully skips OOBE without them.
+> dropped once a supported replacement fully skips OOBE without them. (For `entra` mode they are
+> intentionally not set — see below.)
+
+## Account provisioning (local vs Entra ID join)
+
+`AccountMode` chooses how the first account is set up during OOBE:
+
+| Mode | Behaviour | Use it for |
+| --- | --- | --- |
+| `'local'` (default) | Creates the local admin account (`LocalAccountName`) and hides the online-account screens. Fully hands-off — no sign-in required. | Standalone / gaming PCs, lab images. |
+| `'entra'` (aliases `entraid`, `azuread`) | Does **not** create a local account. Leaves the *"Set up for work or school"* sign-in visible (and allows Wi-Fi setup) so you sign in with your **Entra ID** identity, which **joins Entra ID (Azure AD)** and **auto-enrolls into Intune** where configured. | Managed / corporate devices. |
+
+> **Entra join is interactive by design.** A real Entra join needs credentials, so this mode
+> *prepares* OOBE to present the Entra sign-in instead of forcing a local account — you still type
+> your credentials once. A fully silent, zero-touch Entra join requires **Windows Autopilot** or a
+> **provisioning package (PPKG)**, which are out of scope for the answer file.
+
+You can also set it per build without editing the config:
+
+```powershell
+./build.ps1 -Edition Pro -ProductKey '<genuine-key>' -AccountMode entra
+./scripts/Invoke-QuickBootTest.ps1 -Edition Home -AccountMode entra
+```
 
 ## Fully-automated install (edition + partition + key)
 
@@ -70,44 +93,84 @@ whenever the install phase isn't fully specified:
   (partition 2) is deliberately left unformatted. The FAT32 format on the ESP is required — without it
   Setup installs Windows but then fails at the *Finalize / Update Boot Code* step
   (`BFSVC ServicingBootFiles`, error `0x800703ED` = the volume has no recognized file system), because
-  the bootloader cannot be written to an unformatted system partition.
-- **Key** — see the *Product key* section below. On 24H2 only **Home** installs hands-off without a
-  key; non-Home editions require a genuine key.
+  the bootloader cannot be written to an unformatted system partition. **Element order matters:** inside
+  each `<ModifyPartition>` the children must follow the unattend schema sequence — in particular
+  `<Label>` (and `<Letter>`) must come *before* `<Format>`. The Windows unattend parser is
+  sequence-sensitive: an out-of-order `<Format>` is *silently dropped* (Setup neither errors nor
+  formats), leaving the ESP RAW and reproducing the `0x800703ED` Finalize failure even though the
+  answer file "looks" correct. Microsoft's own sample and known-good answer files use
+  `Order, PartitionID, Label, [Letter,] Format`.
+- **Key** — see the *Product key* section below. The key (if any) is applied in the **`windowsPE`**
+  UserData pass so 24H2 multi-edition media does not stop at the product-key page; the edition itself
+  is also tagged by the image metadata above.
 
-The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`, and so does any `ProductKey` element.
+The `ImageInstall`/`OSImage` block uses `WillShowUI = Never`.
 On **Windows 11 24H2** the rearchitected Setup treats `OnError` as "show the interactive page on any
 validation hiccup", so `Never` keeps image selection hands-off; a genuinely wrong image name
 hard-fails (and is captured by the boot-test log harvest) instead of silently blocking on a page.
 
 ## Product key (edition selector)
 
-The **edition is selected by the image metadata** (`ImageInstall/OSImage/InstallFrom/MetaData`,
-`/IMAGE/NAME` = e.g. `Windows 11 Pro`) that this tool always writes into the `windowsPE` pass.
+The image metadata (`ImageInstall/OSImage/InstallFrom/MetaData`, `/IMAGE/NAME` = e.g.
+`Windows 11 Pro`) that this tool always writes into the `windowsPE` pass tags which edition to apply.
 
-**Windows 11 24H2's rearchitected Setup (`windlp`)** validates a product key online during the
-install and **rejects the public generic (KMS client setup) keys** — it hard-stops with *"Setup has
-failed to validate the product key"* even with a connected network and `WillShowUI = Never`. The
-only edition that installs **fully hands-off without any key is Home**. Non-Home editions
-(Pro, Enterprise, …) therefore need a **genuine** product key.
+**On multi-edition consumer media (Home/Home N/Pro/Education/…), that metadata alone is *not* enough
+to stay hands-off:** Windows 11 24H2 Setup stops at the interactive *"enter a product key"* page
+unless the **`windowsPE`** pass also supplies a `<ProductKey>`. Selecting *"I don't have a product
+key"* there then fails with *"Setup has failed to validate the product key"*. So this tool writes any
+configured key into the **`windowsPE`** UserData block
+(`Microsoft-Windows-Setup/UserData/ProductKey`) as a **bare `<Key>` element only**, where a generic
+key selects the edition and keeps the install hands-off — mirroring known-good community answer files
+(e.g. `dockur/windows`).
 
-So by **default** this tool emits **no `<ProductKey>`**: a Home build is hands-off, and a non-Home
-build without a key stops at Setup's product-key page (a warning is logged at generation time). Pass
-a real key to make a non-Home build hands-off.
+> ⚠️ Do **not** add `<WillShowUI>Never</WillShowUI>` to this `ProductKey` block. With it, if 24H2
+> Setup treats the generic key as not-yet-valid it cannot fall back to the page and hard-stops with
+> *"Setup has failed to validate the product key"* (this repo hit exactly that). The bare `<Key>`
+> form lets Setup accept the key and proceed.
 
-`ProductKey` controls whether (and which) `<ProductKey>` element is written:
+By **default** no key is configured: on multi-edition media Setup may prompt at the product-key page.
+Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
+
+> ⚠️ **MAK / retail keys are validated ONLINE during Setup.** Windows 11 24H2+ Setup contacts
+> Microsoft to validate a *specific* (MAK or retail) key baked into `windowsPE` UserData. If the
+> machine has no working network **or no DNS**, Setup hard-stops with *"Setup has failed to validate
+> the product key"* — even though the key and the media are correct. (A Hyper-V VM on the NAT
+> *Default Switch* often routes IP — `ping 8.8.8.8` works — yet cannot resolve names, which trips
+> exactly this failure.) A **generic KMS client setup key (GVLK)** is **not** validated online, so it
+> installs hands-off with no connectivity. **Recommended for business editions:** build with
+> `-UseGenericProductKey` (bakes the edition's GVLK), then apply your genuine MAK/retail key **after**
+> install: `slmgr.vbs /ipk <your-key>` then `slmgr.vbs /ato` (or activate via KMS / AD-based / a
+> digital licence).
+
+`ProductKey` controls whether (and which) `<ProductKey>` element is written into the `windowsPE` pass:
 
 | Value | Behaviour |
 | --- | --- |
-| `''` (default) / `'none'` | **Omit** the `<ProductKey>` element. Home installs hands-off; non-Home Setup stops for a key (a generation-time warning is logged). |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Use that explicit, **genuine** key. Required for a hands-off non-Home install. |
-| `'generic'` / `'auto'` | Inject Microsoft's public **generic (KMS client setup) key** for the resolved `Edition`. Selects the edition on **older media only** — it **fails 24H2 validation**. Does not activate Windows. |
+| `''` (default) / `'none'` | **No key.** On multi-edition media Setup may stop at the product-key page. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit key in `windowsPE`. A **MAK/retail** key is **validated online** during Setup (needs network + DNS); a **GVLK** is not. Prefer the GVLK path above for offline hands-off installs. |
+| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic** key in `windowsPE` (non-activating; selects the edition, skips the key page, **no online validation**). This is the **retail generic** key for Home (consumer media) or the **GVLK / KMS client** key for business editions (Pro, Education, Enterprise, ... — business/volume media). The key class must match the media: a volume/GVLK key is rejected on retail media and vice-versa. |
 
-`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition` and `-ProductKey` overrides and **requires**
-`-ProductKey` for any non-Home edition, so you can test the no-key path with `-Edition Home` and do a
-keyed build with `-ProductKey '<your-key>'`.
+The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
+shorthand that sets `ProductKey = 'generic'` for the resolved edition. It is **mutually exclusive**
+with `-ProductKey` (passing both is an error). Use it for a fully hands-off build — a Home build off
+the consumer ISO, or a business edition (Pro, Education, ...) off a business/volume ISO supplied via
+`-IsoPath`.
 
-When a key is emitted it uses `WillShowUI = Never` so Setup stays hands-off. The generic keys are
-published by Microsoft — see
+`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
+`-Profile` overrides, so you can test the hands-off path with `-Edition Home -UseGenericProductKey`
+and do a keyed build with `-ProductKey '<your-key>'`. `-Profile` accepts one or more profiles (e.g.
+`-Profile gaming,opinionated`);
+because a quick boot test reuses the already-serviced `media\` folder it does **not** re-run debloat,
+but it re-derives the answer file, so profile-driven `Autounattend` settings (such as the opinionated
+United States-International keyboard) are reflected in the boot test.
+
+To boot-test several editions at once, pass `-Isolated` to each parallel window. Isolated runs get a
+uniquely-named `Autounattend-<tag>.xml` and ISO, and ISO authoring is serialized with a named mutex
+(the answer file is staged inside the shared `media\` tree before imaging), so the fast rebuilds are
+atomic while the slow VM boot tests overlap. Without `-Isolated`, concurrent runs share
+`media\Autounattend.xml` and the deterministic ISO path and will clobber each other.
+
+The generic keys are published by Microsoft — see
 [KMS client activation and product keys](https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys).
 
 ## Security note

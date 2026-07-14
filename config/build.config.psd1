@@ -15,13 +15,14 @@
     # ============================================================================
 
     # --- Base image selection (FR-001, FR-002) ---
-    Edition      = 'Pro'        # Windows 11 edition
+    Edition      = 'Pro'        # Windows 11 edition. Only Home comes from Fido; every other edition
+                               # (Pro, Education, Enterprise, ...) needs a business ISO via IsoPath.
     Language     = 'en-US'      # display language (BCP-47)
     Release      = 'latest'     # resolved by Fido at build time; actual recorded in RunReport
     Architecture = 'amd64'      # 'amd64' | 'arm64' (validated)
 
     # --- Data-driven change selection (FR-024) ---
-    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' (baseline set)
+    Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'; accepts a list, e.g. @('gaming','opinionated')
     Toggles          = @{}        # per-id override map, e.g. @{ 'appx-todos' = $false; 'feature-wsl' = $true }
     EnableCatalogId  = @('reg-reverse-mouse-scroll')  # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
     DisableCatalogId = @()        # force-disable specific catalog entries by Id (explicit ids win)
@@ -32,12 +33,23 @@
     Autounattend = @{
         Enabled          = $true
         SkipOobe         = $true          # skip the out-of-box experience screens
-        BypassMsAccount  = $true          # bypass the Microsoft-account requirement (FR-027)
+        # AccountMode: how the first account is provisioned during OOBE.
+        #   'local' = create the local admin account below and bypass the online-account screens
+        #             (fully hands-off; ideal for a standalone/gaming PC).
+        #   'entra' = don't create a local account; let OOBE present the "Set up for work or school"
+        #             sign-in so you join Entra ID (Azure AD) and auto-enroll into Intune. This step
+        #             is interactive (you enter your Entra credentials); a fully silent join needs
+        #             Autopilot or a provisioning package.
+        AccountMode      = 'local'         # 'local' | 'entra'
+        BypassMsAccount  = $true          # bypass the Microsoft-account requirement (FR-027; local mode)
         CreateLocalAccount = $true        # create a local account instead (default on, toggleable)
         LocalAccountName = 'Admin'        # local account username (no password stored in the file)
         Locale           = 'en-US'        # UI / system language (kept English (United States))
         UserLocale       = 'nl-NL'         # region format for dates/times/numbers = Dutch (Netherlands)
-        KeyboardLayout   = '0409:00000409' # input locale (en-US)
+        # KeyboardLayout: input locale. Left unset so the profile-driven default applies:
+        #   most profiles => '0409:00000409' (US); the 'opinionated' profile => '0409:00020409'
+        #   (United States-International, so English (US) types on US-International). Uncomment to pin.
+        # KeyboardLayout   = '0409:00000409'
         TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout
         # ProductKey: baked into the answer file. Windows 11 24H2 Setup only installs hands-off
@@ -63,7 +75,9 @@
     OutputDirectory  = './out'    # where the compressed artifact + RunReport + BOM are written
 
     # --- Optional pre-downloaded ISO override (skip Fido download) ---
-    IsoPath = ''                  # empty = download via Fido
+    IsoPath = ''                  # empty = download via Fido (Home only). REQUIRED for every non-Home
+                                  # edition: point it at the business/volume ISO (Fido can't fetch it,
+                                  # and consumer Pro/Education images won't activate with a GVLK).
 
     # --- Validation (FR-023) ---
     BootTest = $false             # opt-in VM boot test; default = structural checks only

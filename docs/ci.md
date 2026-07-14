@@ -20,10 +20,29 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
 ## `build-image.yml` — release image build (manual)
 
 - **Trigger**: `workflow_dispatch` **only** — never on push/PR (FR-012).
-- **Inputs**: `edition`, `language`, `release`, `profile`, `enable_catalog_id`,
-  `disable_catalog_id`, `skip_heavy_build`, `boot_test`. There are deliberately **no**
-  `remove_edge`/`remove_onedrive` inputs — pass `enable_catalog_id: remove-edge,remove-onedrive`
-  instead (data-driven selection, FR-024).
+- **Inputs**: `edition` (**defaults to `Home`**), `language`, `release`, `iso_url_amd64`,
+  `iso_url_arm64`, `profile`, `enable_catalog_id`, `disable_catalog_id`, `skip_heavy_build`,
+  `boot_test`. There are deliberately **no** `remove_edge`/`remove_onedrive` inputs — pass
+  `enable_catalog_id: remove-edge,remove-onedrive` instead (data-driven selection, FR-024).
+- **Pre-flight validation (fail fast)**: the first step validates inputs before any ADK install or
+  ISO download and fails the leg early with a clear message on: an empty `edition`/`release`, a
+  malformed `language` (must be a BCP-47 tag), malformed catalog ids, and — the important one — a
+  **non-Home edition without the matching per-arch business ISO URL**. It also warns (not fails) on
+  ids listed in both enable and disable, on a business build with no `WINDOWS_PRODUCT_KEY` secret,
+  and on an `iso_url_*` supplied for a Home build (which is ignored). The consumer-vs-business split
+  reuses the module's `Get-Windows11IsoFamily` (single source of truth).
+- **Home vs business ISO**: Only **Home** downloads its base ISO via Fido. Every other edition
+  (Pro/Education/Enterprise/…) needs a **business/volume** ISO that Fido cannot fetch, so you must
+  supply a URL: `iso_url_amd64` and/or `iso_url_arm64` (a business ISO is architecture-specific, and
+  the matrix builds both arches — each leg checks *its* URL). The workflow downloads that ISO and
+  passes it to `build.ps1 -IsoPath`. Prefer a short-lived SAS URL; `workflow_dispatch` inputs are
+  not masked. In `skip_heavy_build` (preview) mode the URL is optional (no build happens).
+- **Product key (optional secret)**: CI ships **no product key by default** — a keyless build
+  tags the edition via image metadata, but on multi-edition media Setup may stop at the product-key
+  page. If you want a hands-off keyed/activated build, set the optional
+  `WINDOWS_PRODUCT_KEY` repo secret; the build step reads it from an environment variable (so the
+  key is masked and never appears on a command line) and passes it as `-ProductKey` (applied in the
+  `windowsPE` UserData pass). Leaving the secret unset keeps the key out of CI entirely.
 - **Permissions** (least privilege): `contents: read`, plus `id-token: write` and
   `attestations: write` for provenance/OIDC.
 - **Matrix**:
@@ -31,10 +50,11 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
   |--------|-----------|
   | `amd64` | `windows-latest` |
   | `arm64` | `windows-11-arm` (native Windows-on-ARM) |
-- **Per-leg steps**: checkout → install Windows ADK Deployment Tools (`oscdimg`) → verify free
-  disk (fail fast) → `./build.ps1` (produces ISO + `Autounattend.xml` + `SHA256SUMS` +
-  RunReport + Image BOM) → `actions/attest-build-provenance` (SLSA) → publish to Azure Blob
-  (optional, OIDC) **or** fall back to a per-arch workflow artifact.
+- **Per-leg steps**: checkout → **validate inputs (pre-flight, fail fast)** → install Windows ADK
+  Deployment Tools (`oscdimg`) → verify free disk (fail fast) → download business base ISO (non-Home
+  only) → `./build.ps1` (produces ISO + `Autounattend.xml` + `SHA256SUMS` + RunReport + Image BOM)
+  → `actions/attest-build-provenance` (SLSA) → publish to Azure Blob (optional, OIDC) **or** fall
+  back to a per-arch workflow artifact.
 
 ### Installing the ADK
 
@@ -58,8 +78,10 @@ Start-Process adksetup.exe -Wait -ArgumentList '/quiet','/norestart','/features'
 - **Time**: within the 6-hour job cap, but monitored.
 - **arm64 tooling**: ADK/`oscdimg`/PowerShell availability on `windows-11-arm` should be
   verified for your ADK version; `adksetup` runs under emulation on that runner.
-- **No secrets**: the build needs none. Azure upload uses OIDC federation (no stored keys) and
-  is skipped unless the `AZURE_*` repository variables are set.
+- **No secrets by default**: the build needs none. Azure upload uses OIDC federation (no stored
+  keys) and is skipped unless the `AZURE_*` repository variables are set. The only optional secret
+  is `WINDOWS_PRODUCT_KEY` (see above), used solely for a keyed non-Home build; leave it unset to
+  keep product keys out of CI.
 
 ## Parity guarantee
 

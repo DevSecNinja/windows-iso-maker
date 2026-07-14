@@ -77,6 +77,24 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             }
         }
 
+        It 'has a Category from the semantic taxonomy' {
+            $allowedCategories = @(
+                'Browser', 'Bundled apps', 'Cloud storage', 'Development',
+                'Gaming', 'Legacy components', 'Personalization', 'Privacy & telemetry'
+            )
+            $Entry.Category | Should -Not -BeNullOrEmpty -Because 'every entry must declare a semantic Category for grouping/display'
+            $Entry.Category | Should -BeIn $allowedCategories -Because "Category must be one of the agreed taxonomy values, got '$($Entry.Category)'"
+        }
+
+        It 'has valid Profiles membership tags when present (subset of gaming/opinionated)' {
+            if ($Entry.ContainsKey('Profiles') -and $null -ne $Entry.Profiles) {
+                @($Entry.Profiles).Count | Should -BeGreaterThan 0 -Because 'a present Profiles tag must be a non-empty list'
+                foreach ($tag in @($Entry.Profiles)) {
+                    $tag | Should -BeIn @('gaming', 'opinionated') -Because "Profiles is the curated profile-membership tag, got '$tag'"
+                }
+            }
+        }
+
         It 'has a valid Action (dispatch key)' {
             $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
         }

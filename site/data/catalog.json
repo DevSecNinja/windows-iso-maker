@@ -1,0 +1,995 @@
+{
+  "schemaVersion": 1,
+  "generatedUtc": "2026-07-13T17:11:16Z",
+  "moduleVersion": "1.0.0",
+  "defaultProfile": "default",
+  "profiles": [
+    {
+      "name": "minimal",
+      "description": "Fewest changes: only the default-enabled registry policy tweaks — no app or capability removals."
+    },
+    {
+      "name": "default",
+      "description": "Balanced baseline: every catalog entry marked DefaultEnabled (the recommended starting point)."
+    },
+    {
+      "name": "aggressive",
+      "description": "Most debloat: the default set plus opt-in grade 1-2 app/capability removals (never community-graded)."
+    },
+    {
+      "name": "gaming",
+      "description": "The default set, but Xbox / Game Bar entries (tagged Profiles=@('gaming')) are preserved."
+    },
+    {
+      "name": "opinionated",
+      "description": "The aggressive set plus personal-taste extras (tagged Profiles=@('opinionated')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL."
+    }
+  ],
+  "categories": [
+    "Browser",
+    "Bundled apps",
+    "Cloud storage",
+    "Development",
+    "Gaming",
+    "Legacy components",
+    "Personalization",
+    "Privacy & telemetry"
+  ],
+  "types": [
+    "Appx",
+    "Capability",
+    "OptionalFeature",
+    "Registry"
+  ],
+  "entryCount": 39,
+  "entries": [
+    {
+      "id": "appx-clipchamp",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Clipchamp.Clipchamp",
+      "description": "Removes the Clipchamp video editor provisioned app.",
+      "rationale": "Clipchamp is a consumer video editor bundled with Windows 11 that most managed/clean builds do not require; removing the provisioned package prevents auto-install for new users. It can be reinstalled from the Store on demand.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall from the Microsoft Store (Clipchamp) or re-add the provisioned package with Add-AppxProvisionedPackage.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-bingnews",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.BingNews",
+      "description": "Removes the Microsoft News (Bing News) provisioned app.",
+      "rationale": "Bing News is a consumer content/advertising app not needed for a clean baseline; it periodically fetches feed content and notifications. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Microsoft News from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-bingweather",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.BingWeather",
+      "description": "Removes the MSN Weather (Bing Weather) provisioned app.",
+      "rationale": "MSN Weather is a consumer app that is redundant on managed builds and is a common bloatware removal; it is not a Windows component. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall MSN Weather from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-solitaire",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.MicrosoftSolitaireCollection",
+      "description": "Removes the Microsoft Solitaire Collection provisioned app.",
+      "rationale": "A consumer game bundled with Windows; not required for productivity/managed images and shows ads. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Microsoft Solitaire Collection from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-xbox-gaming-overlay",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Gaming",
+      "target": "Microsoft.XboxGamingOverlay",
+      "description": "Removes the Xbox Game Bar overlay provisioned app.",
+      "rationale": "The Xbox Game Bar overlay is a gaming feature unnecessary on non-gaming/managed builds. Note: fully disabling Game Bar may require the associated registry tweak; this only removes the provisioned app for new users.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Xbox Game Bar from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-xbox-game-overlay",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Gaming",
+      "target": "Microsoft.XboxGameOverlay",
+      "description": "Removes the legacy Xbox Game Overlay provisioned app.",
+      "rationale": "Companion overlay component for Xbox gaming features; redundant on managed/non-gaming images.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-xbox-tcui",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Gaming",
+      "target": "Microsoft.Xbox.TCUI",
+      "description": "Removes the Xbox TCUI (title callable UI) provisioned app.",
+      "rationale": "Shared Xbox UI component used by gaming titles; not required on managed/non-gaming builds. Some Store games may re-request it.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-xbox-speech-to-text",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Gaming",
+      "target": "Microsoft.XboxSpeechToTextOverlay",
+      "description": "Removes the Xbox speech-to-text overlay provisioned app.",
+      "rationale": "Accessibility overlay tied to Xbox gaming; unnecessary on managed/non-gaming images.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-teams-consumer",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "MicrosoftTeams",
+      "description": "Removes the consumer Microsoft Teams (personal / Chat) provisioned app.",
+      "rationale": "The consumer Teams app (the taskbar Chat) is distinct from Teams for work/school and is commonly removed on managed builds. Removing the provisioned consumer package does not affect the enterprise Teams client, which is installed separately.",
+      "citation": "https://learn.microsoft.com/en-us/microsoftteams/teams-classic-client-end-of-availability",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall the personal Teams app from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-getstarted-tips",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.Getstarted",
+      "description": "Removes the Windows Tips (Get Started) provisioned app.",
+      "rationale": "The Tips app surfaces promotional/onboarding content and is not needed on managed images.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Tips from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-gethelp",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.GetHelp",
+      "description": "Removes the Get Help provisioned app.",
+      "rationale": "Consumer support/contact app that is redundant on managed builds with their own support channels.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Get Help from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-feedback-hub",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.WindowsFeedbackHub",
+      "description": "Removes the Feedback Hub provisioned app.",
+      "rationale": "Feedback Hub sends diagnostic feedback to Microsoft and is unnecessary on managed/privacy-conscious builds.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Feedback Hub from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-todos",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.Todos",
+      "description": "Removes the Microsoft To Do provisioned app.",
+      "rationale": "Consumer task app tied to a Microsoft account; not part of a minimal managed baseline. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Microsoft To Do from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-power-automate-desktop",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.PowerAutomateDesktop",
+      "description": "Removes the Power Automate desktop provisioned app.",
+      "rationale": "Bundled RPA tool that most clean images do not require; can be deployed intentionally where needed.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Power Automate from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-quickassist",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "MicrosoftCorporationII.QuickAssist",
+      "description": "Removes the Quick Assist remote-help provisioned app.",
+      "rationale": "Quick Assist enables inbound remote assistance and is a known social-engineering/support-scam vector; removing it from the default image reduces attack surface. Re-add intentionally where remote assistance is a supported workflow.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/client-tools/quick-assist",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Quick Assist from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-king-candycrush",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "king.com.CandyCrush*",
+      "description": "Removes any King.com Candy Crush titles delivered as provisioned/stub apps.",
+      "rationale": "Third-party promoted games installed via the Windows consumer content-delivery experience; pure advertising bloat with no productivity value. Removed if present; skipped as NotApplicable if absent.",
+      "citation": "https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall from the Microsoft Store if desired.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-xbox-app",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Gaming",
+      "target": "Microsoft.GamingApp",
+      "description": "Removes the Xbox app (Microsoft.GamingApp) provisioned package.",
+      "rationale": "The Xbox app (game library, Game Pass, cloud gaming) is a consumer gaming client unnecessary on managed/non-gaming builds. Tagged Profiles=@('gaming') so the gaming profile keeps it; removed by the default profile for a clean baseline. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall the Xbox app from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-phone-link",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "Microsoft.YourPhone",
+      "description": "Removes the Phone Link (Microsoft.YourPhone) provisioned app.",
+      "rationale": "Phone Link mirrors a paired phone (calls, messages, photos) and is a consumer feature not needed on a minimal managed baseline. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall Phone Link from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-family",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "MicrosoftCorporationII.MicrosoftFamily",
+      "description": "Removes the Microsoft Family (Family Safety) provisioned app.",
+      "rationale": "The Family app manages parental controls / family group settings tied to a consumer Microsoft account; it is not part of a managed baseline. Reinstallable from the Store.",
+      "citation": "https://learn.microsoft.com/en-us/windows/application-management/provisioned-apps-windows-client-os",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall the Family app from the Microsoft Store.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-linkedin",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "*LinkedIn*",
+      "description": "Removes the LinkedIn provisioned/promoted app if present.",
+      "rationale": "LinkedIn is a third-party app promoted via the Windows consumer content-delivery experience and pinned to Start on consumer images; advertising bloat on a clean baseline. Removed if present; skipped as NotApplicable if absent.",
+      "citation": "https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall LinkedIn from the Microsoft Store if desired.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "appx-whatsapp",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Bundled apps",
+      "target": "*WhatsApp*",
+      "description": "Removes the WhatsApp provisioned/promoted app if present.",
+      "rationale": "WhatsApp is a third-party app promoted via the Windows consumer content-delivery experience and pinned to Start on consumer images; advertising bloat on a clean baseline. Removed if present; skipped as NotApplicable if absent.",
+      "citation": "https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Reinstall WhatsApp from the Microsoft Store if desired.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "remove-edge",
+      "type": "Appx",
+      "action": "RemoveAppx",
+      "category": "Browser",
+      "target": "Microsoft.MicrosoftEdge*",
+      "description": "Removes the provisioned Microsoft Edge browser packaging (opt-in, impactful).",
+      "rationale": "Edge is a deeply integrated Windows component and Microsoft services it as part of the OS; removal can break WebView2-dependent apps and Windows features. Provided strictly as an opt-in choice for users who deploy an alternative browser. The offline-removal technique is community-documented rather than an officially supported single procedure (EvidenceGrade 3), so it MUST stay opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/deployedge/microsoft-edge-faq",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Reinstall Microsoft Edge from https://www.microsoft.com/edge or via the Edge stable installer.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.appx.psd1",
+      "profiles": []
+    },
+    {
+      "id": "cap-wordpad",
+      "type": "Capability",
+      "action": "RemoveCapability",
+      "category": "Legacy components",
+      "target": "Microsoft.Windows.WordPad",
+      "description": "Removes the WordPad optional feature.",
+      "rationale": "WordPad is deprecated by Microsoft and no longer receives updates; it is not installed by default on new Windows 11 images. Removing it (when present) trims a legacy, unmaintained component. Users needing rich text can use Word or a third-party editor.",
+      "citation": "https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Add-WindowsCapability -Online -Name Microsoft.Windows.WordPad~~~~0.0.1.0 (source required).",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "cap-steps-recorder",
+      "type": "Capability",
+      "action": "RemoveCapability",
+      "category": "Legacy components",
+      "target": "App.StepsRecorder",
+      "description": "Removes the Steps Recorder (PSR) optional feature.",
+      "rationale": "Steps Recorder is deprecated by Microsoft and slated for removal; it captures screen steps and is unnecessary on managed images. Deprecated-feature status makes removal low-risk.",
+      "citation": "https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Add-WindowsCapability -Online -Name App.StepsRecorder~~~~0.0.1.0 (source required).",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "cap-fax-scan",
+      "type": "Capability",
+      "action": "RemoveCapability",
+      "category": "Legacy components",
+      "target": "Print.Fax.Scan",
+      "description": "Removes the Windows Fax and Scan optional feature.",
+      "rationale": "Legacy fax/scan tooling that most modern managed builds do not use; removing it trims rarely used components. Opt-in for environments that still fax.",
+      "citation": "https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-non-language-fod",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Add-WindowsCapability -Online -Name Print.Fax.Scan~~~~0.0.1.0 (source required).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "cap-media-player-legacy",
+      "type": "Capability",
+      "action": "RemoveCapability",
+      "category": "Legacy components",
+      "target": "Media.WindowsMediaPlayer",
+      "description": "Removes the legacy Windows Media Player (WMP) optional feature.",
+      "rationale": "The legacy WMP is superseded by the modern Media Player app; some environments still rely on the legacy player, so this is opt-in to avoid breaking media workflows.",
+      "citation": "https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-non-language-fod",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Add-WindowsCapability -Online -Name Media.WindowsMediaPlayer~~~~0.0.12.0 (source required).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "feature-wsl",
+      "type": "OptionalFeature",
+      "action": "EnableOptionalFeature",
+      "category": "Development",
+      "target": "Microsoft-Windows-Subsystem-Linux",
+      "description": "Enables the Windows Subsystem for Linux optional feature on the offline image.",
+      "rationale": "Pre-enables the WSL platform feature so the finished image ships WSL-ready. This offline step only turns on the OS feature; the actual WSL2 kernel and the chosen Linux distribution are installed online on first boot (`wsl --install`/`wsl --update`), which is a Microsoft platform constraint, not a limitation of this tool. Opt-in because it adds attack surface not everyone wants.",
+      "citation": "https://learn.microsoft.com/en-us/windows/wsl/install-on-server",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Disable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux (or omit the feature-wsl catalog id).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "feature-vmplatform",
+      "type": "OptionalFeature",
+      "action": "EnableOptionalFeature",
+      "category": "Development",
+      "target": "VirtualMachinePlatform",
+      "description": "Enables the Virtual Machine Platform optional feature (WSL2 dependency) on the offline image.",
+      "rationale": "WSL2 runs a lightweight utility VM and requires the Virtual Machine Platform feature. Enable it alongside feature-wsl for a WSL2-capable image. Like feature-wsl the actual WSL2 kernel is fetched online on first boot. Opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/windows/wsl/install-on-server",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Disable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform (or omit the feature-vmplatform catalog id).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-recall",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI!DisableAIDataAnalysis",
+      "description": "Disables Windows Recall by setting the DisableAIDataAnalysis policy (turns off saving Recall snapshots).",
+      "rationale": "Recall periodically captures screenshots of user activity, which is a significant privacy/data-at-rest concern for managed builds. Microsoft documents DisableAIDataAnalysis as the supported policy to turn off saving snapshots. Spec FR-007 mandates this be disabled by default; it is fully reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/manage-recall",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Delete the DisableAIDataAnalysis value (or set it to 0) under SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-widgets",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Dsh!AllowNewsAndInterests",
+      "description": "Disables the Widgets board (weather/stock/news feed) via the AllowNewsAndInterests policy.",
+      "rationale": "The Widgets feed (weather, stocks, news) fetches internet content and adds taskbar surface area not wanted on managed builds. Microsoft documents AllowNewsAndInterests under Policies\\Microsoft\\Dsh as the control. Spec FR-007 mandates disabling weather/stock Widgets by default; reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/manage-windows-widgets",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set AllowNewsAndInterests to 1 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Dsh.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-consumer-features",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Bundled apps",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent!DisableWindowsConsumerFeatures",
+      "description": "Disables Windows consumer features (auto-installed suggested/promoted apps such as third-party games).",
+      "rationale": "The consumer content-delivery experience silently installs promoted third-party apps (e.g. Candy Crush) and suggestions. Disabling it prevents re-appearance of bloat after debloating and is the supported enterprise control.",
+      "citation": "https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set DisableWindowsConsumerFeatures to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-advertising-id",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo!DisabledByGroupPolicy",
+      "description": "Turns off the per-user advertising ID used to personalize ads across apps.",
+      "rationale": "The advertising ID enables cross-app ad tracking. Microsoft documents DisabledByGroupPolicy under AdvertisingInfo as the control (Policy CSP Privacy/DisableAdvertisingId). A privacy-improving, reversible default.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-privacy",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set DisabledByGroupPolicy to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-telemetry-basic",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection!AllowTelemetry",
+      "description": "Sets the diagnostic-data (telemetry) policy to the lowest level (Security/Required).",
+      "rationale": "Reduces diagnostic data sent to Microsoft. Note: on Pro the effective floor is \"Required/Basic\" (the 0/Security level is fully honored only on Enterprise/Education), which Microsoft documents; the policy is still the correct, supported control and is reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/privacy/configure-windows-diagnostic-data-in-your-organization",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set AllowTelemetry to the desired level (1=Required, 3=Optional) or delete it under SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-cortana",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search!AllowCortana",
+      "description": "Disables Cortana via the AllowCortana policy.",
+      "rationale": "Cortana is largely deprecated and unnecessary on managed builds; disabling it reduces background voice/assistant surface. Microsoft documents AllowCortana in Policy CSP Search. Reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-search",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set AllowCortana to 1 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-tailored-experiences",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent!DisableTailoredExperiencesWithDiagnosticData",
+      "description": "Prevents Windows from using diagnostic data to show tailored experiences (personalized tips/ads/suggestions).",
+      "rationale": "Stops Microsoft from using diagnostic data to personalize tips, ads, and recommendations in the shell. Microsoft documents the corresponding Experience/AllowTailoredExperiencesWithDiagnosticData policy. Privacy-improving and reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set DisableTailoredExperiencesWithDiagnosticData to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent.",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-start-web-search",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search!DisableSearchBoxSuggestions",
+      "description": "Disables web/Bing suggestions in the Start menu and taskbar search box.",
+      "rationale": "Removes internet-backed search suggestions from Start/search for a more local, private search experience. This exact value is community-documented rather than in a single authoritative Microsoft page (EvidenceGrade 3), so it is opt-in only.",
+      "citation": "https://learn.microsoft.com/en-us/answers/questions/1737991/how-to-disable-web-search-in-windows-11-search",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set DisableSearchBoxSuggestions to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-lockscreen-spotlight",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager!RotatingLockScreenOverlayEnabled",
+      "description": "Disables Windows Spotlight lock-screen \"fun facts/ads\" overlays for new user profiles.",
+      "rationale": "Spotlight lock-screen overlays surface suggestions/ads. Applied to the DEFAULT hive so new profiles inherit it. The specific per-user ContentDeliveryManager value is community-documented (EvidenceGrade 3), so it is opt-in only.",
+      "citation": "https://learn.microsoft.com/en-us/answers/questions/1326668/how-to-disable-windows-spotlight-via-registry",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set RotatingLockScreenOverlayEnabled to 1 (or delete it) under DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "remove-onedrive",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Cloud storage",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive!DisableFileSyncNGSC",
+      "description": "Prevents the OneDrive sync client from being used, via the supported DisableFileSyncNGSC policy (opt-in).",
+      "rationale": "Microsoft documents the \"Prevent the usage of OneDrive for file storage\" policy (DisableFileSyncNGSC = 1) as the supported way to disable OneDrive. This is the reversible, low-risk part of \"removing OneDrive\" from an image; it does not delete the OneDrive binary. Provided opt-in per FR-008.",
+      "citation": "https://learn.microsoft.com/en-us/sharepoint/use-group-policy",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set DisableFileSyncNGSC to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": []
+    },
+    {
+      "id": "reg-reverse-mouse-scroll",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimReverseMouseScroll",
+      "description": "Reverses the mouse wheel scroll direction (macOS-style \"natural\" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.",
+      "rationale": "FlipFlopWheel is the Microsoft-documented per-device control that inverts wheel scroll direction (see Microsoft's \"How to reverse the mouse wheel scrolling direction\" whitepaper, wheel.docx). It lives under each mouse's SYSTEM\\...\\Enum\\HID\\<device>\\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (also a Microsoft-documented mechanism: https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. Kept opt-in (DefaultEnabled=$false) because reversed scrolling is a personal-taste preference, not a general improvement.",
+      "citation": "https://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Remove the !WimReverseMouseScroll value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot set FlipFlopWheel to 0 (or delete it) under each mouse's SYSTEM\\CurrentControlSet\\Enum\\HID\\<device>\\Device Parameters key.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    }
+  ]
+}

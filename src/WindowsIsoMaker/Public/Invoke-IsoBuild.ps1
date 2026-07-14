@@ -34,11 +34,29 @@ function Invoke-IsoBuild {
     .PARAMETER Release
         Optional release override.
     .PARAMETER Profile
-        Optional profile override ('minimal' | 'default' | 'aggressive' | 'gaming').
+        Optional profile override: one or more of 'minimal' | 'default' | 'aggressive' | 'gaming' |
+        'opinionated' (e.g. -Profile gaming,opinionated). Multiple values are UNIONed; 'gaming'
+        preserves the gaming stack.
     .PARAMETER EnableCatalogId
         Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
     .PARAMETER DisableCatalogId
         Optional force-disable catalog ids.
+    .PARAMETER IsoPath
+        Optional pre-downloaded base ISO (skips Fido). Required for non-Home editions, which only
+        ship on the business/volume ISO.
+    .PARAMETER ProductKey
+        Optional override for the Autounattend product key (config Autounattend.ProductKey). Applied
+        in the windowsPE UserData pass so multi-edition 24H2 media does not stop at the interactive
+        product-key page. '' / 'none' omit the key (Setup may prompt on multi-edition media); a
+        genuine key activates when valid.
+    .PARAMETER AccountMode
+        Optional override for how the first OOBE account is provisioned (config
+        Autounattend.AccountMode): 'local' (create a local admin, hands-off) or 'entra' (present
+        the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
+    .PARAMETER UseGenericProductKey
+        Bake the edition's generic/default retail product key, applied in the windowsPE UserData pass
+        (non-activating). Handy for a fully hands-off Home build. Mutually exclusive with
+        -ProductKey.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -82,14 +100,28 @@ function Invoke-IsoBuild {
         [string] $Release,
 
         [Parameter()]
-        [ValidateSet('minimal', 'default', 'aggressive', 'gaming')]
-        [string] $Profile,
+        [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
+        [string[]] $Profile,
 
         [Parameter()]
         [string[]] $EnableCatalogId,
 
         [Parameter()]
         [string[]] $DisableCatalogId,
+
+        [Parameter()]
+        [string] $IsoPath,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $ProductKey,
+
+        [Parameter()]
+        [ValidateSet('local', 'entra', 'entraid', 'azuread')]
+        [string] $AccountMode,
+
+        [Parameter()]
+        [switch] $UseGenericProductKey,
 
         [Parameter()]
         [switch] $SkipHeavyBuild,
@@ -101,14 +133,45 @@ function Invoke-IsoBuild {
         [switch] $KeepBootTestVm
     )
 
+    # --- 0. Reject mutually exclusive product-key inputs (fail fast). ---
+    # -UseGenericProductKey bakes the edition's generic key while -ProductKey bakes a specific one;
+    # supplying both is contradictory, so error instead of silently letting -ProductKey win.
+    if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+        throw '-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey ' +
+            "'<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+    }
+
     # --- 1. Resolve configuration (config file is primary; params are last-mile overrides). ---
     if (-not $Config) {
         $cfgParams = @{}
         if ($PSBoundParameters.ContainsKey('ConfigPath')) { $cfgParams['Path'] = $ConfigPath }
-        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
+        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath') {
             if ($PSBoundParameters.ContainsKey($n)) { $cfgParams[$n] = $PSBoundParameters[$n] }
         }
         $Config = Get-BuildConfiguration @cfgParams
+    }
+
+    # Last-mile ProductKey / AccountMode overrides apply to the nested Autounattend sub-config (not
+    # top-level fields, so Get-BuildConfiguration does not carry them). ProductKey (when set) is
+    # applied in the windowsPE UserData pass; AccountMode selects local vs Entra-join OOBE provisioning.
+    foreach ($ov in @(
+            @{ Name = 'ProductKey';  Key = 'ProductKey' },
+            @{ Name = 'AccountMode'; Key = 'AccountMode' })) {
+        if ($PSBoundParameters.ContainsKey($ov.Name)) {
+            $value = $PSBoundParameters[$ov.Name]
+            $au = $Config.Autounattend
+            if ($au -is [hashtable]) { $au[$ov.Key] = $value }
+            elseif ($null -ne $au) { $au | Add-Member -NotePropertyName $ov.Key -NotePropertyValue $value -Force }
+        }
+    }
+
+    # -UseGenericProductKey bakes the edition's generic/default retail key, applied in the windowsPE
+    # UserData pass (non-activating). The two are mutually exclusive (rejected in step 0), so at this
+    # point -ProductKey is guaranteed absent whenever the switch is present.
+    if ($UseGenericProductKey.IsPresent) {
+        $au = $Config.Autounattend
+        if ($au -is [hashtable]) { $au['ProductKey'] = 'generic' }
+        elseif ($null -ne $au) { $au | Add-Member -NotePropertyName 'ProductKey' -NotePropertyValue 'generic' -Force }
     }
 
     $isPreview = $WhatIfPreference -or $SkipHeavyBuild.IsPresent

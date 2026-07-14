@@ -43,14 +43,39 @@
     Open the interactive VM console (vmconnect) as soon as the boot-test VM starts, so you can
     watch Setup and press Shift+F10 to capture logs on a stall.
 
+.PARAMETER ConnectNetwork
+    Give the boot-test VM a network connection (External switch preferred). Off by default so the
+    VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does not depend on a flaky
+    WinPE-phase DNS/NAT proxy. Only pass this (with an External switch for real DNS) to test online
+    activation.
+
+.PARAMETER Isolated
+    Make this run safe to execute in parallel with other Invoke-QuickBootTest runs against the same
+    working directory. Each isolated run gets its own uniquely-named Autounattend.xml and output ISO
+    (a short run tag is appended) so concurrent runs never clobber one another's answer file or ISO.
+    ISO authoring is always serialized across processes with a named mutex (New-BootableIso stages
+    the answer file inside the shared media\ tree before imaging it), so the fast rebuild step is
+    atomic while the slow VM boot tests overlap. Pass -Isolated to EVERY parallel window.
+
 .PARAMETER Edition
     Windows 11 edition to author into the answer file for this run (overrides the config's
-    Edition). Handy for testing the no-key path with -Edition Home before doing a keyed Pro build.
+    Edition). On multi-edition media a product key is what keeps the install hands-off.
 
 .PARAMETER ProductKey
-    Product key to bake into the answer file (overrides config Autounattend.ProductKey). REQUIRED
-    for any non-Home edition: Windows 11 24H2 Setup only installs hands-off without a key on Home;
-    Pro/Enterprise/etc. need a genuine key (the generic KMS key fails 24H2's new validation).
+    Product key to bake into the answer file (overrides config Autounattend.ProductKey). Applied in
+    the windowsPE UserData pass so multi-edition 24H2 media does not stop at the product-key page.
+    Without a key Setup may prompt on multi-edition media; a genuine key activates when valid.
+
+.PARAMETER UseGenericProductKey
+    Bake the edition's generic/default retail key (applied in windowsPE UserData, non-activating) -
+    use it for a fully hands-off run. Mutually exclusive with -ProductKey.
+
+.PARAMETER Profile
+    Debloat/customization profile(s) to apply for this run, overriding the config's Profile. Accepts
+    a list to combine baselines (e.g. -Profile gaming,opinionated). Because a quick boot test reuses
+    the already-serviced media\ folder, this does NOT re-run debloat; it re-derives the answer file,
+    so profile-driven Autounattend settings (e.g. the opinionated United States-International
+    keyboard) are reflected in the boot test.
 
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
@@ -59,10 +84,17 @@
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1 -SkipRebuild
     Just boot-test the ISO that is already on disk.
+
+.EXAMPLE
+    # In two separate elevated windows, boot-test two editions at once against the same media:
+    ./scripts/Invoke-QuickBootTest.ps1 -Edition Home -UseGenericProductKey -Isolated
+    ./scripts/Invoke-QuickBootTest.ps1 -Edition Pro  -ProductKey '<key>'    -Isolated
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
     Justification = 'Interactive local helper: coloured status lines are written to the host on purpose.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
+    Justification = "'Profile' is the documented, user-facing configuration concept (minimal/default/aggressive). The parameter is locally scoped and never writes the global profile path.")]
 param(
     [string] $ConfigPath,
     [string] $WorkingDirectory,
@@ -72,11 +104,22 @@ param(
     [switch] $SkipRebuild,
     [switch] $NoKeep,
     [switch] $ConnectVm,
+    [switch] $ConnectNetwork,
+    [switch] $Isolated,
     [string] $Edition,
-    [string] $ProductKey
+    [string] $ProductKey,
+    [switch] $UseGenericProductKey,
+    [ValidateSet('minimal', 'default', 'aggressive', 'gaming', 'opinionated')]
+    [string[]] $Profile
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Fail fast on mutually exclusive product-key inputs: -ProductKey bakes a specific key,
+# -UseGenericProductKey bakes the edition's generic key; supplying both is contradictory.
+if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+    throw "-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey '<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Join-Path $repoRoot 'src/WindowsIsoMaker/WindowsIsoMaker.psd1'
@@ -85,7 +128,12 @@ Import-Module $manifest -Force
 
 if (-not $ConfigPath) { $ConfigPath = Join-Path $repoRoot 'config/build.config.psd1' }
 if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "Config file not found: '$ConfigPath'." }
-$cfg = Get-BuildConfiguration -Path $ConfigPath
+$getConfigParams = @{ Path = $ConfigPath }
+if ($PSBoundParameters.ContainsKey('Profile') -and $Profile) {
+    $getConfigParams['Profile'] = $Profile
+    Write-Host "[QuickBootTest] Profile override: '$($Profile -join ', ')'." -ForegroundColor Cyan
+}
+$cfg = Get-BuildConfiguration @getConfigParams
 
 if (-not $Architecture) { $Architecture = [string]$cfg.Architecture }
 if (-not $Architecture) { $Architecture = 'amd64' }
@@ -99,15 +147,20 @@ if ($PSBoundParameters.ContainsKey('ProductKey')) {
     if ($cfg.Autounattend -isnot [hashtable]) { throw 'Config Autounattend section is not a hashtable; cannot apply -ProductKey.' }
     $cfg.Autounattend['ProductKey'] = $ProductKey
 }
+if ($UseGenericProductKey -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
+    if ($cfg.Autounattend -isnot [hashtable]) { throw 'Config Autounattend section is not a hashtable; cannot apply -UseGenericProductKey.' }
+    $cfg.Autounattend['ProductKey'] = 'generic'
+    Write-Host "[QuickBootTest] Using the edition's generic product key (skips the OOBE product-key page)." -ForegroundColor Cyan
+}
 
-# Windows 11 24H2 only installs hands-off WITHOUT a product key on Home. Non-Home editions need a
-# genuine key (the generic KMS key fails 24H2's new online validation), so require one up front.
+# The edition is tagged by the image metadata but on multi-edition media a key applied in windowsPE
+# UserData is what keeps Setup from stopping at the product-key page. Without a usable key the run
+# may prompt (and the OS stays unlicensed) - note that, but don't block the run.
 $resolvedEdition = [string]$cfg.Edition
 $resolvedKey = [string]$cfg.Autounattend['ProductKey']
-$isHomeEdition = $resolvedEdition -match '(?i)home'
 $keyIsUsable = -not [string]::IsNullOrWhiteSpace($resolvedKey) -and $resolvedKey -notmatch '(?i)^\s*(none|generic|auto)\s*$'
-if (-not $SkipRebuild -and -not $isHomeEdition -and -not $keyIsUsable) {
-    throw "Edition '$resolvedEdition' needs a genuine product key for an unattended 24H2 install (the generic KMS key fails 24H2's new validation). Re-run with -ProductKey '<your-key>', or test the no-key path with -Edition Home."
+if (-not $SkipRebuild -and -not $keyIsUsable) {
+    Write-Host "[QuickBootTest] No genuine product key set for edition '$resolvedEdition'; it installs hands-off from the image metadata but stays unlicensed until a key is entered. Pass -ProductKey '<your-key>' to activate, or -UseGenericProductKey for a non-activating generic key." -ForegroundColor Yellow
 }
 
 # --- Resolve the working directory that holds the serviced media. ---
@@ -121,12 +174,21 @@ if (-not $WorkingDirectory) {
 Write-Host "[QuickBootTest] Working directory: '$WorkingDirectory'." -ForegroundColor Cyan
 
 $mediaRoot = Join-Path $WorkingDirectory 'media'
-$autounattend = Join-Path $WorkingDirectory 'Autounattend.xml'
+# -Isolated: give this run its own answer file + ISO so parallel runs don't clobber each other.
+$runTag = if ($Isolated) { [guid]::NewGuid().ToString('N').Substring(0, 8) } else { '' }
+$autounattend = if ($runTag) {
+    Join-Path $WorkingDirectory "Autounattend-$runTag.xml"
+}
+else {
+    Join-Path $WorkingDirectory 'Autounattend.xml'
+}
 if (-not $IsoPath) {
     $edition = ([string]$cfg.Edition) -replace '[^A-Za-z0-9]', ''
     if (-not $edition) { $edition = 'Pro' }
-    $IsoPath = Join-Path $WorkingDirectory ("Windows11-$edition-$Architecture-bootcheck.iso")
+    $suffix = if ($runTag) { "-$runTag" } else { '' }
+    $IsoPath = Join-Path $WorkingDirectory ("Windows11-$edition-$Architecture-bootcheck$suffix.iso")
 }
+if ($Isolated) { Write-Host "[QuickBootTest] Isolated run tag: '$runTag'." -ForegroundColor Cyan }
 
 if (-not $SkipRebuild) {
     if (-not (Test-Path -LiteralPath $mediaRoot)) {
@@ -136,8 +198,26 @@ if (-not $SkipRebuild) {
     Write-Host "[QuickBootTest] Regenerating Autounattend.xml -> '$autounattend'." -ForegroundColor Cyan
     New-AutounattendXml -Config $cfg -Architecture $Architecture -OutputPath $autounattend | Out-Null
 
-    Write-Host "[QuickBootTest] Rebuilding ISO (no re-servicing) -> '$IsoPath'." -ForegroundColor Cyan
-    New-BootableIso -MediaRoot $mediaRoot -Architecture $Architecture -OutputIsoPath $IsoPath -AutounattendPath $autounattend | Out-Null
+    # New-BootableIso copies the answer file INTO the shared media\ tree before oscdimg images it,
+    # so two concurrent authoring passes would race on media\Autounattend.xml (and SHA256SUMS). A
+    # system-wide named mutex keyed on the media path makes the copy+image atomic; the far slower
+    # VM boot tests still overlap freely.
+    $mediaKey = [System.BitConverter]::ToString(
+        [System.Security.Cryptography.SHA1]::Create().ComputeHash(
+            [System.Text.Encoding]::UTF8.GetBytes($mediaRoot.ToLowerInvariant()))
+    ).Replace('-', '').Substring(0, 16)
+    $mutex = [System.Threading.Mutex]::new($false, "Global\WindowsIsoMaker-media-$mediaKey")
+    $haveLock = $false
+    try {
+        try { $haveLock = $mutex.WaitOne() }
+        catch [System.Threading.AbandonedMutexException] { $haveLock = $true }
+        Write-Host "[QuickBootTest] Rebuilding ISO (no re-servicing) -> '$IsoPath'." -ForegroundColor Cyan
+        New-BootableIso -MediaRoot $mediaRoot -Architecture $Architecture -OutputIsoPath $IsoPath -AutounattendPath $autounattend | Out-Null
+    }
+    finally {
+        if ($haveLock) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
 }
 elseif (-not (Test-Path -LiteralPath $IsoPath)) {
     throw "-SkipRebuild was set but the ISO '$IsoPath' does not exist."
@@ -157,7 +237,7 @@ $keep = -not $NoKeep
 $diagnostics = Join-Path $WorkingDirectory 'boottest-diagnostics'
 Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
 Write-Host "[QuickBootTest] Windows Setup logs (if any) will be harvested to '$diagnostics'." -ForegroundColor Cyan
-$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -DiagnosticsPath $diagnostics -Verbose
+$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -ConnectNetwork:$ConnectNetwork -DiagnosticsPath $diagnostics -Verbose
 
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }
@@ -185,7 +265,7 @@ if ($boot -and $boot.PSObject.Properties.Match('Diagnostics').Count -and $boot.D
     }
     else {
         Write-Host "[QuickBootTest] No Setup logs were written to the VHDX (looked in '$($boot.Diagnostics.Path)')." -ForegroundColor Yellow
-        Write-Host "[QuickBootTest] That points to a windowsPE-phase failure (answer-file/product-key rejection) whose logs live on the WinPE RAM disk: Shift+F10 -> X:\Windows\Panther\setupact.log." -ForegroundColor Yellow
+        Write-Host "[QuickBootTest] That points to a windowsPE-phase failure (answer-file/product-key rejection) whose logs live on the WinPE RAM disk (X:). Shift+F10 at the failing screen, then: 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\' (incl. ConX's X:\Windows\Logs\MoSetup\BlueBox.log) and re-run teardown to harvest them." -ForegroundColor Yellow
     }
 }
 return $result
