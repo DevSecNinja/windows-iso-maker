@@ -112,14 +112,34 @@ param(
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            @('Home', 'HomeN', 'Pro', 'ProN', 'ProForWorkstations', 'ProEducation', 'Education',
+                'EducationN', 'Enterprise', 'EnterpriseN', 'EnterpriseLTSC2024', 'IoTEnterpriseLTSC2024') |
+                Where-Object { $_ -like "$wordToComplete*" } |
+                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        })]
     [string] $Edition,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            @('en-US', 'en-GB', 'nl-NL', 'de-DE', 'fr-FR', 'es-ES', 'it-IT', 'pt-BR', 'pt-PT', 'pl-PL',
+                'sv-SE', 'da-DK', 'nb-NO', 'fi-FI', 'cs-CZ', 'ja-JP', 'ko-KR', 'zh-CN', 'zh-TW') |
+                Where-Object { $_ -like "$wordToComplete*" } |
+                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        })]
     [string] $Language,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            @('latest', '24H2', '23H2') |
+                Where-Object { $_ -like "$wordToComplete*" } |
+                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        })]
     [string] $Release,
 
     [Parameter()]
@@ -127,9 +147,37 @@ param(
     [string[]] $Profile,
 
     [Parameter()]
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            try {
+                $configDir = Join-Path -Path $PSScriptRoot -ChildPath 'config'
+                Get-ChildItem -LiteralPath $configDir -Filter 'catalog.*.psd1' -File -ErrorAction Stop |
+                    ForEach-Object { (Import-PowerShellDataFile -LiteralPath $_.FullName).Entries } |
+                    Where-Object { $_.Id -and $_.Id -like "$wordToComplete*" } |
+                    Sort-Object -Property Id -Unique |
+                    ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new(
+                            $_.Id, $_.Id, 'ParameterValue', ('[{0}] {1}' -f $_.Category, $_.Description))
+                    }
+            } catch { Write-Verbose "Catalog-id completion skipped: $_" }
+        })]
     [string[]] $EnableCatalogId,
 
     [Parameter()]
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            try {
+                $configDir = Join-Path -Path $PSScriptRoot -ChildPath 'config'
+                Get-ChildItem -LiteralPath $configDir -Filter 'catalog.*.psd1' -File -ErrorAction Stop |
+                    ForEach-Object { (Import-PowerShellDataFile -LiteralPath $_.FullName).Entries } |
+                    Where-Object { $_.Id -and $_.Id -like "$wordToComplete*" } |
+                    Sort-Object -Property Id -Unique |
+                    ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new(
+                            $_.Id, $_.Id, 'ParameterValue', ('[{0}] {1}' -f $_.Category, $_.Description))
+                    }
+            } catch { Write-Verbose "Catalog-id completion skipped: $_" }
+        })]
     [string[]] $DisableCatalogId,
 
     [Parameter()]

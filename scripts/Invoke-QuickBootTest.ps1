@@ -115,6 +115,13 @@ param(
     [ValidateSet('HyperV', 'VMware')]
     [string] $Hypervisor,
     [switch] $Isolated,
+    [ArgumentCompleter({
+            param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+            @('Home', 'HomeN', 'Pro', 'ProN', 'ProForWorkstations', 'ProEducation', 'Education',
+                'EducationN', 'Enterprise', 'EnterpriseN', 'EnterpriseLTSC2024', 'IoTEnterpriseLTSC2024') |
+                Where-Object { $_ -like "$wordToComplete*" } |
+                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        })]
     [string] $Edition,
     [string] $ProductKey,
     [switch] $UseGenericProductKey,

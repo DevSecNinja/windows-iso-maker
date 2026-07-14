@@ -55,7 +55,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-Edition` / `-Language` / `-Release` | Base image overrides. Non-Home editions require `-IsoPath` (business ISO). |
 | `-IsoPath` | Pre-downloaded base ISO (skips Fido). **Required for non-Home editions** (Pro / Education / Enterprise / ...), which only ship on the business/volume ISO. |
 | `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming` \| `opinionated`. Accepts a comma-separated list to combine, e.g. `-Profile gaming,opinionated`. |
-| `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
+| `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. **Tab-completes** live from the change catalog — press <kbd>Tab</kbd> to cycle ids; each suggestion's tooltip shows its `[Category]` and description. |
 | `-ProductKey` | Override the Autounattend product key. Applied in the **`windowsPE`** UserData pass so 24H2 multi-edition media does not stop at the product-key page. `''`/`none` omit the key (Setup may prompt on multi-edition media); a genuine key activates when valid. |
 | `-UseGenericProductKey` | Bake the edition's generic key (applied in `windowsPE`, non-activating): the **retail generic** key for Home (consumer ISO) or the **GVLK / KMS client** key for business editions (business ISO). Makes a fully hands-off build. **Mutually exclusive** with `-ProductKey` (passing both is an error). |
 | `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
@@ -64,6 +64,12 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-Hypervisor` | `HyperV` (default) \| `VMware`. Selects the boot-test hypervisor. `VMware` uses VMware Workstation Pro and boots NAT-connected by default (real WinPE DNS for 24H2 ConX validation); it must be **downloaded manually** (Broadcom login-gated, no winget), and the build prints the download link + guidance when it's missing. |
 | `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing until Enter, then clean up. Attach with `vmconnect` (Hyper-V) or the VMware console (`vmware -t <vmx>`). |
 | `-WhatIf` | Dry-run the whole pipeline (no media modified). |
+
+> **Tab completion.** `-Edition`, `-Language`, `-Release`, `-EnableCatalogId` and `-DisableCatalogId`
+> all offer <kbd>Tab</kbd> suggestions (alongside the fixed-choice `-Architecture`, `-Profile`,
+> `-AccountMode` and `-Hypervisor`). The catalog-id parameters complete live from `config/catalog.*.psd1`,
+> so new entries appear automatically. Edition/Language/Release suggestions are advisory — any valid
+> value is still accepted even if it isn't listed.
 
 ## Examples
 
