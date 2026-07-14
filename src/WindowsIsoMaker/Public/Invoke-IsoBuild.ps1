@@ -64,6 +64,11 @@ function Invoke-IsoBuild {
     .PARAMETER KeepBootTestVm
         With -BootTest, keep the throwaway VM alive and pause for manual testing (vmconnect)
         until you press Enter, then tear it down. No effect unless the boot test runs.
+    .PARAMETER Hypervisor
+        Which hypervisor runs the -BootTest VM: 'HyperV' (default) or 'VMware' (VMware Workstation).
+        Overrides the config Hypervisor field. VMware's NAT gives WinPE real DNS for a 24H2+ ConX
+        online product-key/edition check; when VMware is selected but not installed, the boot test
+        surfaces the winget install command + manual-download guidance instead of failing hard.
     .EXAMPLE
         Invoke-IsoBuild -ConfigPath config/build.config.psd1 -Architecture amd64
     .EXAMPLE
@@ -130,6 +135,10 @@ function Invoke-IsoBuild {
         [switch] $BootTest,
 
         [Parameter()]
+        [ValidateSet('HyperV', 'VMware')]
+        [string] $Hypervisor,
+
+        [Parameter()]
         [switch] $KeepBootTestVm
     )
 
@@ -179,6 +188,10 @@ function Invoke-IsoBuild {
     # StrictMode-safe: a Config built by tests may not carry KeepBootTestVm.
     $configKeepVm = if ($Config.PSObject.Properties.Match('KeepBootTestVm').Count -gt 0) { [bool]$Config.KeepBootTestVm } else { $false }
     $wantKeepBootTestVm = $KeepBootTestVm.IsPresent -or $configKeepVm
+    # Hypervisor for the opt-in boot test: explicit param wins, else the config's Hypervisor field
+    # (StrictMode-safe: a Config built by tests may not carry it), defaulting to Hyper-V.
+    $configHypervisor = if ($Config.PSObject.Properties.Match('Hypervisor').Count -gt 0 -and $Config.Hypervisor) { [string]$Config.Hypervisor } else { 'HyperV' }
+    $bootHypervisor = if ($PSBoundParameters.ContainsKey('Hypervisor')) { $Hypervisor } else { $configHypervisor }
     $toolVersions = Get-BuildToolVersion -Config $Config
 
     Write-BuildLog -Level Information -Component 'Invoke-IsoBuild' -Message "Starting build (Arch=$($Config.Architecture), Edition=$($Config.Edition), Profile=$($Config.Profile), Preview=$isPreview)."
@@ -277,7 +290,7 @@ function Invoke-IsoBuild {
         # 4h. Validate the produced ISO. Harvest any boot-test Setup logs into the output dir so a
         # failed unattended install is diagnosable locally and in CI (uploaded with the artifacts).
         $diagPath = Join-Path $Config.OutputDirectory 'boottest-diagnostics'
-        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest -KeepBootTestVm:$wantKeepBootTestVm -DiagnosticsPath $diagPath
+        $integrity = Test-ImageIntegrity -IsoPath $outIso -Architecture $Config.Architecture -BootTest:$wantBootTest -KeepBootTestVm:$wantKeepBootTestVm -Hypervisor $bootHypervisor -DiagnosticsPath $diagPath
         $artifact | Add-Member -NotePropertyName 'IntegrityResult' -NotePropertyValue $integrity -Force
 
         # Structural checks are authoritative: an image that fails them is bad media -> fatal.

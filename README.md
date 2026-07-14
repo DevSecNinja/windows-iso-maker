@@ -44,8 +44,8 @@ Most tools in this space fall into a few buckets. windows-iso-maker deliberately
 On top of that, every build is **verifiable**: official media in, a documented change set applied,
 SHA256 + SLSA provenance + a CycloneDX SBOM and an Image BOM out — and each change is **cited,
 evidence-graded and reversible** (grade-3/community changes are never on by default). It's built to
-be run **hands-off** (auto local or Entra account, generic/genuine product key, opt-in Hyper-V boot
-test) and **repeatably** (locally or in CI, amd64 and arm64), not clicked through once by hand.
+be run **hands-off** (auto local or Entra account, generic/genuine product key, opt-in Hyper-V or
+VMware boot test) and **repeatably** (locally or in CI, amd64 and arm64), not clicked through once by hand.
 
 ## Quick start (local, on Windows)
 

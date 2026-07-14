@@ -131,6 +131,34 @@ Describe 'Get-BuildConfiguration' {
         }
     }
 
+    Context 'Hypervisor (boot-test provider selection)' {
+        It 'defaults to HyperV when the config omits it' {
+            (Get-BuildConfiguration -Path $script:DefaultConfig).Hypervisor | Should -Be 'HyperV'
+        }
+
+        It 'reads the hypervisor from the config file' {
+            $vmwareConfig = Join-Path $script:TempRoot 'vmware.psd1'
+            "@{ Edition = 'Pro'; Language = 'en-US'; Architecture = 'amd64'; Profile = 'default'; Hypervisor = 'VMware' }" |
+                Set-Content -LiteralPath $vmwareConfig -Encoding UTF8
+            (Get-BuildConfiguration -Path $vmwareConfig).Hypervisor | Should -Be 'VMware'
+        }
+
+        It 'applies WIM_HYPERVISOR over the file value' {
+            $env:WIM_HYPERVISOR = 'vmware'
+            (Get-BuildConfiguration -Path $script:DefaultConfig).Hypervisor | Should -Be 'VMware'
+        }
+
+        It 'normalizes case/space/hyphen variants to a canonical name' {
+            $env:WIM_HYPERVISOR = 'Hyper-V'
+            (Get-BuildConfiguration -Path $script:DefaultConfig).Hypervisor | Should -Be 'HyperV'
+        }
+
+        It 'throws on an unknown hypervisor' {
+            $env:WIM_HYPERVISOR = 'virtualbox'
+            { Get-BuildConfiguration -Path $script:DefaultConfig } | Should -Throw
+        }
+    }
+
     Context 'Catalog selection (profile, include/exclude, opt-in removals)' {
         It 'enables the default-ON Recall and Widgets entries by default' {
             $cfg = Get-BuildConfiguration -Path $script:DefaultConfig

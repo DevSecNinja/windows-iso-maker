@@ -67,6 +67,12 @@
 .PARAMETER BootTest
     Opt-in VM boot validation in addition to the default structural integrity checks.
 
+.PARAMETER Hypervisor
+    Which hypervisor runs the -BootTest VM: 'HyperV' (default) or 'VMware' (VMware Workstation).
+    VMware's NAT gives WinPE real DNS for a 24H2+ ConX online product-key/edition check. If VMware
+    is selected but not installed, the boot test shows the winget install command it would run and
+    guided manual-download/setup steps instead of failing hard.
+
 .PARAMETER KeepBootTestVm
     With -BootTest, keep the throwaway VM running and pause for manual testing (attach with
     vmconnect) until you press Enter, then power it off and clean up.
@@ -146,6 +152,10 @@ param(
     [switch] $BootTest,
 
     [Parameter()]
+    [ValidateSet('HyperV', 'VMware')]
+    [string] $Hypervisor,
+
+    [Parameter()]
     [switch] $KeepBootTestVm
 )
 
@@ -189,7 +199,7 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath', 'ProductKey', 'AccountMode') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath', 'ProductKey', 'AccountMode', 'Hypervisor') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }

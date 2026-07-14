@@ -30,8 +30,9 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | `AzureUpload` | Optional off-box artifact storage (see [azure-upload.md](azure-upload.md)). |
 | `WorkingDirectory` / `OutputDirectory` | Scoped working + output locations. |
 | `IsoPath` | Provide a pre-downloaded ISO to skip Fido. **Required for every non-Home edition** (Pro / Education / Enterprise / LTSC / IoT — Fido only serves the consumer ISO, whose Pro/Education images won't activate with a volume/GVLK key). |
-| `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway Hyper-V VM and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
-| `KeepBootTestVm` | With `BootTest`: after the test resolves, keep the throwaway VM alive and pause until you press Enter so you can attach with `vmconnect localhost <vm>` and test interactively; the VM (and its VHDX) are still cleaned up afterwards. |
+| `BootTest` | Opt-in VM boot validation: boots the ISO in a throwaway VM (Hyper-V or VMware, see `Hypervisor`) and polls (bounded timeout) until the guest heartbeat is healthy, or the VM stays continuously Running long enough to prove it booted; default is structural checks only. |
+| `Hypervisor` | Which hypervisor runs the opt-in boot test: `HyperV` (default) or `VMware` (VMware Workstation Pro). Hyper-V boots the VM **offline** by default; VMware boots it **NAT-connected** by default so WinPE has real DNS for 24H2 "ConX" online product-key/edition validation (issue #5). If VMware is selected but not installed, the build offers to install it via winget (showing the exact command) and prints Broadcom manual-download + first-run guidance. |
+| `KeepBootTestVm` | With `BootTest`: after the test resolves, keep the throwaway VM alive and pause until you press Enter so you can attach interactively (`vmconnect localhost <vm>` for Hyper-V, `vmware -t <vmx>` for VMware); the VM and its disk are still cleaned up afterwards. |
 | `CompressionFormat` | `zip` or `7z`. |
 | `FidoPath` / `OscdimgPath` | Tool locations. `FidoPath` empty = download the pinned Fido at build time (set a path only for offline use); `OscdimgPath` empty = auto-detect from a Windows ADK install. |
 
@@ -60,7 +61,8 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |
-| `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing (vmconnect) until Enter, then clean up. |
+| `-Hypervisor` | `HyperV` (default) \| `VMware`. Selects the boot-test hypervisor. `VMware` uses VMware Workstation Pro and boots NAT-connected by default (real WinPE DNS for 24H2 ConX validation); if it is not installed the build offers a winget install (showing the command) and manual-download guidance. |
+| `-KeepBootTestVm` | With `-BootTest`: keep the VM and pause for manual testing until Enter, then clean up. Attach with `vmconnect` (Hyper-V) or the VMware console (`vmware -t <vmx>`). |
 | `-WhatIf` | Dry-run the whole pipeline (no media modified). |
 
 ## Examples
@@ -99,7 +101,46 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 
 # Environment-variable overrides (CI-friendly)
 $env:WIM_ARCH = 'arm64'; $env:WIM_ENABLE_CATALOG_ID = 'feature-wsl'; ./build.ps1
+
+# Boot-test the built ISO in a throwaway Hyper-V VM (offline by default)
+./build.ps1 -BootTest
+
+# Boot-test in VMware Workstation instead (NAT-connected: real WinPE DNS for 24H2 ConX validation).
+# If VMware isn't installed you'll be shown the winget command and asked to confirm the install.
+./build.ps1 -BootTest -Hypervisor VMware
+
+# Keep the VMware VM up after the test so you can watch Setup / press Shift+F10 for logs
+./build.ps1 -BootTest -Hypervisor VMware -KeepBootTestVm
 ```
+
+## Boot-test hypervisors (Hyper-V vs VMware)
+
+The opt-in boot test (`-BootTest`) can run under either hypervisor via `-Hypervisor` (or the
+`Hypervisor` config field / `WIM_HYPERVISOR` env var):
+
+- **`HyperV`** (default) — boots a throwaway Gen2 VM **offline**. Requires the Hyper-V feature and
+  membership in the *Hyper-V Administrators* group.
+- **`VMware`** — boots a throwaway VM under **VMware Workstation Pro**, **NAT-connected by default**
+  so WinPE gets working DNS. This is the recommended path for diagnosing the 24H2 "ConX" Setup
+  *"failed to validate the product key"* failure (issue #5), which needs real online validation.
+  Pass `-ConnectNetwork:$false` to force it offline.
+
+If `-Hypervisor VMware` is selected but VMware Workstation is not installed, the build prints the
+exact winget command it would run and asks for consent:
+
+```text
+winget install --id VMware.WorkstationPro --exact --accept-source-agreements --accept-package-agreements
+```
+
+Broadcom now gates the VMware download, so the winget package may be delisted and the install can
+fail. In that case the build prints step-by-step manual guidance: download the **free-for-personal-use**
+VMware Workstation Pro from <https://www.vmware.com/go/getworkstation>, install it, accept the
+personal-use licence at first launch, then re-run with `-Hypervisor VMware`.
+
+> **Log harvest note:** modern VMware Workstation dropped `vmware-mount`, so the build cannot mount
+> the VM's virtual disk offline to harvest Setup logs. Use `-KeepBootTestVm` to keep the VM up, then
+> in the VMware console press **Shift+F10** at the Setup screen and copy the WinPE logs (e.g.
+> `robocopy X:\Windows\Logs C:\pe-logs /E`).
 
 ## Outputs
 

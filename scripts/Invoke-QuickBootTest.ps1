@@ -44,10 +44,16 @@
     watch Setup and press Shift+F10 to capture logs on a stall.
 
 .PARAMETER ConnectNetwork
-    Give the boot-test VM a network connection (External switch preferred). Off by default so the
-    VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does not depend on a flaky
-    WinPE-phase DNS/NAT proxy. Only pass this (with an External switch for real DNS) to test online
-    activation.
+    Give the boot-test VM a network connection (External switch preferred). Off by default on
+    Hyper-V so the VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does not
+    depend on a flaky WinPE-phase DNS/NAT proxy. On VMware the boot test is NETWORKED (NAT) by
+    default; pass -ConnectNetwork:$false to force it offline there.
+
+.PARAMETER Hypervisor
+    Which hypervisor runs the boot-test VM: 'HyperV' (default, or the config's Hypervisor) or
+    'VMware' (VMware Workstation). VMware's NAT gives WinPE real DNS for a 24H2+ ConX online
+    product-key/edition check; when VMware isn't installed this shows the winget install command it
+    would run and guided manual-download/setup steps.
 
 .PARAMETER Isolated
     Make this run safe to execute in parallel with other Invoke-QuickBootTest runs against the same
@@ -105,6 +111,8 @@ param(
     [switch] $NoKeep,
     [switch] $ConnectVm,
     [switch] $ConnectNetwork,
+    [ValidateSet('HyperV', 'VMware')]
+    [string] $Hypervisor,
     [switch] $Isolated,
     [string] $Edition,
     [string] $ProductKey,
@@ -223,21 +231,52 @@ elseif (-not (Test-Path -LiteralPath $IsoPath)) {
     throw "-SkipRebuild was set but the ISO '$IsoPath' does not exist."
 }
 
+# --- Resolve the hypervisor for the boot test (param wins, else config, else Hyper-V). ---
+$bootHypervisor = if ($PSBoundParameters.ContainsKey('Hypervisor') -and $Hypervisor) {
+    $Hypervisor
+}
+elseif ($cfg.PSObject.Properties.Match('Hypervisor').Count -and $cfg.Hypervisor) {
+    [string]$cfg.Hypervisor
+}
+else { 'HyperV' }
+Write-Host "[QuickBootTest] Hypervisor: '$bootHypervisor'." -ForegroundColor Cyan
+
 # --- Readiness preflight (clear, actionable message before we try to spin a VM). ---
-# Get-HyperVReadiness is an internal helper; invoke it inside the module's scope.
+# The readiness helpers are internal; invoke them inside the module's scope. For VMware, offer the
+# interactive winget install (+ manual-download guidance) when it is missing, then re-check.
 $module = Get-Module WindowsIsoMaker | Select-Object -First 1
-$readiness = & $module { Get-HyperVReadiness }
+$readiness = & $module { param($h) if ($h -eq 'VMware') { Get-VMwareReadiness } else { Get-HyperVReadiness } } $bootHypervisor
+if (-not $readiness.Ready -and $bootHypervisor -eq 'VMware') {
+    Write-Warning "[QuickBootTest] $($readiness.Reason)"
+    $installed = & $module { Install-VMwareWorkstation }
+    if ($installed) {
+        $readiness = & $module { Get-VMwareReadiness }
+    }
+}
 if (-not $readiness.Ready) {
-    Write-Warning "[QuickBootTest] Hyper-V is not ready for a boot test: $($readiness.Reason)"
+    Write-Warning "[QuickBootTest] $($bootHypervisor) is not ready for a boot test: $($readiness.Reason)"
     Write-Warning "[QuickBootTest] The ISO was still (re)built at '$IsoPath'; fix the above and re-run, or pass -SkipRebuild."
     return
 }
 
 $keep = -not $NoKeep
 $diagnostics = Join-Path $WorkingDirectory 'boottest-diagnostics'
-Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep) on '$IsoPath'." -ForegroundColor Green
+Write-Host "[QuickBootTest] Starting VM boot test (KeepBootTestVm=$keep, Hypervisor=$bootHypervisor) on '$IsoPath'." -ForegroundColor Green
 Write-Host "[QuickBootTest] Windows Setup logs (if any) will be harvested to '$diagnostics'." -ForegroundColor Cyan
-$result = Test-ImageIntegrity -IsoPath $IsoPath -Architecture $Architecture -BootTest -KeepBootTestVm:$keep -ConnectVm:$ConnectVm -ConnectNetwork:$ConnectNetwork -DiagnosticsPath $diagnostics -Verbose
+$bootTestParams = @{
+    IsoPath         = $IsoPath
+    Architecture    = $Architecture
+    BootTest        = $true
+    KeepBootTestVm  = $keep
+    ConnectVm       = $ConnectVm
+    Hypervisor      = $bootHypervisor
+    DiagnosticsPath = $diagnostics
+    Verbose         = $true
+}
+# Only forward ConnectNetwork when explicitly set, so each hypervisor keeps its own default
+# (Hyper-V offline, VMware NAT) unless the caller overrides it.
+if ($PSBoundParameters.ContainsKey('ConnectNetwork')) { $bootTestParams['ConnectNetwork'] = $ConnectNetwork }
+$result = Test-ImageIntegrity @bootTestParams
 
 $icon = if ($result.Passed) { 'PASS' } else { 'FAIL' }
 $color = if ($result.Passed) { 'Green' } else { 'Red' }

@@ -131,6 +131,11 @@ Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
 > `-UseGenericProductKey` (bakes the edition's GVLK), then apply your genuine MAK/retail key **after**
 > install: `slmgr.vbs /ipk <your-key>` then `slmgr.vbs /ato` (or activate via KMS / AD-based / a
 > digital licence).
+>
+> 💡 **To reproduce/diagnose this with real DNS**, run the boot test under VMware
+> (`-BootTest -Hypervisor VMware`): the VMware VM is **NAT-connected by default**, which gives WinPE
+> working name resolution (unlike the Hyper-V Default Switch), so online key/edition validation can
+> actually complete. See [usage.md](usage.md#boot-test-hypervisors-hyper-v-vs-vmware).
 
 `ProductKey` controls whether (and which) `<ProductKey>` element is written into the `windowsPE` pass:
 
@@ -146,9 +151,11 @@ with `-ProductKey` (passing both is an error). Use it for a fully hands-off buil
 the consumer ISO, or a business edition (Pro, Education, ...) off a business/volume ISO supplied via
 `-IsoPath`.
 
-`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
-`-Profile` overrides, so you can test the hands-off path with `-Edition Home -UseGenericProductKey`
-and do a keyed build with `-ProductKey '<your-key>'`. `-Profile` accepts one or more profiles (e.g.
+`scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`,
+`-Profile`, and `-Hypervisor` (`HyperV` | `VMware`) overrides, so you can test the hands-off path with
+`-Edition Home -UseGenericProductKey` and do a keyed build with `-ProductKey '<your-key>'`. Use
+`-Hypervisor VMware` to run the quick boot test under VMware Workstation (NAT-connected, real DNS).
+`-Profile` accepts one or more profiles (e.g.
 `-Profile gaming,opinionated`);
 because a quick boot test reuses the already-serviced `media\` folder it does **not** re-run debloat,
 but it re-derives the answer file, so profile-driven `Autounattend` settings (such as the opinionated

@@ -82,6 +82,14 @@
     # --- Validation (FR-023) ---
     BootTest = $false             # opt-in VM boot test; default = structural checks only
     KeepBootTestVm = $false       # with BootTest: keep the VM & pause for manual testing until Enter
+    # Which hypervisor runs the opt-in boot test VM:
+    #   'HyperV' (default) = Windows Hyper-V; boots OFFLINE by default (dodges the flaky WinPE
+    #                        Default Switch DNS proxy).
+    #   'VMware'           = VMware Workstation; boots NETWORKED (NAT) by default so WinPE has real
+    #                        DNS for a 24H2+ ConX online product-key/edition check (see issue #5).
+    #                        If VMware isn't installed, the boot test shows the winget install
+    #                        command it would run + guided manual-download/setup steps.
+    Hypervisor = 'HyperV'         # 'HyperV' | 'VMware'
 
     # --- Artifact ---
     CompressionFormat = 'zip'     # 'zip' | '7z'

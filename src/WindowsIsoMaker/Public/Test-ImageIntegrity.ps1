@@ -24,9 +24,16 @@ function Test-ImageIntegrity {
         Best-effort (skipped on headless/CI hosts). Only meaningful together with -BootTest.
     .PARAMETER ConnectNetwork
         Opt-in: give the boot-test VM a network connection (External switch preferred). Off by
-        default so the VM boots fully offline and ConX (the redesigned Setup on 24H2+ media) does
-        not depend on a flaky WinPE-phase DNS/NAT proxy. Only meaningful together with -BootTest.
+        default on Hyper-V so the VM boots fully offline and ConX (the redesigned Setup on 24H2+
+        media) does not depend on a flaky WinPE-phase DNS/NAT proxy. On VMware the boot test is
+        NETWORKED by default (VMware NAT gives WinPE working DNS for ConX online validation); pass
+        -ConnectNetwork:$false to force it offline there. Only meaningful together with -BootTest.
         Test-ImageIntegrity -IsoPath C:\out\win11.iso -Architecture amd64
+    .PARAMETER Hypervisor
+        Which hypervisor runs the -BootTest VM: 'HyperV' (default) or 'VMware' (VMware Workstation).
+        VMware is offered because its NAT gives WinPE real DNS, which a 24H2+ ConX Setup online
+        product-key/edition check needs. When VMware is selected but not installed, the boot test
+        surfaces the winget install command and manual-download guidance instead of failing hard.
     .OUTPUTS
         PSCustomObject with Passed, Structural (per-check results), an optional Boot result, and
         DiagnosticsPath (folder where the boot-test Windows Setup logs were harvested, if any).
@@ -53,6 +60,10 @@ function Test-ImageIntegrity {
 
         [Parameter()]
         [switch] $ConnectNetwork,
+
+        [Parameter()]
+        [ValidateSet('HyperV', 'VMware')]
+        [string] $Hypervisor = 'HyperV',
 
         [Parameter()]
         [string] $DiagnosticsPath
@@ -100,8 +111,19 @@ function Test-ImageIntegrity {
 
     $bootResult = $null
     if ($BootTest) {
-        Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message 'Opt-in VM boot test requested.'
-        $bootResult = Invoke-VmBootTest -IsoPath $IsoPath -Architecture $Architecture -KeepBootTestVm:$KeepBootTestVm -ConnectVm:$ConnectVm -ConnectNetwork:$ConnectNetwork -DiagnosticsPath $DiagnosticsPath
+        Write-BuildLog -Level Information -Component 'Test-ImageIntegrity' -Message "Opt-in VM boot test requested (Hypervisor=$Hypervisor)."
+        $bootParams = @{
+            IsoPath         = $IsoPath
+            Architecture    = $Architecture
+            KeepBootTestVm  = $KeepBootTestVm
+            ConnectVm       = $ConnectVm
+            Hypervisor      = $Hypervisor
+            DiagnosticsPath = $DiagnosticsPath
+        }
+        # Only forward ConnectNetwork when the caller set it, so each hypervisor keeps its own
+        # default (Hyper-V offline, VMware NAT) unless explicitly overridden.
+        if ($PSBoundParameters.ContainsKey('ConnectNetwork')) { $bootParams['ConnectNetwork'] = $ConnectNetwork }
+        $bootResult = Invoke-VmBootTest @bootParams
     }
 
     $passed = $structuralPassed -and ($null -eq $bootResult -or $bootResult.Passed)
@@ -231,15 +253,20 @@ function Invoke-VmBootTest {
         Start-BootTestVmConnect seam) so the operator can watch Setup interactively.
     .PARAMETER ConnectNetwork
         When set, attaches a virtual switch (External preferred) so the boot-test VM has network.
-        Off by default: the VM boots fully offline so ConX (the redesigned Setup on 24H2+ media)
-        takes its offline path and does not depend on a flaky WinPE-phase DNS/NAT proxy.
+        On Hyper-V it is off by default: the VM boots fully offline so ConX (the redesigned Setup on
+        24H2+ media) takes its offline path and does not depend on a flaky WinPE-phase DNS/NAT proxy.
+        On VMware the boot test is NETWORKED by default (NAT gives WinPE real DNS for ConX online
+        validation); pass -ConnectNetwork:$false to force it offline there.
+    .PARAMETER Hypervisor
+        'HyperV' (default) or 'VMware'. Selects which provider seams create/poll/tear-down the VM.
     .PARAMETER DiagnosticsPath
         Directory to harvest Windows Setup logs into. After the VM is stopped (and before it is
         removed) the throwaway VHDX is mounted offline and any Windows Setup logs (Panther
         setupact.log / setuperr.log from \$WINDOWS.~BT\Sources\Panther and \Windows\Panther, the ConX
         \Windows\Logs\MoSetup\BlueBox.log, setupapi.dev.log, plus any pe-logs the operator copied off
         the WinPE RAM disk) are copied here so an unattended-install failure can be diagnosed - in
-        CI too, where there is no interactive VM. When empty, harvesting is skipped.
+        CI too, where there is no interactive VM. When empty, harvesting is skipped. On VMware the
+        offline disk harvest is best-effort (it needs vmware-mount, dropped from modern Workstation).
     .OUTPUTS
         PSCustomObject with Passed, Detail, Method, State, ElapsedSeconds, and (when a diagnostics
         harvest runs) InstallProgressed.
@@ -255,28 +282,58 @@ function Invoke-VmBootTest {
         [Parameter()][switch] $KeepBootTestVm,
         [Parameter()][switch] $ConnectVm,
         [Parameter()][switch] $ConnectNetwork,
+        [Parameter()][ValidateSet('HyperV', 'VMware')][string] $Hypervisor = 'HyperV',
         [Parameter()][string] $DiagnosticsPath
     )
 
-    # Runtime-only: requires Hyper-V (and an ARM64 host for arm64 media). Probe all prerequisites
-    # (module, service, privilege) up front so an environmental miss yields an actionable reason
-    # rather than a cryptic New-VM failure. This is a 'None' (environmental) result, not a boot fail.
-    $readiness = Get-HyperVReadiness
+    $isVMware = ($Hypervisor -eq 'VMware')
+
+    # Effective network decision: Hyper-V stays offline unless -ConnectNetwork is passed; VMware is
+    # NAT-connected by default (real WinPE DNS for ConX) unless the caller explicitly opts out.
+    $connectNetwork = if ($isVMware) {
+        if ($PSBoundParameters.ContainsKey('ConnectNetwork')) { [bool]$ConnectNetwork } else { $true }
+    }
+    else {
+        [bool]$ConnectNetwork
+    }
+
+    # Runtime-only: probe all prerequisites up front so an environmental miss yields an actionable
+    # reason (e.g. the winget install command for VMware) rather than a cryptic provisioning
+    # failure. This is a 'None' (environmental) result, not a boot fail.
+    $readiness = if ($isVMware) { Get-VMwareReadiness } else { Get-HyperVReadiness }
     if (-not $readiness.Ready) {
         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message $readiness.Reason
+        # VMware-specific: offer the interactive winget install + manual-download guidance so the
+        # user can get set up, then re-run. Non-fatal (returns a 'None' environmental result).
+        if ($isVMware) { $null = Install-VMwareWorkstation }
         return [pscustomobject]@{ Passed = $false; Detail = $readiness.Reason; Method = 'None'; State = $null; ElapsedSeconds = 0 }
     }
 
     $vmName = "wim-boottest-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-    $vhd = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "$vmName.vhdx"
+    # Hyper-V uses a bare <name>.vhdx; VMware needs a VM folder holding <name>.vmx + <name>.vmdk.
+    if ($isVMware) {
+        $vmDir = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath $vmName
+        $vmxPath = Join-Path -Path $vmDir -ChildPath "$vmName.vmx"
+        $vhd = Join-Path -Path $vmDir -ChildPath "$vmName.vmdk"
+    }
+    else {
+        $vmDir = $null
+        $vmxPath = $null
+        $vhd = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "$vmName.vhdx"
+    }
     try {
-        New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd -ConnectNetwork:$ConnectNetwork
+        if ($isVMware) {
+            New-VMwareBootTestVm -VmName $vmName -IsoPath $IsoPath -VmxPath $vmxPath -VhdPath $vhd -ConnectNetwork:$connectNetwork -ConnectVm:$ConnectVm
+        }
+        else {
+            New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd -ConnectNetwork:$connectNetwork
+        }
 
-        # Opt-in: open the interactive VM console (vmconnect) so the operator can watch Setup and,
-        # on a windowsPE stall, press Shift+F10 to capture logs. Behind a mockable seam so the unit
+        # Opt-in: open the interactive VM console so the operator can watch Setup and, on a
+        # windowsPE stall, press Shift+F10 to capture logs. Behind a mockable seam so the unit
         # suite never launches a UI. Failure to launch is non-fatal (headless/CI hosts have no UI).
         if ($ConnectVm) {
-            Start-BootTestVmConnect -VmName $vmName
+            if ($isVMware) { Start-VMwareVmConnect -VmxPath $vmxPath } else { Start-BootTestVmConnect -VmName $vmName }
         }
 
         # Logical clock: $elapsed advances by a >=1s step each poll so the timeout is always
@@ -288,7 +345,7 @@ function Invoke-VmBootTest {
         $lastState = $null
         $result = $null
         while ($elapsed -lt $TimeoutSeconds) {
-            $status = Get-VmBootStatus -VmName $vmName
+            $status = if ($isVMware) { Get-VMwareVmBootStatus -VmName $vmName -VmxPath $vmxPath } else { Get-VmBootStatus -VmName $vmName }
             $lastState = $status.State
 
             if ($status.State -eq 'Running') {
@@ -321,10 +378,10 @@ function Invoke-VmBootTest {
             $result = [pscustomobject]@{ Passed = $false; Detail = "VM boot test timed out after ${TimeoutSeconds}s (last state '$lastState', no guest heartbeat)."; Method = 'Timeout'; State = $lastState; ElapsedSeconds = $elapsed }
         }
 
-        # Opt-in: hold the VM so the user can connect (vmconnect) and test interactively before
-        # the finally block tears it down. Behind a mockable seam so the unit suite never blocks.
+        # Opt-in: hold the VM so the user can connect and test interactively before the finally
+        # block tears it down. Behind a mockable seam so the unit suite never blocks.
         if ($KeepBootTestVm) {
-            Wait-BootTestInspection -VmName $vmName -Result $result
+            Wait-BootTestInspection -VmName $vmName -Result $result -Hypervisor $Hypervisor -VmIdentifier $vmxPath
         }
 
         return $result
@@ -339,19 +396,32 @@ function Invoke-VmBootTest {
         # harvested diagnostics are attached to the (already-computed) result object by reference.
         if (-not [string]::IsNullOrWhiteSpace($DiagnosticsPath)) {
             try {
-                Stop-BootTestVm -VmName $vmName
+                if ($isVMware) { Stop-VMwareBootTestVm -VmxPath $vmxPath } else { Stop-BootTestVm -VmName $vmName }
                 # Nest per VM so it is obvious which boot-test VM each log set came from, and so a
                 # fresh run never shows a previous run's logs (each VM name is unique per build).
                 $safeVmName = ($vmName -replace '[\\/:*?"<>|]', '_')
                 $vmDiagnosticsPath = Join-Path -Path $DiagnosticsPath -ChildPath $safeVmName
-                $diag = Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $vmDiagnosticsPath
+                $diag = if ($isVMware) {
+                    Save-VMwareBootTestSetupLog -VhdPath $vhd -DestinationDirectory $vmDiagnosticsPath
+                }
+                else {
+                    Save-BootTestSetupLog -VhdPath $vhd -DestinationDirectory $vmDiagnosticsPath
+                }
                 $installProgressed = $false
+                # Whether the disk could actually be inspected. Hyper-V always can (a $null result
+                # there means "mounted, nothing written" => disk untouched). VMware may be unable to
+                # mount offline (no vmware-mount); it reports Inspected=$false so we do NOT misread an
+                # un-inspectable disk as "install made no progress".
+                $diskInspected = $true
                 if ($diag) {
+                    if ($diag.PSObject.Properties.Match('Inspected').Count) { $diskInspected = [bool]$diag.Inspected }
                     $installProgressed = @($diag.Files).Count -gt 0
                     if ($null -ne $result) {
                         $result | Add-Member -NotePropertyName 'Diagnostics' -NotePropertyValue $diag -Force
                     }
-                    Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "Harvested $($diag.Files.Count) Windows Setup log file(s) to '$($diag.Path)'."
+                    if ($diskInspected) {
+                        Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "Harvested $(@($diag.Files).Count) Windows Setup log file(s) to '$($diag.Path)'."
+                    }
                     if ($diag.SetupErrorTail) {
                         Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "setuperr.log tail:`n$($diag.SetupErrorTail)"
                     }
@@ -374,10 +444,11 @@ function Invoke-VmBootTest {
                 # past windowsPE it writes $WINDOWS.~BT\...\Panther logs to the target VHDX; a stuck
                 # install writes nothing there. So if the only pass signal was StayedRunning and the
                 # disk stayed untouched, downgrade to a real failure. A healthy Heartbeat pass means
-                # Windows actually booted, so it is never downgraded.
+                # Windows actually booted, so it is never downgraded. Only downgrade when the disk was
+                # actually inspected (VMware may not be able to, and must not produce a false negative).
                 if ($null -ne $result) {
                     $result | Add-Member -NotePropertyName 'InstallProgressed' -NotePropertyValue $installProgressed -Force
-                    if ($result.Passed -and $result.Method -eq 'StayedRunning' -and -not $installProgressed) {
+                    if ($diskInspected -and $result.Passed -and $result.Method -eq 'StayedRunning' -and -not $installProgressed) {
                         $result.Passed = $false
                         $result.Method = 'NoInstallProgress'
                         $result.Detail = "VM stayed Running for $($result.ElapsedSeconds)s but Windows Setup wrote nothing to the target disk - the unattended install did not progress past windowsPE (it is likely stuck at an interactive page such as the product-key screen). Inspect '$vmDiagnosticsPath'. To capture the windowsPE logs, at the stuck screen press Shift+F10 and run 'robocopy X:\Windows\Logs C:\pe-logs /E' + 'copy X:\Windows\*.log C:\pe-logs\', then press Enter here to re-harvest."
@@ -389,7 +460,7 @@ function Invoke-VmBootTest {
                 Write-BuildLog -Level Warning -Component 'Invoke-VmBootTest' -Message "Could not harvest Windows Setup logs: $($_.Exception.Message)"
             }
         }
-        Remove-BootTestVm -VmName $vmName -VhdPath $vhd
+        if ($isVMware) { Remove-VMwareBootTestVm -VmxPath $vmxPath -VmDirectory $vmDir } else { Remove-BootTestVm -VmName $vmName -VhdPath $vhd }
     }
 }
 
@@ -407,6 +478,10 @@ function Wait-BootTestInspection {
         Name of the throwaway boot-test VM the user can connect to.
     .PARAMETER Result
         The resolved boot-test result object (for context in the prompt).
+    .PARAMETER Hypervisor
+        'HyperV' or 'VMware' - selects the connect hint shown to the user.
+    .PARAMETER VmIdentifier
+        Provider-specific handle used in the connect hint (the .vmx path for VMware).
     .OUTPUTS
         None.
     #>
@@ -415,11 +490,14 @@ function Wait-BootTestInspection {
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)][string] $VmName,
-        [Parameter()][object] $Result
+        [Parameter()][object] $Result,
+        [Parameter()][ValidateSet('HyperV', 'VMware')][string] $Hypervisor = 'HyperV',
+        [Parameter()][string] $VmIdentifier
     )
 
     $state = if ($Result) { $Result.State } else { 'unknown' }
-    Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: vmconnect localhost $VmName"
+    $connectHint = if ($Hypervisor -eq 'VMware') { "vmware -t `"$VmIdentifier`"" } else { "vmconnect localhost $VmName" }
+    Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: $connectHint"
     $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off, harvest the Windows Setup logs, and clean up"
 }
 
@@ -613,6 +691,58 @@ function Stop-BootTestVm {
     }
 }
 
+function Get-BootTestSetupLogRelativePath {
+    <#
+    .SYNOPSIS
+        The Windows Setup log locations to harvest from a boot-test disk (shared, pure helper).
+    .DESCRIPTION
+        Returns the list of Setup/ConX/WinPE log file paths (relative to each partition root) that
+        both the Hyper-V (Save-BootTestSetupLog) and VMware (Save-VMwareBootTestSetupLog) harvesters
+        copy off a stopped VM's system disk. Factored out so the two providers stay in lock-step and
+        the list is unit-testable directly. '$WINDOWS.~BT' is a literal folder name (single-quoted).
+    .OUTPUTS
+        System.String[]
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return [string[]]@(
+        '$WINDOWS.~BT\Sources\Panther\setupact.log'
+        '$WINDOWS.~BT\Sources\Panther\setuperr.log'
+        '$WINDOWS.~BT\Sources\Panther\miglog.xml'
+        '$WINDOWS.~BT\Sources\Panther\diagerr.xml'
+        '$WINDOWS.~BT\Sources\Panther\diagwrn.xml'
+        '$WINDOWS.~BT\Sources\Panther\UnattendGC\setupact.log'
+        '$WINDOWS.~BT\Sources\Panther\setupapi.dev.log'
+        '$WINDOWS.~BT\Sources\Panther\setupapi.offline.log'
+        'Windows\Panther\setupact.log'
+        'Windows\Panther\setuperr.log'
+        'Windows\Panther\UnattendGC\setupact.log'
+        'Windows\INF\setupapi.dev.log'
+        # ConX (the redesigned "Connected Experience" Setup used by 24H2/25H2/26H1 media) logs to
+        # MoSetup\BlueBox.log; a "Setup has failed to validate the product key" from ConX records
+        # its real reason there rather than in Panther\setuperr.log.
+        'Windows\Logs\MoSetup\BlueBox.log'
+        'Windows\Logs\DISM\dism.log'
+        'Windows\debug\NetSetup.LOG'
+        # windowsPE-phase logs live on the WinPE RAM disk (X:) and never reach the target disk, so a
+        # product-key/answer-file rejection writes nothing above. To capture them, Shift+F10 at the
+        # failing screen and copy the WinPE logs to the target disk root (C:\) - either the individual
+        # well-known names below, or (best) the whole tree via 'robocopy X:\Windows\Logs C:\pe-logs
+        # /E' plus 'copy X:\Windows\*.log C:\pe-logs\', which the recursive pe-logs harvest picks up.
+        'pe-setupact.log'
+        'pe-setuperr.log'
+        'setupact.log'
+        'setuperr.log'
+        'BlueBox.log'
+        'pe-BlueBox.log'
+        'winpeshl.log'
+        'setupapi.offline.log'
+        'NetSetup.LOG'
+    )
+}
+
 function Save-BootTestSetupLog {
     <#
     .SYNOPSIS
@@ -665,42 +795,8 @@ function Save-BootTestSetupLog {
             Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
-    # Setup log locations, relative to each partition root. '$WINDOWS.~BT' is a literal folder name
-    # ($ is not a variable here - single-quoted).
-    $relativePaths = @(
-        '$WINDOWS.~BT\Sources\Panther\setupact.log'
-        '$WINDOWS.~BT\Sources\Panther\setuperr.log'
-        '$WINDOWS.~BT\Sources\Panther\miglog.xml'
-        '$WINDOWS.~BT\Sources\Panther\diagerr.xml'
-        '$WINDOWS.~BT\Sources\Panther\diagwrn.xml'
-        '$WINDOWS.~BT\Sources\Panther\UnattendGC\setupact.log'
-        '$WINDOWS.~BT\Sources\Panther\setupapi.dev.log'
-        '$WINDOWS.~BT\Sources\Panther\setupapi.offline.log'
-        'Windows\Panther\setupact.log'
-        'Windows\Panther\setuperr.log'
-        'Windows\Panther\UnattendGC\setupact.log'
-        'Windows\INF\setupapi.dev.log'
-        # ConX (the redesigned "Connected Experience" Setup used by 24H2/25H2/26H1 media) logs to
-        # MoSetup\BlueBox.log; a "Setup has failed to validate the product key" from ConX records
-        # its real reason there rather than in Panther\setuperr.log.
-        'Windows\Logs\MoSetup\BlueBox.log'
-        'Windows\Logs\DISM\dism.log'
-        'Windows\debug\NetSetup.LOG'
-        # windowsPE-phase logs live on the WinPE RAM disk (X:) and never reach the VHDX, so a
-        # product-key/answer-file rejection writes nothing above. To capture them, Shift+F10 at the
-        # failing screen and copy the WinPE logs to the target disk root (C:\) - either the individual
-        # well-known names below, or (best) the whole tree via 'robocopy X:\Windows\Logs C:\pe-logs
-        # /E' plus 'copy X:\Windows\*.log C:\pe-logs\', which the recursive pe-logs harvest picks up.
-        'pe-setupact.log'
-        'pe-setuperr.log'
-        'setupact.log'
-        'setuperr.log'
-        'BlueBox.log'
-        'pe-BlueBox.log'
-        'winpeshl.log'
-        'setupapi.offline.log'
-        'NetSetup.LOG'
-    )
+    # Setup log locations, relative to each partition root (shared with the VMware harvester).
+    $relativePaths = Get-BootTestSetupLogRelativePath
 
     $mounted = $null
     $collected = [System.Collections.Generic.List[string]]::new()

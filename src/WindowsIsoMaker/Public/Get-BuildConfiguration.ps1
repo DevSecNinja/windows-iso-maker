@@ -123,6 +123,7 @@ function Get-BuildConfiguration {
         IsoPath           = ''
         BootTest          = $false
         KeepBootTestVm    = $false
+        Hypervisor        = 'HyperV'
         CompressionFormat = 'zip'
         FidoPath          = ''
         OscdimgPath       = ''
@@ -141,6 +142,7 @@ function Get-BuildConfiguration {
         WIM_OUTPUT_DIR = 'OutputDirectory'
         WIM_BOOT_TEST  = 'BootTest'
         WIM_KEEP_BOOT_TEST_VM = 'KeepBootTestVm'
+        WIM_HYPERVISOR = 'Hypervisor'
     }
     $booleanFields = @('BootTest', 'KeepBootTestVm')
     foreach ($envName in $envMap.Keys) {
@@ -216,6 +218,16 @@ function Get-BuildConfiguration {
     if (@('zip', '7z') -notcontains $resolved['CompressionFormat']) {
         throw "Invalid configuration: 'CompressionFormat' must be 'zip' or '7z' (got '$($resolved['CompressionFormat'])')."
     }
+    # Normalize the hypervisor to a canonical name (case/space/hyphen-insensitive) so 'hyperv',
+    # 'Hyper-V', 'vmware', etc. all resolve. Selects which provider runs the opt-in boot test.
+    $hypervisorRaw = ([string]$resolved['Hypervisor']).Trim().ToLowerInvariant() -replace '[\s_-]', ''
+    $resolved['Hypervisor'] = switch ($hypervisorRaw) {
+        '' { 'HyperV'; break }
+        'hyperv' { 'HyperV'; break }
+        'vmware' { 'VMware'; break }
+        'vmwareworkstation' { 'VMware'; break }
+        default { throw "Invalid configuration: 'Hypervisor' must be 'HyperV' or 'VMware' (got '$($resolved['Hypervisor'])')." }
+    }
 
     # --- 6. Resolve working directory default. ---
     if ([string]::IsNullOrWhiteSpace([string]$resolved['WorkingDirectory'])) {
@@ -261,6 +273,7 @@ function Get-BuildConfiguration {
         IsoPath           = [string]$resolved['IsoPath']
         BootTest          = [bool]$resolved['BootTest']
         KeepBootTestVm    = [bool]$resolved['KeepBootTestVm']
+        Hypervisor        = [string]$resolved['Hypervisor']
         CompressionFormat = [string]$resolved['CompressionFormat']
         FidoPath          = [string]$resolved['FidoPath']
         OscdimgPath       = [string]$resolved['OscdimgPath']
