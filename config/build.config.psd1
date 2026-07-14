@@ -15,7 +15,8 @@
     # ============================================================================
 
     # --- Base image selection (FR-001, FR-002) ---
-    Edition      = 'Pro'        # Windows 11 edition
+    Edition      = 'Pro'        # Windows 11 edition. Only Home comes from Fido; every other edition
+                               # (Pro, Education, Enterprise, ...) needs a business ISO via IsoPath.
     Language     = 'en-US'      # display language (BCP-47)
     Release      = 'latest'     # resolved by Fido at build time; actual recorded in RunReport
     Architecture = 'amd64'      # 'amd64' | 'arm64' (validated)
@@ -74,7 +75,9 @@
     OutputDirectory  = './out'    # where the compressed artifact + RunReport + BOM are written
 
     # --- Optional pre-downloaded ISO override (skip Fido download) ---
-    IsoPath = ''                  # empty = download via Fido
+    IsoPath = ''                  # empty = download via Fido (Home only). REQUIRED for every non-Home
+                                  # edition: point it at the business/volume ISO (Fido can't fetch it,
+                                  # and consumer Pro/Education images won't activate with a GVLK).
 
     # --- Validation (FR-023) ---
     BootTest = $false             # opt-in VM boot test; default = structural checks only

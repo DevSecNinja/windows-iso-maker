@@ -12,15 +12,15 @@ BeforeAll {
 
 Describe 'Get-GenericSetupProductKey' {
 
-    It 'returns the generic Pro key for "Pro"' {
+    It 'returns the Pro GVLK for "Pro"' {
         InModuleScope WindowsIsoMaker {
-            Get-GenericSetupProductKey -Edition 'Pro' | Should -Be 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
+            Get-GenericSetupProductKey -Edition 'Pro' | Should -Be 'W269N-WFGWX-YVC9B-4J6C9-T83GX'
         }
     }
 
     It 'normalizes edition variants to the same key' {
         InModuleScope WindowsIsoMaker {
-            $expected = '2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'
+            $expected = 'MH37W-N47XK-V7XM9-C7227-GCQG9'
             Get-GenericSetupProductKey -Edition 'Pro N'          | Should -Be $expected
             Get-GenericSetupProductKey -Edition 'pro-n'          | Should -Be $expected
             Get-GenericSetupProductKey -Edition 'Windows 11 Pro N' | Should -Be $expected
@@ -31,6 +31,12 @@ Describe 'Get-GenericSetupProductKey' {
         InModuleScope WindowsIsoMaker {
             Get-GenericSetupProductKey -Edition 'Home'             | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
             Get-GenericSetupProductKey -Edition 'Windows 11 Home'  | Should -Be 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+        }
+    }
+
+    It 'returns the corrected Education N GVLK' {
+        InModuleScope WindowsIsoMaker {
+            Get-GenericSetupProductKey -Edition 'Education N' | Should -Be '2WH4N-8QGBV-H22JP-CT43Q-MDWWJ'
         }
     }
 
@@ -85,7 +91,7 @@ Describe 'New-AutounattendXml product key' {
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
         $xml = Get-Content -LiteralPath $script:OutPath -Raw
         $xml | Should -Match '<ProductKey>'
-        $xml | Should -Match ([regex]::Escape('VK7JG-NPHTM-C97JM-9MPGT-3V66T'))
+        $xml | Should -Match ([regex]::Escape('W269N-WFGWX-YVC9B-4J6C9-T83GX'))
     }
 
     It 'injects the generic (page-skipping) retail key for Home when ProductKey is "generic"' {
@@ -99,7 +105,7 @@ Describe 'New-AutounattendXml product key' {
     It 'picks the generic key matching the resolved edition for "auto"' {
         $cfg = New-TestConfig -Edition 'Pro N' -Autounattend @{ ProductKey = 'auto' }
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null
-        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('2B87N-8KFHP-DKV6R-Y2C8J-PKCKT'))
+        (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('MH37W-N47XK-V7XM9-C7227-GCQG9'))
     }
 
     It 'omits the ProductKey element when set to "none"' {
@@ -135,7 +141,7 @@ Describe 'New-AutounattendXml product key' {
         # Key lives under windowsPE / Microsoft-Windows-Setup / UserData / ProductKey / Key.
         $peKey = $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:Key", $ns)
         $peKey | Should -Not -BeNullOrEmpty
-        $peKey.InnerText | Should -Be 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
+        $peKey.InnerText | Should -Be 'W269N-WFGWX-YVC9B-4J6C9-T83GX'
         # Bare <Key> only: NO <WillShowUI>Never</WillShowUI> (with it, 24H2 hard-stops "failed to
         # validate the product key"; the bare-key form matches known-good dockur/windows answer files).
         $xml.SelectSingleNode("//u:settings[@pass='windowsPE']//u:UserData/u:ProductKey/u:WillShowUI", $ns) | Should -BeNullOrEmpty

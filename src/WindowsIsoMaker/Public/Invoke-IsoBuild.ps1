@@ -41,6 +41,9 @@ function Invoke-IsoBuild {
         Optional opt-in catalog ids (e.g. 'remove-edge','feature-wsl').
     .PARAMETER DisableCatalogId
         Optional force-disable catalog ids.
+    .PARAMETER IsoPath
+        Optional pre-downloaded base ISO (skips Fido). Required for non-Home editions, which only
+        ship on the business/volume ISO.
     .PARAMETER ProductKey
         Optional override for the Autounattend product key (config Autounattend.ProductKey). Applied
         in the windowsPE UserData pass so multi-edition 24H2 media does not stop at the interactive
@@ -107,6 +110,9 @@ function Invoke-IsoBuild {
         [string[]] $DisableCatalogId,
 
         [Parameter()]
+        [string] $IsoPath,
+
+        [Parameter()]
         [AllowEmptyString()]
         [string] $ProductKey,
 
@@ -131,7 +137,7 @@ function Invoke-IsoBuild {
     if (-not $Config) {
         $cfgParams = @{}
         if ($PSBoundParameters.ContainsKey('ConfigPath')) { $cfgParams['Path'] = $ConfigPath }
-        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId') {
+        foreach ($n in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath') {
             if ($PSBoundParameters.ContainsKey($n)) { $cfgParams[$n] = $PSBoundParameters[$n] }
         }
         $Config = Get-BuildConfiguration @cfgParams

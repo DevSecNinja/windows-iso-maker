@@ -23,7 +23,8 @@
     Optional last-mile override for the target architecture ('amd64' or 'arm64').
 
 .PARAMETER Edition
-    Optional last-mile override for the Windows edition (e.g. 'Pro').
+    Optional last-mile override for the Windows edition (e.g. 'Pro'). Only Home ships on the
+    downloadable consumer ISO; every other edition needs a business ISO via -IsoPath.
 
 .PARAMETER Language
     Optional last-mile override for the display language (e.g. 'en-US').
@@ -41,6 +42,11 @@
 
 .PARAMETER DisableCatalogId
     Catalog ids to force-disable (explicit ids win).
+
+.PARAMETER IsoPath
+    Path to a pre-downloaded base ISO (skips the Fido download). Required for every non-Home
+    edition (Pro / Education / Enterprise / ...), which only ship on the business/volume ISO —
+    supply the matching business ISO (e.g. from a Visual Studio / volume-licensing subscription).
 
 .PARAMETER ProductKey
     Optional override for the Autounattend product key. Applied in the specialize pass (not
@@ -120,6 +126,9 @@ param(
     [string[]] $DisableCatalogId,
 
     [Parameter()]
+    [string] $IsoPath,
+
+    [Parameter()]
     [AllowEmptyString()]
     [string] $ProductKey,
 
@@ -172,7 +181,7 @@ if (-not $isAdmin -and -not $WhatIfPreference -and -not $SkipHeavyBuild) {
 $buildParams = @{
     ConfigPath = $ConfigPath
 }
-foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'ProductKey', 'AccountMode') {
+foreach ($name in 'Architecture', 'Edition', 'Language', 'Release', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'IsoPath', 'ProductKey', 'AccountMode') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $buildParams[$name] = $PSBoundParameters[$name]
     }

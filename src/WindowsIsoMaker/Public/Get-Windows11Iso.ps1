@@ -14,10 +14,9 @@ function Get-Windows11Iso {
         instead of downloading. Fails fast with a terminating error if the requested
         combination is unavailable.
     .PARAMETER Edition
-        Windows 11 edition (e.g. 'Pro'). Consumer editions (Home, Pro, Education, ...) all resolve
-        to the same downloaded consumer ISO — the edition is selected later at install/servicing
-        time — so the cache is keyed by product family, not by edition. Business/Enterprise editions
-        are not downloadable via Fido and require a caller-supplied -IsoPath.
+        Windows 11 edition (e.g. 'Pro'). Only the Home SKUs come from the downloadable consumer ISO;
+        every other edition (Pro, Education, Enterprise, ...) only activates from the business/volume
+        ISO and requires a caller-supplied -IsoPath (see Get-Windows11IsoFamily).
     .PARAMETER Language
         Display language as a BCP-47 code (e.g. 'en-US'); mapped to a Fido language name.
     .PARAMETER Release
@@ -103,12 +102,12 @@ function Get-Windows11Iso {
         New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
     }
 
-    # Derive the ISO product family from the edition. Fido only offers the CONSUMER multi-edition
-    # ISO for Windows 11 ("Windows 11 Home/Pro/Edu"), which contains Home / Pro / Education / ... —
-    # the actual edition is picked at install time (Mount-WindowsBuildImage resolves the WIM index).
-    # So every consumer edition shares ONE download, and the cache file is keyed by family (not by
-    # edition) to avoid re-downloading the same ISO under Home/Pro/... names. Business/Enterprise
-    # editions live in a separate ISO that Fido cannot fetch — those require a caller-supplied -IsoPath.
+    # Derive the ISO product family from the edition. Fido only offers the CONSUMER Windows 11 ISO
+    # ("Windows 11 Home/Pro/Edu"), and only its Home SKUs activate with a public retail generic key.
+    # Every other edition (Pro, Education, Enterprise, ...) must come from the business/volume ISO
+    # (a GVLK edition; a volume key is rejected on retail media and vice-versa), which Fido cannot
+    # fetch — so those require a caller-supplied -IsoPath. The cache file is keyed by family so the
+    # single consumer download is reused across Home requests.
     $family = Get-Windows11IsoFamily -Edition $Edition
 
     $fileName = "Windows11-$family-$Architecture-$Release.iso" -replace '\s', ''
@@ -135,17 +134,18 @@ function Get-Windows11Iso {
         }
     }
 
-    # Business/Enterprise editions are not downloadable via Fido (it only serves the consumer ISO).
+    # Business editions (Pro, Education, Enterprise, LTSC, IoT, ...) are not downloadable via Fido,
+    # which only serves the consumer ISO — and only its Home SKUs activate with a retail generic key.
     if ($family -eq 'business') {
-        throw "Windows 11 '$Edition' is a business/enterprise edition, which is not part of the consumer ISO that Fido can download (Fido only offers the 'Windows 11 Home/Pro/Edu' multi-edition consumer ISO). Provide a business-editions ISO via -IsoPath (or the config 'IsoPath') and re-run."
+        throw "Windows 11 '$Edition' requires the business/volume ISO: only the Home editions ship on the consumer ISO that Fido can download (Fido only offers the 'Windows 11 Home/Pro/Edu' consumer ISO, and its Pro/Education images will not activate with a volume/GVLK key). Provide a business-editions ISO via -IsoPath (or the config 'IsoPath') and re-run."
     }
 
     # Map our normalized values onto Fido's expected argument vocabulary.
     $fidoArch = if ($Architecture -eq 'amd64') { 'x64' } else { 'Arm64' }
     $fidoLang = ConvertTo-FidoLanguage -Language $Language
-    # Fido matches -Ed as a regex against its edition list; the consumer entry is
-    # "Windows 11 Home/Pro/Edu". Request that entry explicitly so any consumer edition (Home,
-    # Pro, Education, ...) resolves to the same multi-edition ISO regardless of the -Edition asked.
+    # Fido names the consumer ISO "Windows 11 Home/Pro/Edu"; request that entry explicitly. We only
+    # install its Home SKUs (non-Home editions are routed to the business ISO above), but the Fido
+    # download entry itself is still the combined consumer ISO.
     $fidoEdition = 'Home/Pro/Edu'
 
     # Build Fido args as an ARRAY (no string concatenation => no shell injection, Principle VII).
@@ -243,12 +243,14 @@ function Get-Windows11IsoFamily {
     .SYNOPSIS
         Classify a Windows 11 edition into its ISO product family: 'consumer' or 'business'.
     .DESCRIPTION
-        Private helper for Get-Windows11Iso. Microsoft ships Windows 11 as two multi-edition ISOs:
-        the retail "consumer" ISO (Home, Home N, Home Single Language, Pro, Pro N, Pro Education,
-        Pro for Workstations, Education, Education N) and the "business/volume" ISO (Enterprise,
-        Enterprise N, IoT Enterprise, LTSC). Fido can only download the consumer ISO for Windows 11,
-        so this classification decides both the cache filename (shared across consumer editions) and
-        whether Fido can serve the request at all.
+        Private helper for Get-Windows11Iso. Only the Home SKUs (Home, Home N, Home Single
+        Language) ship on the retail "consumer" ISO that Fido can download AND that activates with
+        a public retail generic key. Every other edition (Pro, Pro N, Pro Education, Pro for
+        Workstations, Education, Enterprise, Enterprise G, LTSC, IoT) only installs and activates
+        from the "business/volume" ISO with a GVLK — a volume key is rejected on retail media and
+        vice-versa. Fido cannot fetch the business ISO, so this classification decides both the
+        cache filename and whether Fido can serve the request at all (business editions require a
+        caller-supplied -IsoPath).
     .PARAMETER Edition
         The Windows 11 edition (e.g. 'Home', 'Pro', 'Enterprise', 'Windows 11 Enterprise LTSC').
     .OUTPUTS
@@ -258,11 +260,12 @@ function Get-Windows11IsoFamily {
     [OutputType([string])]
     param([Parameter(Mandatory = $true)][string] $Edition)
 
-    # Enterprise / IoT Enterprise / LTSC(B) editions are only in the business/volume ISO.
-    if ($Edition -match '(?i)\b(Enterprise|LTSC|LTSB|IoT)\b') {
-        return 'business'
+    # Only the Home SKUs are on the retail consumer ISO; everything else needs the business/volume
+    # ISO (a GVLK edition, not a retail generic key). 'Home' does not appear in any non-Home name.
+    if ($Edition -match '(?i)\bHome\b') {
+        return 'consumer'
     }
-    return 'consumer'
+    return 'business'
 }
 
 function Get-FidoPin {

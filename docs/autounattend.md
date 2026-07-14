@@ -127,11 +127,12 @@ Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
 | --- | --- |
 | `''` (default) / `'none'` | **No key.** On multi-edition media Setup may stop at the product-key page. |
 | `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit, **genuine** key in `windowsPE` (activates when valid). |
-| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic / default retail** key in `windowsPE` (non-activating; selects the edition and skips the key page). Works for Home and other editions. |
+| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic** key in `windowsPE` (non-activating; selects the edition and skips the key page). This is the **retail generic** key for Home (consumer media) or the **GVLK / KMS client** key for business editions (Pro, Education, Enterprise, ... — business/volume media). The key class must match the media: a volume/GVLK key is rejected on retail media and vice-versa. |
 
 The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
 shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`
-takes precedence). Use it for a fully hands-off **Home** build.
+takes precedence). Use it for a fully hands-off build — a Home build off the consumer ISO, or a
+business edition (Pro, Education, ...) off a business/volume ISO supplied via `-IsoPath`.
 
 `scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
 `-Profile` overrides, so you can test the hands-off path with `-Edition Home -UseGenericProductKey`

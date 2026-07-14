@@ -40,6 +40,9 @@ function Get-BuildConfiguration {
         Catalog ids to force-enable (opt-in), e.g. 'remove-edge','feature-wsl'.
     .PARAMETER DisableCatalogId
         Catalog ids to force-disable (explicit ids win).
+    .PARAMETER IsoPath
+        Optional path to a pre-downloaded base ISO; skips the Fido download. Required for every
+        non-Home edition (Pro / Education / Enterprise / ...), which only ship on the business ISO.
     .EXAMPLE
         Get-BuildConfiguration
         Loads the default config and returns the resolved BuildConfiguration.
@@ -79,7 +82,10 @@ function Get-BuildConfiguration {
         [string[]] $EnableCatalogId,
 
         [Parameter()]
-        [string[]] $DisableCatalogId
+        [string[]] $DisableCatalogId,
+
+        [Parameter()]
+        [string] $IsoPath
     )
 
     # --- 1. Resolve which config file to load (Path -> WIM_CONFIG_PATH -> default). ---
@@ -175,6 +181,7 @@ function Get-BuildConfiguration {
     if ($PSBoundParameters.ContainsKey('Profile')) { $resolved['Profile'] = $Profile }
     if ($PSBoundParameters.ContainsKey('EnableCatalogId')) { $resolved['EnableCatalogId'] = @($EnableCatalogId) }
     if ($PSBoundParameters.ContainsKey('DisableCatalogId')) { $resolved['DisableCatalogId'] = @($DisableCatalogId) }
+    if ($PSBoundParameters.ContainsKey('IsoPath')) { $resolved['IsoPath'] = $IsoPath }
 
     # --- 5. Validate the resolved values (Principle VII input validation). ---
     if ([string]::IsNullOrWhiteSpace([string]$resolved['Edition'])) {

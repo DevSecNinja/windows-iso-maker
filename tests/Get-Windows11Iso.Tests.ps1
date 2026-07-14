@@ -41,7 +41,7 @@ Describe 'Get-Windows11Iso' {
                 Mock Invoke-IsoDownload { param($Url, $Destination) 'iso' | Set-Content -LiteralPath $Destination }
                 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-dl-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
 
-                Get-Windows11Iso -Architecture amd64 -Language en-US -OutputPath $tmp | Out-Null
+                Get-Windows11Iso -Architecture amd64 -Edition Home -Language en-US -OutputPath $tmp | Out-Null
 
                 Should -Invoke Invoke-FidoUrlResolver -Times 1 -ParameterFilter {
                     ($Arguments -contains 'x64') -and ($Arguments -contains 'English') -and ($Arguments -contains '11')
@@ -57,7 +57,7 @@ Describe 'Get-Windows11Iso' {
                 Mock Invoke-IsoDownload { param($Url, $Destination) 'iso' | Set-Content -LiteralPath $Destination }
                 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-dl-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
 
-                Get-Windows11Iso -Architecture arm64 -OutputPath $tmp | Out-Null
+                Get-Windows11Iso -Architecture arm64 -Edition Home -OutputPath $tmp | Out-Null
 
                 Should -Invoke Invoke-FidoUrlResolver -Times 1 -ParameterFilter { $Arguments -contains 'Arm64' }
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -75,7 +75,7 @@ Describe 'Get-Windows11Iso' {
                 $cached = Join-Path $tmp 'Windows11-consumer-amd64-latest.iso'
                 'cached-iso' | Set-Content -LiteralPath $cached
 
-                $result = Get-Windows11Iso -Architecture amd64 -OutputPath $tmp
+                $result = Get-Windows11Iso -Architecture amd64 -Edition Home -OutputPath $tmp
 
                 $result.Verified | Should -BeTrue
                 $result.Path | Should -Be ((Resolve-Path $cached).Path)
@@ -95,7 +95,7 @@ Describe 'Get-Windows11Iso' {
                 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
                 'stale' | Set-Content -LiteralPath (Join-Path $tmp 'Windows11-consumer-amd64-latest.iso')
 
-                Get-Windows11Iso -Architecture amd64 -OutputPath $tmp -Force | Out-Null
+                Get-Windows11Iso -Architecture amd64 -Edition Home -OutputPath $tmp -Force | Out-Null
 
                 Should -Invoke Invoke-FidoUrlResolver -Times 1
                 Should -Invoke Invoke-IsoDownload -Times 1
@@ -110,7 +110,7 @@ Describe 'Get-Windows11Iso' {
                 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
                 'cached-iso' | Set-Content -LiteralPath (Join-Path $tmp 'Windows11-consumer-amd64-latest.iso')
 
-                { Get-Windows11Iso -Architecture amd64 -OutputPath $tmp -ExpectedSha256 'DEADBEEF' } |
+                { Get-Windows11Iso -Architecture amd64 -Edition Home -OutputPath $tmp -ExpectedSha256 'DEADBEEF' } |
                     Should -Throw '*hash mismatch*'
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -118,10 +118,9 @@ Describe 'Get-Windows11Iso' {
     }
 
     Context 'ISO product family (consumer vs business)' {
-        It 'classifies consumer editions as consumer' -ForEach @(
+        It 'classifies only Home SKUs as consumer' -ForEach @(
             @{ Ed = 'Home' }, @{ Ed = 'Home N' }, @{ Ed = 'Home Single Language' },
-            @{ Ed = 'Pro' }, @{ Ed = 'Pro N' }, @{ Ed = 'Pro Education' },
-            @{ Ed = 'Pro for Workstations' }, @{ Ed = 'Education' }
+            @{ Ed = 'Windows 11 Home' }
         ) {
             InModuleScope WindowsIsoMaker -Parameters @{ Ed = $Ed } {
                 param($Ed)
@@ -129,7 +128,9 @@ Describe 'Get-Windows11Iso' {
             }
         }
 
-        It 'classifies enterprise/LTSC/IoT editions as business' -ForEach @(
+        It 'classifies every non-Home edition as business' -ForEach @(
+            @{ Ed = 'Pro' }, @{ Ed = 'Pro N' }, @{ Ed = 'Pro Education' },
+            @{ Ed = 'Pro for Workstations' }, @{ Ed = 'Education' }, @{ Ed = 'Education N' },
             @{ Ed = 'Enterprise' }, @{ Ed = 'Enterprise N' },
             @{ Ed = 'Windows 11 Enterprise LTSC' }, @{ Ed = 'IoT Enterprise' }
         ) {
@@ -139,7 +140,7 @@ Describe 'Get-Windows11Iso' {
             }
         }
 
-        It 'caches Home and Pro under the SAME consumer file (one shared download)' {
+        It 'caches Home SKUs under the SAME consumer file (one shared download)' {
             InModuleScope WindowsIsoMaker {
                 Mock Resolve-FidoScriptPath { 'stub-fido.ps1' }
                 Mock Invoke-FidoUrlResolver { 'https://software.download.microsoft.com/fake/win11.iso' }
@@ -147,18 +148,18 @@ Describe 'Get-Windows11Iso' {
                 Mock Invoke-IsoDownload { param($Url, $Destination) $script:downloads++; 'iso' | Set-Content -LiteralPath $Destination }
                 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-fam-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
 
-                $pro = Get-Windows11Iso -Architecture amd64 -Edition Pro -OutputPath $tmp
-                $homeIso = Get-Windows11Iso -Architecture amd64 -Edition Home -OutputPath $tmp
+                $home1 = Get-Windows11Iso -Architecture amd64 -Edition Home -OutputPath $tmp
+                $homeN = Get-Windows11Iso -Architecture amd64 -Edition 'Home N' -OutputPath $tmp
 
-                $pro.Path | Should -BeLike '*Windows11-consumer-amd64-latest.iso'
-                $homeIso.Path | Should -Be $pro.Path
-                # Second (Home) call reuses the file the first (Pro) call downloaded.
+                $home1.Path | Should -BeLike '*Windows11-consumer-amd64-latest.iso'
+                $homeN.Path | Should -Be $home1.Path
+                # Second (Home N) call reuses the file the first (Home) call downloaded.
                 Should -Invoke Invoke-IsoDownload -Times 1
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
-        It 'requests the consumer Home/Pro/Edu edition from Fido regardless of the asked edition' {
+        It 'requests the consumer Home/Pro/Edu ISO from Fido for a Home build' {
             InModuleScope WindowsIsoMaker {
                 Mock Resolve-FidoScriptPath { 'stub-fido.ps1' }
                 Mock Invoke-FidoUrlResolver { 'https://software.download.microsoft.com/fake/win11.iso' }
@@ -172,15 +173,18 @@ Describe 'Get-Windows11Iso' {
             }
         }
 
-        It 'fails fast (without calling Fido) for a business edition that is not cached' {
-            InModuleScope WindowsIsoMaker {
+        It 'fails fast (without calling Fido) for a non-Home edition that is not cached' -ForEach @(
+            @{ Ed = 'Pro' }, @{ Ed = 'Enterprise' }
+        ) {
+            InModuleScope WindowsIsoMaker -Parameters @{ Ed = $Ed } {
+                param($Ed)
                 Mock Resolve-FidoScriptPath { throw 'Fido should not be resolved for business editions' }
                 Mock Invoke-FidoUrlResolver { throw 'Fido should not be called for business editions' }
                 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-biz-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
                 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 
-                { Get-Windows11Iso -Architecture amd64 -Edition Enterprise -OutputPath $tmp } |
-                    Should -Throw '*business/enterprise*IsoPath*'
+                { Get-Windows11Iso -Architecture amd64 -Edition $Ed -OutputPath $tmp } |
+                    Should -Throw '*business/volume*IsoPath*'
                 Should -Invoke Invoke-FidoUrlResolver -Times 0
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -192,7 +196,7 @@ Describe 'Get-Windows11Iso' {
             InModuleScope WindowsIsoMaker {
                 Mock Resolve-FidoScriptPath { 'stub-fido.ps1' }
                 Mock Invoke-FidoUrlResolver { $null }
-                { Get-Windows11Iso -Architecture amd64 -Release 'does-not-exist' } | Should -Throw
+                { Get-Windows11Iso -Architecture amd64 -Edition Home -Release 'does-not-exist' } | Should -Throw
             }
         }
     }
