@@ -103,6 +103,16 @@ function New-AutounattendXml {
         $accountMode = 'local'
     }
     $isEntraJoin = $accountMode -in @('entra', 'entraid', 'azuread')
+    # Windows 11 Home cannot join Entra ID / Azure AD - "Set up for work or school" (Entra/domain
+    # join) needs Pro, Enterprise or Education. On consumer (Home) media force a local account so the
+    # build stays hands-off instead of stalling at an OOBE sign-in Home can never complete.
+    $editionName = [string]$Config.Edition
+    if ($isEntraJoin -and -not [string]::IsNullOrWhiteSpace($editionName) -and
+        (Get-Windows11IsoFamily -Edition $editionName) -eq 'consumer') {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "AccountMode '$accountMode' was requested for Home edition '$editionName', but Windows 11 Home does not support Entra ID (Azure AD) join; forcing 'local'. Use Pro/Enterprise/Education for Entra join."
+        $accountMode = 'local'
+        $isEntraJoin = $false
+    }
     if ($isEntraJoin) {
         # Entra join is interactive at OOBE: no local account, and the online-account screens must
         # be visible so the user can sign in with their work/school (Entra) identity.

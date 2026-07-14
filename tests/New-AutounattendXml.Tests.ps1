@@ -161,8 +161,8 @@ Describe 'New-AutounattendXml account provisioning (local vs Entra join)' {
 
     BeforeAll {
         function script:New-AcctConfig {
-            param([hashtable]$Autounattend = @{})
-            [pscustomobject]@{ Edition = 'Home'; Language = 'en-US'; Architecture = 'amd64'; Autounattend = $Autounattend }
+            param([hashtable]$Autounattend = @{}, [string]$Edition = 'Pro')
+            [pscustomobject]@{ Edition = $Edition; Language = 'en-US'; Architecture = 'amd64'; Autounattend = $Autounattend }
         }
     }
 
@@ -200,6 +200,17 @@ Describe 'New-AutounattendXml account provisioning (local vs Entra join)' {
             Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match '<UserAccounts>'
         "$warnings" | Should -Match 'AccountMode'
+    }
+
+    It 'forces local for a Home edition even when AccountMode=entra (Home cannot Entra-join)' {
+        $cfg = New-AcctConfig -Edition 'Home' -Autounattend @{ AccountMode = 'entra' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        $xml = Get-Content -LiteralPath $script:OutPath -Raw
+        # Coerced to local: a local account IS created and the online-account screens ARE hidden.
+        $xml | Should -Match '<UserAccounts>'
+        $xml | Should -Match ([regex]::Escape('<HideOnlineAccountScreens>true</HideOnlineAccountScreens>'))
+        "$warnings" | Should -Match 'Entra'
     }
 
     It 'produces well-formed XML in Entra mode' {
