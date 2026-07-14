@@ -120,6 +120,29 @@ Describe 'New-AutounattendXml product key' {
         (Get-Content -LiteralPath $script:OutPath -Raw) | Should -Match ([regex]::Escape('ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'))
     }
 
+    It 'warns that a specific (non-generic) key is validated online during Setup' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'ABCDE-FGHIJ-KLMNO-PQRST-UVWXY' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Match 'validate'
+        "$warnings" | Should -Match '(?i)online'
+        "$warnings" | Should -Match 'UseGenericProductKey'
+    }
+
+    It 'does NOT emit the online-validation warning for a generic (GVLK) key' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'generic' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Not -Match '(?i)validated ONLINE'
+    }
+
+    It 'treats an explicit key equal to the edition GVLK as offline-safe (no online-validation warning)' {
+        $cfg = New-TestConfig -Edition 'Pro' -Autounattend @{ ProductKey = 'W269N-WFGWX-YVC9B-4J6C9-T83GX' }
+        $warnings = New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        "$warnings" | Should -Not -Match '(?i)validated ONLINE'
+    }
+
     It 'produces well-formed XML by default (no product key, Home)' {
         $cfg = New-TestConfig -Edition 'Home' -Autounattend @{}
         New-AutounattendXml -Config $cfg -Architecture amd64 -OutputPath $script:OutPath | Out-Null

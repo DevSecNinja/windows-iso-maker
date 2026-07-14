@@ -134,15 +134,25 @@ function New-AutounattendXml {
     #   ProductKey = 'XXXXX-...'                       -> use that explicit key verbatim
     $productKeyRaw = & $get 'ProductKey' $null
     $productKey = ''
+    # Track whether the baked key is a generic KMS client setup key (GVLK) / retail generic. Those
+    # are NOT validated online by Setup, so they keep a build hands-off even with no network/DNS. A
+    # specific MAK/retail key IS validated online during windowsPE and fails without connectivity.
+    $keyIsGeneric = $false
     if ($null -eq $productKeyRaw -or [string]::IsNullOrWhiteSpace([string]$productKeyRaw) -or
         [string]$productKeyRaw -match '(?i)^\s*none\s*$') {
         $productKey = ''
     }
     elseif ([string]$productKeyRaw -match '(?i)^\s*(generic|auto)\s*$') {
         $productKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
+        $keyIsGeneric = $true
     }
     else {
         $productKey = [string]$productKeyRaw.ToString().Trim()
+        # A user-supplied key that equals the edition's generic/GVLK is still offline-safe.
+        $editionGenericKey = Get-GenericSetupProductKey -Edition ([string]$Config.Edition)
+        if (-not [string]::IsNullOrWhiteSpace($editionGenericKey) -and $productKey -eq $editionGenericKey) {
+            $keyIsGeneric = $true
+        }
     }
 
     # The product key is applied in the windowsPE UserData pass (Microsoft-Windows-Setup/UserData/
@@ -159,6 +169,9 @@ function New-AutounattendXml {
     # (e.g. dockur/windows win11x64.xml) use for hands-off 24H2 installs.
     if ([string]::IsNullOrWhiteSpace($productKey)) {
         Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "No product key configured; on multi-edition media Setup may stop at the interactive product-key page. Use -UseGenericProductKey (or set Autounattend.ProductKey) for a fully hands-off install of edition '$editionImageName'."
+    }
+    elseif (-not $keyIsGeneric) {
+        Write-BuildLog -Level Warning -Component 'New-AutounattendXml' -Message "A specific product key is baked into the windowsPE UserData pass. Windows 11 24H2+ Setup validates such keys ONLINE during install and hard-stops with 'Setup has failed to validate the product key' when the machine has no working network/DNS (a MAK/retail key needs Microsoft's activation servers reachable - note that a Hyper-V VM may route IP yet still have no DNS). For a fully offline, hands-off install use -UseGenericProductKey (bakes the edition's GVLK, which Setup does NOT validate online), then apply your MAK/retail key AFTER install: slmgr.vbs /ipk <key>; slmgr.vbs /ato."
     }
 
     $productKeyFragment = ''

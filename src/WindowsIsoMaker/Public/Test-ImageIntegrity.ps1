@@ -499,23 +499,26 @@ function New-BootTestVm {
     Set-VMKeyProtector -VMName $VmName -NewLocalKeyProtector -ErrorAction Stop
     Enable-VMTPM -VMName $VmName -ErrorAction Stop
     # Give the guest network access. Windows 11 24H2's redesigned Setup attempts ONLINE product-key
-    # validation during windowsPE and fails with "Setup has failed to validate the product key" when
-    # offline (the setuperr.log then shows only network errors: OneSettings 0x80072EE7, metered
-    # network, DeviceId retrieval). New-VM adds a NIC but leaves it disconnected, so wire it to a
-    # switch with connectivity - the client-Hyper-V 'Default Switch' (NAT + internet) if present,
-    # otherwise any External switch. Best-effort: a boot test on a host without a usable switch still
-    # runs (offline), it just cannot validate keys online.
+    # validation during windowsPE when a specific (MAK/retail) key is baked, and fails with "Setup
+    # has failed to validate the product key" when it cannot reach Microsoft (setuperr.log then shows
+    # only network errors: OneSettings 0x80072EE7, metered network, DeviceId retrieval). New-VM adds a
+    # NIC but leaves it disconnected, so wire it to a switch with connectivity. Prefer an *External*
+    # switch (bridged to a physical NIC, so the guest gets the LAN's real DHCP + DNS) over the
+    # client-Hyper-V 'Default Switch' (NAT), whose ICS DNS proxy is unreliable in WinPE - a symptom is
+    # a guest that can ping 8.8.8.8 but cannot resolve names, which still fails online key validation.
+    # Best-effort: a host without a usable switch still runs the boot test offline. NOTE: a GVLK build
+    # (-UseGenericProductKey) is NOT validated online and installs hands-off even with no DNS.
     try {
         $switch = Get-VMSwitch -ErrorAction Stop |
-            Sort-Object -Property @{ Expression = { $_.Name -eq 'Default Switch' }; Descending = $true },
-                                  @{ Expression = { $_.SwitchType -eq 'External' }; Descending = $true } |
+            Sort-Object -Property @{ Expression = { $_.SwitchType -eq 'External' }; Descending = $true },
+                                  @{ Expression = { $_.Name -eq 'Default Switch' }; Descending = $true } |
             Select-Object -First 1
         if ($switch) {
             Connect-VMNetworkAdapter -VMName $VmName -SwitchName $switch.Name -ErrorAction Stop
-            Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "Connected boot-test VM '$VmName' network adapter to switch '$($switch.Name)' ($($switch.SwitchType)) so 24H2 Setup can validate the product key online."
+            Write-BuildLog -Level Information -Component 'New-BootTestVm' -Message "Connected boot-test VM '$VmName' network adapter to switch '$($switch.Name)' ($($switch.SwitchType)) so 24H2 Setup can validate a specific product key online. If DNS fails in the VM (ping works, name resolution does not), prefer an External switch or use -UseGenericProductKey for an offline GVLK install."
         }
         else {
-            Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "No Hyper-V switch found; boot-test VM '$VmName' will run offline. Windows 11 24H2 Setup may fail online product-key validation without network."
+            Write-BuildLog -Level Warning -Component 'New-BootTestVm' -Message "No Hyper-V switch found; boot-test VM '$VmName' will run offline. Windows 11 24H2 Setup may fail online validation of a specific product key without network - use -UseGenericProductKey (GVLK, not validated online) for a hands-off offline install."
         }
     }
     catch {

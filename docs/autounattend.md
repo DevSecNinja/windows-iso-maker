@@ -121,18 +121,30 @@ key selects the edition and keeps the install hands-off — mirroring known-good
 By **default** no key is configured: on multi-edition media Setup may prompt at the product-key page.
 Configure a key (e.g. `-UseGenericProductKey`) for a fully hands-off install.
 
+> ⚠️ **MAK / retail keys are validated ONLINE during Setup.** Windows 11 24H2+ Setup contacts
+> Microsoft to validate a *specific* (MAK or retail) key baked into `windowsPE` UserData. If the
+> machine has no working network **or no DNS**, Setup hard-stops with *"Setup has failed to validate
+> the product key"* — even though the key and the media are correct. (A Hyper-V VM on the NAT
+> *Default Switch* often routes IP — `ping 8.8.8.8` works — yet cannot resolve names, which trips
+> exactly this failure.) A **generic KMS client setup key (GVLK)** is **not** validated online, so it
+> installs hands-off with no connectivity. **Recommended for business editions:** build with
+> `-UseGenericProductKey` (bakes the edition's GVLK), then apply your genuine MAK/retail key **after**
+> install: `slmgr.vbs /ipk <your-key>` then `slmgr.vbs /ato` (or activate via KMS / AD-based / a
+> digital licence).
+
 `ProductKey` controls whether (and which) `<ProductKey>` element is written into the `windowsPE` pass:
 
 | Value | Behaviour |
 | --- | --- |
 | `''` (default) / `'none'` | **No key.** On multi-edition media Setup may stop at the product-key page. |
-| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit, **genuine** key in `windowsPE` (activates when valid). |
-| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic** key in `windowsPE` (non-activating; selects the edition and skips the key page). This is the **retail generic** key for Home (consumer media) or the **GVLK / KMS client** key for business editions (Pro, Education, Enterprise, ... — business/volume media). The key class must match the media: a volume/GVLK key is rejected on retail media and vice-versa. |
+| `'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'` | Apply that explicit key in `windowsPE`. A **MAK/retail** key is **validated online** during Setup (needs network + DNS); a **GVLK** is not. Prefer the GVLK path above for offline hands-off installs. |
+| `'generic'` / `'auto'` | Apply the resolved `Edition`'s public **generic** key in `windowsPE` (non-activating; selects the edition, skips the key page, **no online validation**). This is the **retail generic** key for Home (consumer media) or the **GVLK / KMS client** key for business editions (Pro, Education, Enterprise, ... — business/volume media). The key class must match the media: a volume/GVLK key is rejected on retail media and vice-versa. |
 
 The `build.ps1` / `Invoke-IsoBuild` / `Invoke-QuickBootTest.ps1` `-UseGenericProductKey` switch is a
-shorthand that sets `ProductKey = 'generic'` for the resolved edition (an explicit `-ProductKey`
-takes precedence). Use it for a fully hands-off build — a Home build off the consumer ISO, or a
-business edition (Pro, Education, ...) off a business/volume ISO supplied via `-IsoPath`.
+shorthand that sets `ProductKey = 'generic'` for the resolved edition. It is **mutually exclusive**
+with `-ProductKey` (passing both is an error). Use it for a fully hands-off build — a Home build off
+the consumer ISO, or a business edition (Pro, Education, ...) off a business/volume ISO supplied via
+`-IsoPath`.
 
 `scripts/Invoke-QuickBootTest.ps1` exposes `-Edition`, `-ProductKey`, `-UseGenericProductKey`, and
 `-Profile` overrides, so you can test the hands-off path with `-Edition Home -UseGenericProductKey`
