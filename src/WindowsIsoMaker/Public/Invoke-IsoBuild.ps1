@@ -55,8 +55,8 @@ function Invoke-IsoBuild {
         the work/school sign-in so the device joins Entra ID / auto-enrolls into Intune).
     .PARAMETER UseGenericProductKey
         Bake the edition's generic/default retail product key, applied in the windowsPE UserData pass
-        (non-activating). Handy for a fully hands-off Home build. An explicit -ProductKey always
-        takes precedence.
+        (non-activating). Handy for a fully hands-off Home build. Mutually exclusive with
+        -ProductKey.
     .PARAMETER SkipHeavyBuild
         Preview/light path: no download/mount/build; still emits a RunReport (FR-014).
     .PARAMETER BootTest
@@ -133,6 +133,14 @@ function Invoke-IsoBuild {
         [switch] $KeepBootTestVm
     )
 
+    # --- 0. Reject mutually exclusive product-key inputs (fail fast). ---
+    # -UseGenericProductKey bakes the edition's generic key while -ProductKey bakes a specific one;
+    # supplying both is contradictory, so error instead of silently letting -ProductKey win.
+    if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+        throw '-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey ' +
+            "'<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+    }
+
     # --- 1. Resolve configuration (config file is primary; params are last-mile overrides). ---
     if (-not $Config) {
         $cfgParams = @{}
@@ -158,8 +166,9 @@ function Invoke-IsoBuild {
     }
 
     # -UseGenericProductKey bakes the edition's generic/default retail key, applied in the windowsPE
-    # UserData pass (non-activating). An explicit -ProductKey always wins over the switch.
-    if ($UseGenericProductKey.IsPresent -and -not $PSBoundParameters.ContainsKey('ProductKey')) {
+    # UserData pass (non-activating). The two are mutually exclusive (rejected in step 0), so at this
+    # point -ProductKey is guaranteed absent whenever the switch is present.
+    if ($UseGenericProductKey.IsPresent) {
         $au = $Config.Autounattend
         if ($au -is [hashtable]) { $au['ProductKey'] = 'generic' }
         elseif ($null -ne $au) { $au | Add-Member -NotePropertyName 'ProductKey' -NotePropertyValue 'generic' -Force }

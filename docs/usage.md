@@ -56,7 +56,7 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 | `-Profile` | `minimal` \| `default` \| `aggressive` \| `gaming` \| `opinionated`. Accepts a comma-separated list to combine, e.g. `-Profile gaming,opinionated`. |
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out specific catalog ids. |
 | `-ProductKey` | Override the Autounattend product key. Applied in the **`windowsPE`** UserData pass so 24H2 multi-edition media does not stop at the product-key page. `''`/`none` omit the key (Setup may prompt on multi-edition media); a genuine key activates when valid. |
-| `-UseGenericProductKey` | Bake the edition's generic key (applied in `windowsPE`, non-activating): the **retail generic** key for Home (consumer ISO) or the **GVLK / KMS client** key for business editions (business ISO). Makes a fully hands-off build; an explicit `-ProductKey` wins. |
+| `-UseGenericProductKey` | Bake the edition's generic key (applied in `windowsPE`, non-activating): the **retail generic** key for Home (consumer ISO) or the **GVLK / KMS client** key for business editions (business ISO). Makes a fully hands-off build. **Mutually exclusive** with `-ProductKey` (passing both is an error). |
 | `-AccountMode` | OOBE account provisioning: `local` (create a local admin, hands-off) or `entra` (present the work/school sign-in to join Entra ID and auto-enroll into Intune). |
 | `-SkipHeavyBuild` | Preview only: resolve config + report changes, no download/build. |
 | `-BootTest` | Run the opt-in VM boot test. |

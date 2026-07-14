@@ -96,22 +96,16 @@ Describe 'Invoke-IsoBuild preview & safety (US5)' {
         }
     }
 
-    It 'lets an explicit -ProductKey win over -UseGenericProductKey' {
+    It 'throws when both -ProductKey and -UseGenericProductKey are passed (mutually exclusive)' {
         $cfg = Get-FakeConfig
         $cfg.Autounattend = @{ Enabled = $true; ProductKey = '' }
         InModuleScope WindowsIsoMaker -Parameters @{ Cfg = $cfg } {
             param($Cfg)
             Mock Test-BuildPrerequisite { [pscustomobject]@{ } }
             Mock Get-Windows11Iso { throw 'must not download' }
-            $script:capturedKey = 'UNSET'
-            Mock New-RunReport {
-                param($Outcome, $Autounattend)
-                $script:capturedKey = $Autounattend['ProductKey']
-                [pscustomobject]@{ Outcome = $Outcome }
-            }
 
-            $null = Invoke-IsoBuild -Config $Cfg -ProductKey 'ABCDE-FGHIJ-KLMNO-PQRST-UVWXY' -UseGenericProductKey -SkipHeavyBuild
-            $script:capturedKey | Should -Be 'ABCDE-FGHIJ-KLMNO-PQRST-UVWXY'
+            { Invoke-IsoBuild -Config $Cfg -ProductKey 'ABCDE-FGHIJ-KLMNO-PQRST-UVWXY' -UseGenericProductKey -SkipHeavyBuild } |
+                Should -Throw '*mutually exclusive*'
         }
     }
 

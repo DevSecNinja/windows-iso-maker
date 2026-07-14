@@ -62,7 +62,7 @@
 
 .PARAMETER UseGenericProductKey
     Bake the edition's generic/default retail key (applied in windowsPE UserData, non-activating) -
-    use it for a fully hands-off run. An explicit -ProductKey wins over this switch.
+    use it for a fully hands-off run. Mutually exclusive with -ProductKey.
 
 .PARAMETER Profile
     Debloat/customization profile(s) to apply for this run, overriding the config's Profile. Accepts
@@ -107,6 +107,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Fail fast on mutually exclusive product-key inputs: -ProductKey bakes a specific key,
+# -UseGenericProductKey bakes the edition's generic key; supplying both is contradictory.
+if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+    throw "-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey '<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Join-Path $repoRoot 'src/WindowsIsoMaker/WindowsIsoMaker.psd1'

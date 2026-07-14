@@ -59,7 +59,7 @@
 
 .PARAMETER UseGenericProductKey
     Bake the edition's generic/default retail key, applied in the specialize pass (non-activating) -
-    the easy way to make a fully hands-off Home build. An explicit -ProductKey wins over this switch.
+    the easy way to make a fully hands-off Home build. Mutually exclusive with -ProductKey.
 
 .PARAMETER SkipHeavyBuild
     Run the preview/light path only (no download/mount/build); still emits a RunReport.
@@ -151,6 +151,14 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Fail fast on mutually exclusive product-key inputs before importing the module or checking
+# elevation: -ProductKey bakes a specific key, -UseGenericProductKey bakes the edition's generic
+# key; supplying both is contradictory.
+if ($UseGenericProductKey.IsPresent -and $PSBoundParameters.ContainsKey('ProductKey')) {
+    throw '-ProductKey and -UseGenericProductKey are mutually exclusive. Pass -ProductKey ' +
+        "'<key>' to bake a specific key, or -UseGenericProductKey for the edition's generic key - not both."
+}
 
 # Resolve the config path precedence for the DISPATCHER only: explicit param wins, else the
 # WIM_CONFIG_PATH env var, else the shipped default. Get-BuildConfiguration re-applies the
