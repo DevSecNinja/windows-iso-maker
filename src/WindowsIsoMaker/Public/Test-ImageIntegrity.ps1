@@ -323,7 +323,7 @@ function Invoke-VmBootTest {
     }
     try {
         if ($isVMware) {
-            New-VMwareBootTestVm -VmName $vmName -IsoPath $IsoPath -VmxPath $vmxPath -VhdPath $vhd -ConnectNetwork:$connectNetwork -ConnectVm:$ConnectVm
+            New-VMwareBootTestVm -VmName $vmName -IsoPath $IsoPath -VmxPath $vmxPath -VhdPath $vhd -ConnectNetwork:$connectNetwork
         }
         else {
             New-BootTestVm -VmName $vmName -IsoPath $IsoPath -VhdPath $vhd -ConnectNetwork:$connectNetwork
@@ -470,22 +470,24 @@ function Wait-BootTestInspection {
         Pause after the boot test so the user can connect to the VM and test it manually.
     .DESCRIPTION
         Private, runtime-only seam invoked by Invoke-VmBootTest when -KeepBootTestVm is set. It
-        leaves the throwaway boot-test VM in place and blocks until the user presses Enter, so
-        they can attach with vmconnect and interact before Invoke-VmBootTest's finally block tears
-        the VM (and its VHDX) down. Isolated behind one function so it can be mocked to a no-op in
-        the unit suite (Read-Host would otherwise block the tests).
+        leaves the throwaway boot-test VM in place and holds until EITHER the user powers the VM off
+        themselves (in the hypervisor console) OR presses Enter here - so stopping the VM proceeds
+        straight to log harvest + cleanup without the operator having to switch back to this
+        terminal. Isolated behind one function so it can be mocked to a no-op in the unit suite
+        (the interactive wait would otherwise block the tests).
     .PARAMETER VmName
         Name of the throwaway boot-test VM the user can connect to.
     .PARAMETER Result
         The resolved boot-test result object (for context in the prompt).
     .PARAMETER Hypervisor
-        'HyperV' or 'VMware' - selects the connect hint shown to the user.
+        'HyperV' or 'VMware' - selects the connect hint shown to the user and the VM-state probe.
     .PARAMETER VmIdentifier
-        Provider-specific handle used in the connect hint (the .vmx path for VMware).
+        Provider-specific handle (the .vmx path for VMware) used in the connect hint and state probe.
     .OUTPUTS
         None.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Interactive pause seam for the opt-in boot test; performs no state change.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive keep-alive prompt is written to the host on purpose so the operator sees it.')]
     [CmdletBinding()]
     [OutputType([void])]
     param(
@@ -498,7 +500,46 @@ function Wait-BootTestInspection {
     $state = if ($Result) { $Result.State } else { 'unknown' }
     $connectHint = if ($Hypervisor -eq 'VMware') { "vmware -t `"$VmIdentifier`"" } else { "vmconnect localhost $VmName" }
     Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: holding VM '$VmName' (state '$state') for manual testing. Connect with: $connectHint"
-    $null = Read-Host -Prompt "Boot-test VM '$VmName' is kept for manual testing. Press Enter to power it off, harvest the Windows Setup logs, and clean up"
+    Write-Host "Boot-test VM '$VmName' is kept for manual testing. Power it OFF in the hypervisor, or press Enter here, to harvest the Windows Setup logs and clean up..."
+
+    $keyboardAvailable = $true
+    while ($true) {
+        # 1) Did the user power the VM off themselves? Then stop waiting and clean up immediately.
+        $running = $true
+        try {
+            $status = if ($Hypervisor -eq 'VMware') {
+                Get-VMwareVmBootStatus -VmName $VmName -VmxPath $VmIdentifier
+            }
+            else {
+                Get-VmBootStatus -VmName $VmName
+            }
+            $running = ("$($status.State)" -eq 'Running')
+        }
+        catch {
+            $running = $true  # transient state-probe failure: keep holding rather than tear down early
+        }
+        if (-not $running) {
+            Write-BuildLog -Level Information -Component 'Invoke-VmBootTest' -Message "KeepBootTestVm: VM '$VmName' was powered off; harvesting the Windows Setup logs and cleaning up."
+            return
+        }
+
+        # 2) Did the user press Enter here instead?
+        if ($keyboardAvailable) {
+            try {
+                while ([System.Console]::KeyAvailable) {
+                    if ([System.Console]::ReadKey($true).Key -eq [System.ConsoleKey]::Enter) { return }
+                }
+            }
+            catch {
+                # No interactive console (redirected stdin / non-console host): fall back to a single
+                # blocking read so we neither busy-loop nor spin forever on the keyboard branch.
+                $null = Read-Host -Prompt "Press Enter to power off VM '$VmName' and clean up"
+                return
+            }
+        }
+
+        Start-Sleep -Milliseconds 1000
+    }
 }
 
 function Start-BootTestVmConnect {

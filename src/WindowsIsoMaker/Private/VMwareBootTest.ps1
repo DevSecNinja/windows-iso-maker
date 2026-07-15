@@ -399,8 +399,6 @@ function New-VMwareBootTestVm {
         Path for the throwaway system disk (.vmdk) - kept parameter-compatible with New-BootTestVm.
     .PARAMETER ConnectNetwork
         Attach a connected NAT NIC (default of the VMware provider). Off => NIC left disconnected.
-    .PARAMETER ConnectVm
-        Start with the VMware GUI visible instead of headless (nogui).
     .OUTPUTS
         None.
     #>
@@ -412,8 +410,7 @@ function New-VMwareBootTestVm {
         [Parameter(Mandatory = $true)][string] $IsoPath,
         [Parameter(Mandatory = $true)][string] $VmxPath,
         [Parameter(Mandatory = $true)][string] $VhdPath,
-        [Parameter()][switch] $ConnectNetwork,
-        [Parameter()][switch] $ConnectVm
+        [Parameter()][switch] $ConnectNetwork
     )
 
     $paths = Get-VMwareInstallPath
@@ -448,8 +445,12 @@ function New-VMwareBootTestVm {
         Write-BuildLog -Level Information -Component 'New-VMwareBootTestVm' -Message "Boot-test VM '$VmName' runs OFFLINE (NIC disconnected)."
     }
 
-    $mode = if ($ConnectVm) { 'gui' } else { 'nogui' }
-    $start = Invoke-Vmrun -Arguments @('start', $VmxPath, $mode)
+    # ALWAYS start headless. `vmrun start <vmx> gui` blocks until the Workstation UI reports the VM
+    # powered on, and a first-run/modal UI dialog can stall that for many minutes - hanging the whole
+    # boot test. The interactive console (when -ConnectVm is set) is opened separately and
+    # non-blocking by Start-VMwareVmConnect (vmware.exe -t), which simply attaches to this already
+    # running VM.
+    $start = Invoke-Vmrun -Arguments @('start', $VmxPath, 'nogui')
     if ($start.ExitCode -ne 0) {
         throw "vmrun failed to start the boot-test VM '$VmName' (exit $($start.ExitCode)): $($start.Output)"
     }

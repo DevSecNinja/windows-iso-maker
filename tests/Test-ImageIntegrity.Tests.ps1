@@ -245,6 +245,34 @@ Describe 'Invoke-VmBootTest polling' {
     }
 }
 
+Describe 'Wait-BootTestInspection' {
+    It 'returns as soon as the VMware VM is powered off (no Enter needed)' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-VMwareVmBootStatus { [pscustomobject]@{ State = 'Off'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            Mock Read-Host { throw 'must not block on Read-Host once the VM is powered off' }
+            Mock Start-Sleep { }
+            Mock Write-Host { }
+            { Wait-BootTestInspection -VmName 'vm' -Hypervisor VMware -VmIdentifier 'C:\x\vm.vmx' -Result ([pscustomobject]@{ State = 'Running' }) } |
+                Should -Not -Throw
+            Should -Invoke Get-VMwareVmBootStatus -Times 1
+            Should -Invoke Read-Host -Times 0
+        }
+    }
+
+    It 'returns as soon as the Hyper-V VM is powered off (no Enter needed)' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-VmBootStatus { [pscustomobject]@{ State = 'Off'; Heartbeat = $null; HeartbeatHealthy = $false } }
+            Mock Read-Host { throw 'must not block on Read-Host once the VM is powered off' }
+            Mock Start-Sleep { }
+            Mock Write-Host { }
+            { Wait-BootTestInspection -VmName 'vm' -Hypervisor HyperV -Result ([pscustomobject]@{ State = 'Running' }) } |
+                Should -Not -Throw
+            Should -Invoke Get-VmBootStatus -Times 1
+            Should -Invoke Read-Host -Times 0
+        }
+    }
+}
+
 Describe 'Invoke-VmBootTest diagnostics harvesting' {
 
     BeforeEach {
