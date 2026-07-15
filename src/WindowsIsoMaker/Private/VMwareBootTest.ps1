@@ -10,10 +10,11 @@
     same way the Hyper-V path is.
 
     Unlike Hyper-V (which boots the test VM OFFLINE by default to dodge the flaky WinPE Default
-    Switch DNS proxy), the VMware provider defaults to a NAT connection: VMware Workstation's NAT
-    gives WinPE working DNS, which is exactly what a 24H2+ "ConX" Setup online product-key/edition
-    validation needs (see issue #5). Pass -ConnectNetwork:$false semantics via the orchestrator to
-    force it offline.
+    Switch DNS proxy), the VMware provider defaults to a NAT connection so that - once a WinPE NIC
+    driver is injected into boot.wim (issue #6) - WinPE has working DNS for a 24H2+ "ConX" Setup
+    online product-key/edition validation (see issue #5). NOTE: 24H2 WinPE has no inbox driver for
+    any VMware NIC, so until #6 lands the guest gets no adapter regardless of this NAT wiring. Pass
+    -ConnectNetwork:$false semantics via the orchestrator to force it offline.
 #>
 
 # The winget package id VMware historically shipped. Broadcom has since delisted it (the installer
@@ -311,8 +312,9 @@ function New-VMwareVmxConfiguration {
     .PARAMETER VmdkFileName
         File name (relative to the .vmx directory) of the system disk.
     .PARAMETER ConnectNetwork
-        When set, wire ethernet0 as a connected NAT adapter (WinPE gets working DNS for ConX online
-        checks). Otherwise the NIC is present but left disconnected (fully offline).
+        When set, wire ethernet0 as a connected NAT adapter (so WinPE gets working DNS for ConX
+        online checks once a NIC driver is injected into boot.wim - issue #6). Otherwise the NIC is
+        present but left disconnected (fully offline).
     .OUTPUTS
         System.String - the .vmx file contents.
     #>
@@ -371,6 +373,11 @@ function New-VMwareVmxConfiguration {
         # Boot the CD-ROM first so Windows Setup runs, then fall through to the disk.
         'bios.bootOrder = "cdrom,hdd"'
         # NIC: NAT when networked (WinPE DNS for ConX), else present-but-disconnected (offline).
+        # "e1000e" (Intel 82574L) is VMware's default adapter for a windows11-64 guest. NOTE: this
+        # gives WinPE NO network by itself - the Windows 11 24H2 Setup boot.wim carries no inbox
+        # driver for ANY VMware NIC (e1000, e1000e, or vmxnet3), so WinPE enumerates no adapter and
+        # never gets a DHCP lease. Real WinPE networking needs a driver injected into boot.wim;
+        # tracked in issue #6 (which will also finalise the model to match the injected driver).
         'ethernet0.present = "TRUE"'
         'ethernet0.connectionType = "nat"'
         'ethernet0.virtualDev = "e1000e"'
@@ -439,7 +446,7 @@ function New-VMwareBootTestVm {
     }
 
     if ($ConnectNetwork) {
-        Write-BuildLog -Level Information -Component 'New-VMwareBootTestVm' -Message "Boot-test VM '$VmName' uses a connected NAT NIC so WinPE has working DNS for ConX online product-key/edition validation."
+        Write-BuildLog -Level Information -Component 'New-VMwareBootTestVm' -Message "Boot-test VM '$VmName' has a connected NAT NIC (WinPE gets DNS for ConX online validation only once a NIC driver is injected into boot.wim - issue #6; 24H2 WinPE has no inbox VMware NIC driver)."
     }
     else {
         Write-BuildLog -Level Information -Component 'New-VMwareBootTestVm' -Message "Boot-test VM '$VmName' runs OFFLINE (NIC disconnected)."

@@ -48,6 +48,13 @@ Describe 'New-VMwareVmxConfiguration' {
                 Should -Match 'ethernet0\.startConnected = "FALSE"'
         }
     }
+
+    It 'uses VMware''s default e1000e NIC (WinPE still needs an injected driver, see #6)' {
+        InModuleScope WindowsIsoMaker {
+            $vmx = New-VMwareVmxConfiguration -VmName 'a' -IsoPath 'i.iso' -VmdkFileName 'a.vmdk' -ConnectNetwork
+            $vmx | Should -Match 'ethernet0\.virtualDev = "e1000e"'
+        }
+    }
 }
 
 Describe 'Get-VMwareReadiness' {
