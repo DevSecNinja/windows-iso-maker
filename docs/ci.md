@@ -21,8 +21,11 @@ pinned by commit SHA and kept current by Renovate (Principle VII, FR-031).
 
 - **Trigger**: `workflow_dispatch` **only** — never on push/PR (FR-012).
 - **Inputs**: `edition` (**defaults to `Home`**), `language`, `release`, `iso_url_amd64`,
-  `iso_url_arm64`, `profile`, `enable_catalog_id`, `disable_catalog_id`, `skip_heavy_build`,
-  `boot_test`. There are deliberately **no** `remove_edge`/`remove_onedrive` inputs — pass
+  `iso_url_arm64`, `profile` (`minimal`/`default`/`aggressive`/`gaming`/`opinionated`),
+  `enable_catalog_id`, `disable_catalog_id`, `skip_heavy_build`, `boot_test`,
+  `use_generic_product_key`, `account_mode` (`local`/`entra`), `hypervisor` (`HyperV`/`VMware`, boot
+  test only), and `keep_boot_test_vm` (boot test only). There are deliberately **no**
+  `remove_edge`/`remove_onedrive` inputs — pass
   `enable_catalog_id: remove-edge,remove-onedrive` instead (data-driven selection, FR-024).
 - **Pre-flight validation (fail fast)**: the first step validates inputs before any ADK install or
   ISO download and fails the leg early with a clear message on: an empty `edition`/`release`, a

@@ -43,6 +43,8 @@ on:
           - minimal
           - default
           - aggressive
+          - gaming
+          - opinionated
         default: 'default'
       enable_catalog_id:
         description: 'Comma-separated catalog ids to force-enable (e.g. remove-edge,remove-onedrive,feature-wsl)'
@@ -58,6 +60,28 @@ on:
         default: false
       boot_test:
         description: 'Run the opt-in VM boot validation (requires nested virtualization)'
+        type: boolean
+        default: false
+      use_generic_product_key:
+        description: 'Bake the edition''s generic/default key instead of a specific key. Mutually exclusive with the WINDOWS_PRODUCT_KEY secret (generic wins if both are set).'
+        type: boolean
+        default: false
+      account_mode:
+        description: 'First-boot account provisioning: local admin (hands-off) or Entra ID (Azure AD) join. Entra needs Pro/Enterprise/Education.'
+        type: choice
+        options:
+          - local
+          - entra
+        default: 'local'
+      hypervisor:
+        description: 'Hypervisor for the opt-in boot test (only used when boot_test=true). VMware gives WinPE real DNS for 24H2+ ConX/product-key validation; Hyper-V is the default.'
+        type: choice
+        options:
+          - HyperV
+          - VMware
+        default: 'HyperV'
+      keep_boot_test_vm:
+        description: 'Keep the boot-test VM after the run instead of deleting it (only used when boot_test=true; for manual inspection).'
         type: boolean
         default: false
 
@@ -116,10 +140,10 @@ jobs:
           }
 
           # --- Catalog id shape + enable/disable conflict ---
-          function Split-Ids([string]$raw) { $raw -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+          function Split-Ids([string]$raw) { @($raw -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
           $enableIds  = Split-Ids $env:ENABLE_CATALOG_ID
           $disableIds = Split-Ids $env:DISABLE_CATALOG_ID
-          foreach ($id in @($enableIds + $disableIds)) {
+          foreach ($id in (@($enableIds) + @($disableIds))) {
               if ($id -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { $errs.Add("catalog id '$id' is malformed (expected e.g. remove-edge).") }
           }
           $conflicts = @($enableIds | Where-Object { $disableIds -contains $_ })
@@ -225,12 +249,25 @@ jobs:
               Language     = '${{ inputs.language }}'
               Release      = '${{ inputs.release }}'
               Profile      = '${{ inputs.profile }}'
+              AccountMode  = '${{ inputs.account_mode }}'
           }
           if ('${{ inputs.enable_catalog_id }}'.Trim())  { $params['EnableCatalogId']  = '${{ inputs.enable_catalog_id }}'  -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
           if ('${{ inputs.disable_catalog_id }}'.Trim()) { $params['DisableCatalogId'] = '${{ inputs.disable_catalog_id }}' -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
           if ('${{ inputs.skip_heavy_build }}' -eq 'true') { $params['SkipHeavyBuild'] = $true }
-          if ('${{ inputs.boot_test }}' -eq 'true')        { $params['BootTest']       = $true }
-          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) { $params['ProductKey'] = $env:WINDOWS_PRODUCT_KEY }
+          if ('${{ inputs.boot_test }}' -eq 'true') {
+              $params['BootTest']   = $true
+              $params['Hypervisor'] = '${{ inputs.hypervisor }}'
+              if ('${{ inputs.keep_boot_test_vm }}' -eq 'true') { $params['KeepBootTestVm'] = $true }
+          }
+          # -UseGenericProductKey and -ProductKey are mutually exclusive; generic wins if both are supplied.
+          if ('${{ inputs.use_generic_product_key }}' -eq 'true') {
+              $params['UseGenericProductKey'] = $true
+              if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) {
+                  Write-Host '::warning::use_generic_product_key is set and a WINDOWS_PRODUCT_KEY secret exists; baking the generic key and ignoring the secret (they are mutually exclusive).'
+              }
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) {
+              $params['ProductKey'] = $env:WINDOWS_PRODUCT_KEY
+          }
           if (-not [string]::IsNullOrWhiteSpace($env:BUILD_ISO_PATH))      { $params['IsoPath']    = $env:BUILD_ISO_PATH }
 
           ./build.ps1 @params
