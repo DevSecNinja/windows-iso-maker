@@ -27,7 +27,8 @@
         'Test-ImageIntegrity',
         'Export-ImageBom',
         'Export-CatalogManifest',
-        'Invoke-IsoBuild'
+        'Invoke-IsoBuild',
+        'Invoke-PostInstallSetup'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

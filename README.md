@@ -69,11 +69,26 @@ Requires Windows with administrator rights, PowerShell 5.1+/7+, and the Windows 
 The **configuration file is the primary interface** (see [docs/usage.md](docs/usage.md)); CLI
 parameters are optional last-mile overrides.
 
+### Already have Windows installed? Apply the profile in place
+
+Starting from a **stock** Windows 11 (a cloud reset, or an ISO from your Visual Studio
+subscription) instead of a custom ISO? Run the same catalog directly on the machine with
+`post-install.ps1` (elevated). See [docs/post-install.md](docs/post-install.md).
+
+```powershell
+# Preview what the opinionated profile would change on THIS machine — touches nothing
+./post-install.ps1 -Profile opinionated -WhatIf
+
+# Apply it for real
+./post-install.ps1 -Profile opinionated
+```
+
 ## Documentation
 
 | Topic | Doc |
 |-------|-----|
 | Local usage & configuration | [docs/usage.md](docs/usage.md) |
+| Post-install (existing machine) | [docs/post-install.md](docs/post-install.md) |
 | Change catalog & rationale | [docs/change-rationale.md](docs/change-rationale.md) |
 | Evidence grading | [docs/evidence-grading.md](docs/evidence-grading.md) |
 | CI / GitHub Actions | [docs/ci.md](docs/ci.md) |
@@ -86,6 +101,7 @@ parameters are optional last-mile overrides.
 
 ```
 build.ps1                     # Thin local entry point -> Invoke-IsoBuild
+post-install.ps1              # Thin local entry point -> Invoke-PostInstallSetup (apply to a running PC)
 config/                       # build.config.psd1 + catalog.*.psd1 (the change catalog)
 src/WindowsIsoMaker/          # The PowerShell module (Public/ + Private/)
 templates/autounattend/       # Autounattend.xml template

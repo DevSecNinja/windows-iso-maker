@@ -38,7 +38,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $targets = @('./src', './tests', './build.ps1')
+          $targets = @('./src', './tests', './build.ps1', './post-install.ps1')
           $findings = foreach ($t in $targets) {
               Invoke-ScriptAnalyzer -Path $t -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
           }
