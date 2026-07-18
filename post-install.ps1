@@ -42,9 +42,31 @@
 .PARAMETER NoReport
     Do not write the run-report JSON to disk (the object is still returned).
 
+.PARAMETER InstallWsl
+    After applying the catalog, also install WSL and a Linux distribution. ON BY DEFAULT when the
+    'opinionated' profile is selected; pass -InstallWsl to force it for other profiles, or
+    -InstallWsl:$false to skip it under 'opinionated'.
+
+.PARAMETER WslDistribution
+    The Linux distribution to install when -InstallWsl is set (default 'Debian').
+
+.PARAMETER WslServicing
+    How WSL is obtained when -InstallWsl is set: 'Store' (default, auto-updating), 'WebDownload'
+    (modern engine from GitHub, no Store dependency), or 'Inbox' (in-Windows component, Windows
+    Update-serviced).
+
+.PARAMETER WslAutoReboot
+    When -InstallWsl needs a reboot, restart the computer automatically instead of only
+    instructing you to reboot and re-run.
+
 .EXAMPLE
     ./post-install.ps1 -Profile opinionated
     Applies the opinionated profile to the running machine.
+
+.EXAMPLE
+    ./post-install.ps1 -Profile opinionated -InstallWsl -WslDistribution Debian
+    Applies the opinionated profile, then advances the staged WSL + Debian install (re-run after
+    each requested reboot until it is done).
 
 .EXAMPLE
     ./post-install.ps1 -Profile aggressive -WhatIf
@@ -112,7 +134,21 @@ param(
     [string] $OutputDirectory,
 
     [Parameter()]
-    [switch] $NoReport
+    [switch] $NoReport,
+
+    [Parameter()]
+    [switch] $InstallWsl,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string] $WslDistribution,
+
+    [Parameter()]
+    [ValidateSet('Store', 'WebDownload', 'Inbox')]
+    [string] $WslServicing,
+
+    [Parameter()]
+    [switch] $WslAutoReboot
 )
 
 Set-StrictMode -Version Latest
@@ -132,13 +168,15 @@ if (-not $isAdmin -and -not $WhatIfPreference) {
 
 # Forward only the parameters the user actually set, so command defaults stay authoritative.
 $setupParams = @{}
-foreach ($name in 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'Architecture', 'Scope', 'OutputDirectory') {
+foreach ($name in 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'Architecture', 'Scope', 'OutputDirectory', 'WslDistribution', 'WslServicing') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $setupParams[$name] = $PSBoundParameters[$name]
     }
 }
-if ($PSBoundParameters.ContainsKey('NoReport')) {
-    $setupParams['NoReport'] = [switch]$PSBoundParameters['NoReport']
+foreach ($switchName in 'NoReport', 'InstallWsl', 'WslAutoReboot') {
+    if ($PSBoundParameters.ContainsKey($switchName)) {
+        $setupParams[$switchName] = [switch]$PSBoundParameters[$switchName]
+    }
 }
 
 # Honor -WhatIf from the dispatcher through to the command (preview path, FR-016).

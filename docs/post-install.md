@@ -62,6 +62,9 @@ Invoke-PostInstallSetup -Profile aggressive -WhatIf
 | `-Scope`             | Where per-user tweaks/Appx removals land: `CurrentUser`, `FutureUsers`, or `Both` (default).     |
 | `-OutputDirectory`   | Where the run-report JSON is written. Defaults to `./out`.                                       |
 | `-NoReport`          | Do not write the run-report JSON (the object is still returned).                                 |
+| `-InstallWsl`        | After the catalog, advance the staged WSL + distribution install (multi-reboot; re-run until done). Attaches a `Wsl` result to the report. See [wsl.md](wsl.md). |
+| `-WslDistribution`   | Linux distribution to install when `-InstallWsl` is set (default `Debian`).                       |
+| `-WslAutoReboot`     | When `-InstallWsl` needs a reboot, restart the computer automatically instead of just asking.    |
 | `-WhatIf`            | Preview the full plan without changing anything.                                                 |
 
 ## Scope: current user vs. future profiles

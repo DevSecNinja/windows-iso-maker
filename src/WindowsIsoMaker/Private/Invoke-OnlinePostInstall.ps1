@@ -48,9 +48,9 @@ function Set-OnlineRegistryTweaks {
         [string] $Scope = 'Both'
     )
 
-    $registryEntries = @($Catalog) | Where-Object {
+    $registryEntries = @(@($Catalog) | Where-Object {
         $_.Action -eq 'SetRegistry' -and (@($_.Arch) -contains $Architecture)
-    }
+    })
 
     $results = [System.Collections.Generic.List[object]]::new()
     if ($registryEntries.Count -eq 0) {
@@ -134,40 +134,66 @@ function Invoke-OnlineRegistryEntry {
 
     $target = $Entry.Target
     $operation = if ($target -is [hashtable] -and $target.ContainsKey('Operation')) { $target['Operation'] } else { $null }
+    # RunOnce values are DELETED by Windows once they execute at logon, so a re-run would
+    # otherwise re-arm them and report 'Applied' every time. For RunOnce entries we also consult a
+    # persistent idempotency marker (the WindowsIsoMaker\State tattoo): if it already records this
+    # exact command, the entry is AlreadyApplied and is NOT re-armed (Principle VI idempotency).
+    $isRunOnce = Test-IsRunOnceRegistryEntry -Entry $Entry
 
+    # Read-only detection is safe under -WhatIf, so the preview reports which targets WOULD change
+    # (Status 'Applied' = would-be-applied) versus which are already in the desired state
+    # ('AlreadyApplied'), instead of a blanket "Skipped: preview".
     $applied = 0
     $already = 0
+    $wouldChange = 0
     try {
         foreach ($root in $Roots) {
             $label = "$root\$($target.Path)\$($target.Name)"
             if ($operation -eq 'Delete') {
-                if ($WhatIfPreference) { continue }
                 $current = Get-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
-                if ($null -eq $current) {
-                    $already++
-                }
-                elseif ($PSCmdlet.ShouldProcess($label, 'Delete registry value')) {
+                if ($null -eq $current) { $already++; continue }
+                if ($WhatIfPreference) { $wouldChange++; continue }
+                if ($PSCmdlet.ShouldProcess($label, 'Delete registry value')) {
                     Remove-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
                     $applied++
                 }
             }
             else {
-                if ($WhatIfPreference) { continue }
                 $current = Get-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
-                if ($null -ne $current -and "$current" -eq "$($target.Value)") {
-                    $already++
+                if ($null -ne $current -and "$current" -eq "$($target.Value)") { $already++; continue }
+                if ($isRunOnce -and (Test-WimRunOnceMarker -Root $root -Id $Entry.Id -CommandValue "$($target.Value)")) {
+                    $already++; continue
                 }
-                elseif ($PSCmdlet.ShouldProcess($label, "Set registry value = $($target.Value)")) {
+                if ($WhatIfPreference) { $wouldChange++; continue }
+                if ($PSCmdlet.ShouldProcess($label, "Set registry value = $($target.Value)")) {
                     Set-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name -Kind $target.Kind -Value $target.Value
+                    if ($isRunOnce) {
+                        # Non-fatal: the RunOnce command is already armed; failing to persist the
+                        # idempotency marker just means the next run re-arms it (old behaviour), so
+                        # never fail the entry over a marker write.
+                        try {
+                            Set-WimRunOnceMarker -Id $Entry.Id -CommandValue "$($target.Value)"
+                        }
+                        catch {
+                            Write-BuildLog -Level Warning -Component 'Set-OnlineRegistryTweaks' -Message "Could not persist idempotency marker for '$($Entry.Id)': $($_.Exception.Message)"
+                        }
+                    }
                     $applied++
                 }
             }
         }
 
         if ($WhatIfPreference) {
-            $verb = if ($operation -eq 'Delete') { 'delete' } else { "set to $($target.Value)" }
-            $result.Status = 'Skipped'
-            $result.Reason = "Preview (-WhatIf): would $verb $($target.Hive)\$($target.Path)\$($target.Name) on $($Roots.Count) target(s)."
+            if ($wouldChange -gt 0) {
+                $verb = if ($operation -eq 'Delete') { 'delete' } else { "set to $($target.Value)" }
+                $suffix = if ($already -gt 0) { " ($already already in the desired state)" } else { '' }
+                $result.Status = 'Applied'
+                $result.Reason = "Preview (-WhatIf): would $verb $($target.Hive)\$($target.Path)\$($target.Name) on $wouldChange target(s)$suffix."
+            }
+            else {
+                $result.Status = 'AlreadyApplied'
+                $result.Reason = "Preview (-WhatIf): already in the desired state on all $(@($Roots).Count) target(s); no change."
+            }
         }
         elseif ($applied -gt 0) {
             $result.Status = 'Applied'
@@ -224,9 +250,9 @@ function Remove-OnlineBloatware {
     )
 
     $results = [System.Collections.Generic.List[object]]::new()
-    $applicable = @($Catalog) | Where-Object {
-        $_.Action -in @('RemoveAppx', 'RemoveCapability') -and (@($_.Arch) -contains $Architecture)
-    }
+    $applicable = @(@($Catalog) | Where-Object {
+        $_.Action -in @('RemoveAppx', 'RemoveCapability', 'DisableOptionalFeature') -and (@($_.Arch) -contains $Architecture)
+    })
     if ($applicable.Count -eq 0) {
         return $results.ToArray()
     }
@@ -237,6 +263,7 @@ function Remove-OnlineBloatware {
     # Cache the inventories once (avoids repeated dism/Appx calls).
     $provisioned = $null
     $capabilities = $null
+    $features = $null
 
     foreach ($entry in $applicable) {
         $result = [pscustomobject]@{
@@ -342,6 +369,30 @@ function Remove-OnlineBloatware {
                     $result.Reason = "Removed $($installed.Count) capability instance(s)."
                 }
             }
+            elseif ($entry.Action -eq 'DisableOptionalFeature') {
+                if ($null -eq $features) {
+                    $features = if ($WhatIfPreference) { @() } else { @(Get-OnlineOptionalFeature) }
+                }
+                $match = @($features | Where-Object { $_.FeatureName -eq $entry.Target }) | Select-Object -First 1
+
+                if (-not $WhatIfPreference -and -not $match) {
+                    $result.Status = 'NotApplicable'
+                    $result.Reason = "Optional feature '$($entry.Target)' is not present on the running system."
+                }
+                elseif (-not $WhatIfPreference -and "$($match.State)" -in @('Disabled', 'DisabledWithPayloadRemoved')) {
+                    $result.Status = 'AlreadyApplied'
+                    $result.Reason = "Optional feature '$($entry.Target)' is already disabled."
+                }
+                elseif ($WhatIfPreference) {
+                    $result.Status = 'Skipped'
+                    $result.Reason = "Preview (-WhatIf): would disable and remove optional feature '$($entry.Target)'."
+                }
+                elseif ($PSCmdlet.ShouldProcess($entry.Target, 'Disable-Feature -Remove (online)')) {
+                    Disable-OnlineOptionalFeature -FeatureName $entry.Target
+                    $result.Status = 'Applied'
+                    $result.Reason = "Disabled and removed optional feature '$($entry.Target)' (a reboot may be required)."
+                }
+            }
         }
         catch {
             $result.Status = 'Failed'
@@ -386,9 +437,9 @@ function Enable-OnlineWindowsFeature {
     )
 
     $results = [System.Collections.Generic.List[object]]::new()
-    $applicable = @($Catalog) | Where-Object {
+    $applicable = @(@($Catalog) | Where-Object {
         $_.Action -in @('EnableOptionalFeature', 'AddCapability') -and (@($_.Arch) -contains $Architecture)
-    }
+    })
     if ($applicable.Count -eq 0) {
         return $results.ToArray()
     }
@@ -503,7 +554,7 @@ function Invoke-OnlineCatalogEntry {
     $action = [string]$Entry.Action
 
     switch ($action) {
-        { $_ -in @('RemoveAppx', 'RemoveCapability') } {
+        { $_ -in @('RemoveAppx', 'RemoveCapability', 'DisableOptionalFeature') } {
             $results = @(Remove-OnlineBloatware -Catalog @($Entry) -Architecture $Architecture -Scope $Scope)
         }
         'SetRegistry' {
@@ -513,7 +564,7 @@ function Invoke-OnlineCatalogEntry {
             $results = @(Enable-OnlineWindowsFeature -Catalog @($Entry) -Architecture $Architecture)
         }
         default {
-            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, SetRegistry, EnableOptionalFeature, AddCapability."
+            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability."
         }
     }
 

@@ -4,7 +4,9 @@ function Remove-Bloatware {
         Apply Appx/Capability removal catalog entries to a mounted offline image.
     .DESCRIPTION
         Iterates the provided (already-selected) catalog entries of Type 'Appx' and
-        'Capability' and removes them from the mounted image via DISM. Entries not present in
+        'Capability' (Actions RemoveAppx/RemoveCapability) plus optional-feature removals
+        (Action DisableOptionalFeature, e.g. removing Recall) and removes them from the mounted
+        image via DISM. Entries not present in
         the image are recorded as NotApplicable rather than failing (FR-021); re-runs are
         idempotent (FR-017); -WhatIf reports intended changes without modifying the image
         (FR-016). Returns a ChangeResult per entry for the audit trail (FR-022).
@@ -48,12 +50,13 @@ function Remove-Bloatware {
     $results = [System.Collections.Generic.List[object]]::new()
 
     $applicable = @($Catalog) | Where-Object {
-        $_.Action -in @('RemoveAppx', 'RemoveCapability') -and (@($_.Arch) -contains $Architecture)
+        $_.Action -in @('RemoveAppx', 'RemoveCapability', 'DisableOptionalFeature') -and (@($_.Arch) -contains $Architecture)
     }
 
     # Cache the image inventory once (avoids repeated DISM calls).
     $provisioned = $null
     $capabilities = $null
+    $features = $null
 
     foreach ($entry in $applicable) {
         $result = [pscustomobject]@{
@@ -117,6 +120,30 @@ function Remove-Bloatware {
                     }
                     $result.Status = 'Applied'
                     $result.Reason = "Removed $($installed.Count) capability instance(s)."
+                }
+            }
+            elseif ($entry.Action -eq 'DisableOptionalFeature') {
+                if ($null -eq $features) {
+                    $features = if ($WhatIfPreference) { @() } else { @(Get-ImageOptionalFeature -Path $MountPath) }
+                }
+                $match = @($features | Where-Object { $_.FeatureName -eq $entry.Target }) | Select-Object -First 1
+
+                if (-not $WhatIfPreference -and -not $match) {
+                    $result.Status = 'NotApplicable'
+                    $result.Reason = "Optional feature '$($entry.Target)' is not present in the image."
+                }
+                elseif (-not $WhatIfPreference -and "$($match.State)" -in @('Disabled', 'DisabledWithPayloadRemoved')) {
+                    $result.Status = 'AlreadyApplied'
+                    $result.Reason = "Optional feature '$($entry.Target)' is already disabled."
+                }
+                elseif ($WhatIfPreference) {
+                    $result.Status = 'Skipped'
+                    $result.Reason = "Preview (-WhatIf): would disable and remove optional feature '$($entry.Target)'."
+                }
+                elseif ($PSCmdlet.ShouldProcess($entry.Target, 'Disable-WindowsOptionalFeature -Remove')) {
+                    Disable-ImageOptionalFeature -Path $MountPath -FeatureName $entry.Target
+                    $result.Status = 'Applied'
+                    $result.Reason = "Disabled and removed optional feature '$($entry.Target)'."
                 }
             }
         }

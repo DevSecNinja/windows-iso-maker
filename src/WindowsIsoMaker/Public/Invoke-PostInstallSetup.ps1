@@ -47,9 +47,28 @@ function Invoke-PostInstallSetup {
         Directory to write the run-report JSON into. Defaults to './out'.
     .PARAMETER NoReport
         Do not write the run-report JSON to disk (the object is still returned).
+    .PARAMETER InstallWsl
+        After applying the catalog, also run the WSL installer (Install-WslDistribution) to install
+        WSL and a Linux distribution. This is ON BY DEFAULT when the 'opinionated' profile is
+        selected (so `-Profile opinionated` installs WSL without an extra switch); pass
+        -InstallWsl to force it for other profiles, or -InstallWsl:$false to skip it under
+        'opinionated'. The WSL result is attached to the returned report as a 'Wsl' property.
+    .PARAMETER WslDistribution
+        The Linux distribution to install when -InstallWsl is set (default 'Debian').
+    .PARAMETER WslServicing
+        How WSL itself is obtained when -InstallWsl is set: 'Store' (default; the auto-updating
+        Microsoft Store engine), 'WebDownload' (the modern engine from GitHub, no Store
+        dependency), or 'Inbox' (the in-Windows optional component, serviced by Windows Update —
+        matches an image that baked the WSL features offline).
+    .PARAMETER WslAutoReboot
+        When -InstallWsl needs a reboot, restart the computer automatically instead of only
+        instructing you to reboot and re-run.
     .EXAMPLE
         Invoke-PostInstallSetup -Profile opinionated
         Applies the opinionated profile to the running machine.
+    .EXAMPLE
+        Invoke-PostInstallSetup -Profile opinionated -InstallWsl -WslDistribution Debian
+        Applies the opinionated profile, then advances the staged WSL + Debian install one stage.
     .EXAMPLE
         Invoke-PostInstallSetup -Profile aggressive -WhatIf
         Previews every change the aggressive profile would make, touching nothing.
@@ -88,7 +107,21 @@ function Invoke-PostInstallSetup {
         [string] $OutputDirectory = './out',
 
         [Parameter()]
-        [switch] $NoReport
+        [switch] $NoReport,
+
+        [Parameter()]
+        [switch] $InstallWsl,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $WslDistribution = 'Debian',
+
+        [Parameter()]
+        [ValidateSet('Store', 'WebDownload', 'Inbox')]
+        [string] $WslServicing = 'Store',
+
+        [Parameter()]
+        [switch] $WslAutoReboot
     )
 
     $isPreview = $WhatIfPreference
@@ -161,6 +194,67 @@ function Invoke-PostInstallSetup {
         }
     }
 
+    # Effective-change accounting so a re-run over an unchanged machine reports 0 changes
+    # (idempotency, Principle VI). 'Applied' = actually changed (or, under -WhatIf, would change);
+    # AlreadyApplied/NotApplicable are no-ops.
+    $changedCount = @($applied | Where-Object { "$($_.Status)" -eq 'Applied' }).Count
+    $alreadyCount = @($applied | Where-Object { "$($_.Status)" -eq 'AlreadyApplied' }).Count
+    $notApplicableCount = @($applied | Where-Object { "$($_.Status)" -eq 'NotApplicable' }).Count
+
+    # --- 4b. Write the provenance tattoo (HKLM\SOFTWARE\WindowsIsoMaker) on real runs. ---
+    if (-not $isPreview -and $outcome -ne 'Failed') {
+        try {
+            $wimVersion = if ($toolVersions -is [hashtable] -and $toolVersions.ContainsKey('WindowsIsoMaker')) { $toolVersions['WindowsIsoMaker'] } else { 'unknown' }
+            Write-WimRegistryTattoo -Values @{
+                LastRunUtc      = (Get-Date).ToUniversalTime().ToString('o')
+                LastRunProfile  = ($resolvedConfig.Profile -join ',')
+                LastRunScope    = $Scope
+                LastRunMode     = 'PostInstall'
+                Architecture    = $arch
+                ToolVersion     = $wimVersion
+                LastRunChanged  = "$changedCount"
+            }
+        }
+        catch {
+            Write-BuildLog -Level Warning -Component 'Invoke-PostInstallSetup' -Message "Could not write the provenance tattoo: $($_.Exception.Message)"
+        }
+    }
+
+    # --- 4c. Complete the WSL + distribution install (implied by the opinionated profile). ---
+    # The catalog only enables the WSL platform features; installing the WSL app/kernel and a
+    # distribution is an online flow handled by Install-WslDistribution. It runs when -InstallWsl is
+    # set, and by DEFAULT whenever the 'opinionated' profile is selected (so `-Profile opinionated`
+    # installs WSL + the distribution without an extra switch). An explicit -InstallWsl / -InstallWsl:$false
+    # always wins. The result is attached to the report; re-run after any requested reboot until
+    # Stage = Done (idempotent).
+    $installWslEffective = if ($PSBoundParameters.ContainsKey('InstallWsl')) {
+        [bool]$InstallWsl
+    }
+    else {
+        @($resolvedConfig.Profile) -contains 'opinionated'
+    }
+
+    $wslResult = $null
+    if ($installWslEffective) {
+        try {
+            $wslParams = @{ Distribution = $WslDistribution; WslServicing = $WslServicing }
+            if ($WslAutoReboot) { $wslParams['AutoReboot'] = $true }
+            if ($isPreview) { $wslParams['WhatIf'] = $true }
+            $wslResult = Install-WslDistribution @wslParams
+        }
+        catch {
+            Write-BuildLog -Level Warning -Component 'Invoke-PostInstallSetup' -Message "WSL install step failed: $($_.Exception.Message)"
+            $wslResult = [pscustomobject]@{
+                PSTypeName            = 'WindowsIsoMaker.WslInstallResult'
+                Distribution          = $WslDistribution
+                Stage                 = 'Failed'
+                RebootRequired        = $false
+                DistributionInstalled = $false
+                Message               = $_.Exception.Message
+            }
+        }
+    }
+
     # --- 5. Emit (and optionally persist) the auditable RunReport (FR-022). ---
     $reportParams = @{
         ResolvedConfig = $resolvedConfig
@@ -175,6 +269,11 @@ function Invoke-PostInstallSetup {
     }
 
     $report = New-RunReport @reportParams
-    Write-BuildLog -Level Information -Component 'Invoke-PostInstallSetup' -Message "Post-install setup complete (Outcome=$outcome, Applied=$($applied.Count), Skipped=$($skipped.Count))."
+    if ($installWslEffective) {
+        $report | Add-Member -NotePropertyName 'Wsl' -NotePropertyValue $wslResult -Force
+    }
+    $changeWord = if ($isPreview) { 'WouldChange' } else { 'Changed' }
+    $wslNote = if ($installWslEffective -and $wslResult) { " WSL: Stage=$($wslResult.Stage), RebootRequired=$($wslResult.RebootRequired)." } else { '' }
+    Write-BuildLog -Level Information -Component 'Invoke-PostInstallSetup' -Message "Post-install setup complete (Outcome=$outcome, $changeWord=$changedCount, AlreadyApplied=$alreadyCount, NotApplicable=$notApplicableCount, Skipped=$($skipped.Count)).$wslNote"
     return $report
 }

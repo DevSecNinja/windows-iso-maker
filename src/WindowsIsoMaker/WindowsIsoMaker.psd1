@@ -11,7 +11,7 @@
     # PowerShell 7+ is primary; 5.1 compatibility is validated for DISM-dependent paths.
     PowerShellVersion = '5.1'
 
-    # Public surface: the 14 exported functions (Constitution Principle I).
+    # Public surface: the exported functions (Constitution Principle I).
     FunctionsToExport = @(
         'Get-BuildConfiguration',
         'Get-Windows11Iso',
@@ -28,7 +28,8 @@
         'Export-ImageBom',
         'Export-CatalogManifest',
         'Invoke-IsoBuild',
-        'Invoke-PostInstallSetup'
+        'Invoke-PostInstallSetup',
+        'Install-WslDistribution'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

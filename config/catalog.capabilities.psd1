@@ -118,6 +118,46 @@
             Reversal       = 'Disable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform (or omit the feature-vmplatform catalog id).'
             DefaultEnabled = $false
             Arch           = @('amd64', 'arm64')
+        },
+
+        # --- Legacy / deprecated component removal (opt-in) --------------------------------
+
+        @{
+            Id             = 'cap-powershell-ise'
+            Type           = 'Capability'
+            Action         = 'RemoveCapability'
+            Category       = 'Legacy components'
+            Target         = 'Microsoft.Windows.PowerShell.ISE'
+            Description    = 'Removes the Windows PowerShell ISE optional feature (Feature on Demand).'
+            Rationale      = 'The PowerShell ISE is a legacy editor that is no longer being developed (Microsoft recommends Visual Studio Code with the PowerShell extension, and it does not support PowerShell 7+). It ships as the Feature-on-Demand capability Microsoft.Windows.PowerShell.ISE and can be removed cleanly and reversibly. Kept opt-in (only removed by the aggressive/opinionated profiles) so environments that still use the ISE are unaffected.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-non-language-fod'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Add-WindowsCapability -Online -Name Microsoft.Windows.PowerShell.ISE~~~~0.0.1.0 (source required).'
+            DefaultEnabled = $false
+            Arch           = @('amd64', 'arm64')
+        },
+
+        # --- Impactful first-party component removal (FR-008 / Principle VI: opt-in, default OFF) ---
+        # Recall ships as an optional FEATURE (not a capability), so it is removed with
+        # Disable-WindowsOptionalFeature -Remove (offline: dism /Disable-Feature /Remove), which
+        # strips the component payload — beyond the reg-disable-recall POLICY, which only stops
+        # snapshots. Constitution requires impactful first-party removals (Recall) to be opt-in.
+        @{
+            Id             = 'feature-remove-recall'
+            Type           = 'OptionalFeature'
+            Action         = 'DisableOptionalFeature'
+            Category       = 'Privacy & telemetry'
+            Profiles       = @('opinionated')
+            Target         = 'Recall'
+            Description    = 'Disables and removes the Windows Recall optional feature payload (the "Recall" component installed as a system component), going beyond the reg-disable-recall policy.'
+            Rationale      = 'reg-disable-recall sets the DisableAIDataAnalysis policy so Recall stops saving snapshots, but the Recall component itself remains installed. Microsoft documents removing the Recall bits entirely with `Disable-WindowsOptionalFeature -Online -FeatureName "Recall" -Remove` (offline equivalent: dism /Disable-Feature /FeatureName:Recall /Remove). This eliminates the component rather than only disabling it. Recall is an impactful first-party feature, so per the constitution this removal is opt-in and default OFF (delivered via the opinionated profile or an explicit EnableCatalogId).'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/manage-recall'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Enable-WindowsOptionalFeature -Online -FeatureName Recall (source required), or omit the feature-remove-recall catalog id.'
+            DefaultEnabled = $false
+            Arch           = @('amd64', 'arm64')
         }
     )
 }

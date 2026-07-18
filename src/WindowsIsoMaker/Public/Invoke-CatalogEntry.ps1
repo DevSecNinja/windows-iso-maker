@@ -10,6 +10,7 @@ function Invoke-CatalogEntry {
             RemoveAppx / RemoveCapability      -> Remove-Bloatware
             SetRegistry                        -> Set-RegistryTweaks
             EnableOptionalFeature / AddCapability -> Enable-WindowsFeature
+            DisableOptionalFeature             -> Remove-Bloatware (disable + remove payload)
 
         Adding a new feature is a catalog edit (zero new code); adding a whole new category of
         change is one new Action value plus one handler branch here — never a new pipeline
@@ -61,7 +62,7 @@ function Invoke-CatalogEntry {
     }
 
     switch ($action) {
-        { $_ -in @('RemoveAppx', 'RemoveCapability') } {
+        { $_ -in @('RemoveAppx', 'RemoveCapability', 'DisableOptionalFeature') } {
             $results = @(Remove-Bloatware @handlerParams)
         }
         'SetRegistry' {
@@ -71,7 +72,7 @@ function Invoke-CatalogEntry {
             $results = @(Enable-WindowsFeature @handlerParams)
         }
         default {
-            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, SetRegistry, EnableOptionalFeature, AddCapability."
+            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability."
         }
     }
 

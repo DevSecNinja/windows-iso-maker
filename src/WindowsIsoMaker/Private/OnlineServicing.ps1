@@ -176,6 +176,32 @@ function Enable-OnlineOptionalFeature {
     }
 }
 
+function Disable-OnlineOptionalFeature {
+    <#
+    .SYNOPSIS
+        Disable (and remove the payload of) a Windows optional feature on the RUNNING system
+        (dism /online).
+    .DESCRIPTION
+        Online counterpart of Disable-ImageOptionalFeature. Runs dism /online /Disable-Feature
+        /Remove /NoRestart, the equivalent of `Disable-WindowsOptionalFeature -Online -Remove`.
+        Exit code 3010 (success, restart required) is treated as success; the caller surfaces a
+        reboot note. State checks/idempotency live in the calling handler (Remove-OnlineBloatware).
+    .PARAMETER FeatureName
+        The optional feature to disable and remove (e.g. 'Recall').
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory = $true)][string] $FeatureName)
+    # Uses dism.exe (not Disable-WindowsOptionalFeature) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', '/online', '/Disable-Feature', "/FeatureName:$FeatureName", '/Remove', '/NoRestart')
+    # 3010 = success, restart required; treat as success (the caller surfaces a reboot note).
+    if ($dism.ExitCode -ne 0 -and $dism.ExitCode -ne 3010) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to disable optional feature '$FeatureName' (exit $($dism.ExitCode)): $tail"
+    }
+}
+
 function Get-OnlineArchitecture {
     <#
     .SYNOPSIS

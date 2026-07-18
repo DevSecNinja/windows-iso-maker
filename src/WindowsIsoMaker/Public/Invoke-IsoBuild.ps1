@@ -387,6 +387,9 @@ function Get-BuildToolVersion {
     $manifestPath = Join-Path $script:ModuleRoot 'WindowsIsoMaker.psd1'
     if (Test-Path -LiteralPath $manifestPath) {
         $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+        if ($manifest.ModuleVersion) {
+            $versions['WindowsIsoMaker'] = $manifest.ModuleVersion
+        }
         if ($manifest.PrivateData -and $manifest.PrivateData.PSData -and $manifest.PrivateData.PSData.RequiredToolingMinimums) {
             $mins = $manifest.PrivateData.PSData.RequiredToolingMinimums
             $versions['FidoTag'] = $mins.FidoTag

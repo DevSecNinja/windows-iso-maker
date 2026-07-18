@@ -80,7 +80,8 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
         It 'has a Category from the semantic taxonomy' {
             $allowedCategories = @(
                 'Browser', 'Bundled apps', 'Cloud storage', 'Development',
-                'Gaming', 'Legacy components', 'Personalization', 'Privacy & telemetry'
+                'Gaming', 'Legacy components', 'Personalization', 'Privacy & telemetry',
+                'System & recovery'
             )
             $Entry.Category | Should -Not -BeNullOrEmpty -Because 'every entry must declare a semantic Category for grouping/display'
             $Entry.Category | Should -BeIn $allowedCategories -Because "Category must be one of the agreed taxonomy values, got '$($Entry.Category)'"
@@ -96,7 +97,7 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
         }
 
         It 'has a valid Action (dispatch key)' {
-            $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
+            $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability', 'DisableOptionalFeature') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
         }
 
         It 'has an EvidenceGrade of 1, 2, or 3' {

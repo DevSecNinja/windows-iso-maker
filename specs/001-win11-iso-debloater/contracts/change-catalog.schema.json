@@ -36,7 +36,8 @@
         "RemoveCapability",
         "SetRegistry",
         "EnableOptionalFeature",
-        "AddCapability"
+        "AddCapability",
+        "DisableOptionalFeature"
       ],
       "description": "Primary dispatch key. Invoke-CatalogEntry routes each entry to the handler for its Action. The set is intentionally extensible: new Action values are added alongside a new handler branch, but existing features/entries never require new per-feature parameters or switches (FR-024/FR-025)."
     },

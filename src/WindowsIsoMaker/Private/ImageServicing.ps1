@@ -293,6 +293,35 @@ function Enable-ImageOptionalFeature {
     }
 }
 
+function Disable-ImageOptionalFeature {
+    <#
+    .SYNOPSIS
+        Disable (and remove the payload of) a Windows optional feature on a mounted offline image.
+    .DESCRIPTION
+        Runs dism.exe /Disable-Feature /Remove, the offline equivalent of
+        `Disable-WindowsOptionalFeature -Remove`. /Remove also removes the feature's payload so the
+        component is genuinely gone (used e.g. to remove the Recall optional feature). Idempotency
+        and state checks live in the calling handler (Remove-Bloatware).
+    .PARAMETER Path
+        Mount path of the offline image.
+    .PARAMETER FeatureName
+        The optional feature to disable and remove (e.g. 'Recall').
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][string] $FeatureName
+    )
+    # Uses dism.exe (not Disable-WindowsOptionalFeature) — see Invoke-DismExe for why.
+    $dism = Invoke-DismExe -Arguments @('/English', "/Image:$Path", '/Disable-Feature', "/FeatureName:$FeatureName", '/Remove')
+    if ($dism.ExitCode -ne 0) {
+        $tail = (@($dism.Output) | Select-Object -Last 5) -join ' '
+        throw "dism.exe failed to disable optional feature '$FeatureName' (exit $($dism.ExitCode)): $tail"
+    }
+}
+
 function Add-ImageCapability {
     <#
     .SYNOPSIS

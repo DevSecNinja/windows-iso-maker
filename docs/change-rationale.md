@@ -17,7 +17,7 @@ explains the model and highlights the notable defaults.
 @{
     Id             = 'reg-disable-recall'          # unique, stable id
     Type           = 'Registry'                    # Appx | Capability | Registry | OptionalFeature (informational)
-    Action         = 'SetRegistry'                 # dispatch key: RemoveAppx | RemoveCapability | SetRegistry | EnableOptionalFeature | AddCapability
+    Action         = 'SetRegistry'                 # dispatch key: RemoveAppx | RemoveCapability | SetRegistry | EnableOptionalFeature | AddCapability | DisableOptionalFeature
     Category       = 'Privacy & telemetry'         # required: semantic taxonomy (display/grouping only)
     Target         = @{ Hive='SOFTWARE'; Path='...'; Name='...'; Kind='DWord'; Value=1 }  # or a package/feature name string
     Description    = 'WHAT the change does.'       # required (Principle II)
@@ -34,7 +34,7 @@ explains the model and highlights the notable defaults.
 
 `Category` is a **semantic label** used purely for display and grouping (on the showcase site and
 in reports); the allowed taxonomy is: `Browser`, `Bundled apps`, `Cloud storage`, `Development`,
-`Gaming`, `Legacy components`, `Personalization`, `Privacy & telemetry`. It is deliberately kept
+`Gaming`, `Legacy components`, `Personalization`, `Privacy & telemetry`, `System & recovery`. It is deliberately kept
 **separate** from `Profiles`, the curated profile-membership tag (`gaming` and/or `opinionated`),
 so an entry can be, e.g., `Category = 'Development'` (WSL, Virtual Machine Platform) while still
 belonging to the `opinionated` profile. Profile selection keys off `Profiles`, never `Category`.
