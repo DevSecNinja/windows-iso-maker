@@ -140,9 +140,10 @@ function Invoke-OnlineRegistryEntry {
     # exact command, the entry is AlreadyApplied and is NOT re-armed (Principle VI idempotency).
     $isRunOnce = Test-IsRunOnceRegistryEntry -Entry $Entry
 
-    # Read-only detection is safe under -WhatIf, so the preview reports which targets WOULD change
-    # (Status 'Applied' = would-be-applied) versus which are already in the desired state
-    # ('AlreadyApplied'), instead of a blanket "Skipped: preview".
+    # Read-only detection is safe under -WhatIf: the preview checks the current state and records
+    # 'Skipped' (with a Reason starting "Preview (-WhatIf): would…") for entries that WOULD change,
+    # and 'AlreadyApplied' for entries already in the desired state — consistent with the other
+    # online handlers (Remove-OnlineBloatware, Enable-OnlineWindowsFeature).
     $applied = 0
     $already = 0
     $wouldChange = 0
@@ -187,7 +188,7 @@ function Invoke-OnlineRegistryEntry {
             if ($wouldChange -gt 0) {
                 $verb = if ($operation -eq 'Delete') { 'delete' } else { "set to $($target.Value)" }
                 $suffix = if ($already -gt 0) { " ($already already in the desired state)" } else { '' }
-                $result.Status = 'Applied'
+                $result.Status = 'Skipped'
                 $result.Reason = "Preview (-WhatIf): would $verb $($target.Hive)\$($target.Path)\$($target.Name) on $wouldChange target(s)$suffix."
             }
             else {

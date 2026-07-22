@@ -83,7 +83,7 @@ Describe 'Set-OnlineRegistryTweaks' {
         }
     }
 
-    It 'previews would-change entries under -WhatIf without writing (Status Applied = would change)' {
+    It 'previews would-change entries under -WhatIf without writing (Status Skipped = would change)' {
         InModuleScope WindowsIsoMaker {
             $catalog = @(
                 [pscustomobject]@{ Id = 'reg-machine'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
@@ -93,7 +93,7 @@ Describe 'Set-OnlineRegistryTweaks' {
             Mock Set-OfflineRegistryValue { }
 
             $res = Set-OnlineRegistryTweaks -Catalog $catalog -Architecture amd64 -Scope Both -WhatIf
-            $res.Status | Should -Be 'Applied'
+            $res.Status | Should -Be 'Skipped'
             $res.Reason | Should -BeLike '*Preview*would*'
             Should -Invoke Set-OfflineRegistryValue -Times 0
         }
