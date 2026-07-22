@@ -195,9 +195,15 @@ function Invoke-PostInstallSetup {
     }
 
     # Effective-change accounting so a re-run over an unchanged machine reports 0 changes
-    # (idempotency, Principle VI). 'Applied' = actually changed (or, under -WhatIf, would change);
-    # AlreadyApplied/NotApplicable are no-ops.
-    $changedCount = @($applied | Where-Object { "$($_.Status)" -eq 'Applied' }).Count
+    # (idempotency, Principle VI). 'Applied' = actually changed; 'AlreadyApplied'/'NotApplicable'
+    # are no-ops. Under -WhatIf (FR-016), "would-be-applied" entries are recorded as 'Skipped' with
+    # a Reason starting "Preview (-WhatIf): would…", consistent across all online handlers.
+    $changedCount = if ($isPreview) {
+        @($skipped | Where-Object { "$($_.Reason)" -like 'Preview (-WhatIf): would*' }).Count
+    }
+    else {
+        @($applied | Where-Object { "$($_.Status)" -eq 'Applied' }).Count
+    }
     $alreadyCount = @($applied | Where-Object { "$($_.Status)" -eq 'AlreadyApplied' }).Count
     $notApplicableCount = @($applied | Where-Object { "$($_.Status)" -eq 'NotApplicable' }).Count
 
