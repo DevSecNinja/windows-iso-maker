@@ -639,6 +639,81 @@
             Arch           = @('amd64', 'arm64')
         },
 
+        # --- System & recovery: power-button action (Surface Laptop mis-press guard) -------
+        # Power.admx stores every power-setting policy under
+        # Software\Policies\Microsoft\Power\PowerSettings\<setting-GUID> with the plugged-in value
+        # in ACSettingIndex and the on-battery value in DCSettingIndex, so the two entries below are
+        # a pair: enable both to make the behaviour identical on and off mains power.
+        #
+        # Both carry a Condition, so they are applied ONLY on Surface Laptop hardware. The offline
+        # build reports them NotApplicable (the build agent is not the target machine) and
+        # post-install.ps1 evaluates the condition on the installed machine. Microsoft publishes the
+        # System Model / System SKU values that SMBIOS reports for every Surface device, and every
+        # Surface Laptop SKU begins with 'Surface_Laptop' (Surface_Laptop, Surface_Laptop_3_1867:1868,
+        # Surface_Laptop_6_for_Business_2033, Surface_Laptop_7th_Edition_2036, ...); the Model check is
+        # a fallback for devices whose SystemSKUNumber is not populated.
+        @{
+            Id             = 'reg-power-button-no-action-ac'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'System & recovery'
+            Profiles       = @('opinionated')
+            Condition      = @{
+                Description = 'Microsoft Surface Laptop devices only (SMBIOS System SKU starts with Surface_Laptop).'
+                Citation    = 'https://learn.microsoft.com/en-us/surface/surface-system-sku-reference'
+                Script      = @'
+$cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+($cs.SystemSKUNumber -like 'Surface_Laptop*') -or ($cs.Model -like '*Surface Laptop*')
+'@
+            }
+            Target         = @{
+                Hive  = 'SOFTWARE'
+                Path  = 'Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280'
+                Name  = 'ACSettingIndex'
+                Kind  = 'DWord'
+                Value = 0
+            }
+            Description    = 'On Surface Laptops only: makes pressing the power button do nothing while plugged in (power-button action = Take no action) instead of putting the machine to sleep.'
+            Rationale      = 'On Surface Laptops the power button sits on the outer edge of the top row, immediately next to Delete/Backspace, which is the reverse of most other laptops (for example Dell, where Delete is outboard of the power key). Muscle memory therefore sleeps the machine on a mis-press. Microsoft documents SelectPowerButtonActionPluggedIn ("Select the Power button action (plugged in)", Computer Configuration > System > Power Management > Button Settings) with the registry key Software\Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280 and allowed values 0 = Take no action, 1 = Sleep (default), 2 = Hibernate, 3 = Shut down; the same GUID is documented as the PBUTTONACTION power setting in the OEM power-settings reference. Power.admx puts the plugged-in value in ACSettingIndex (the same page documents that value name for the sibling ACPromptForPasswordOnResume_2 policy under the identical key layout). Because the annoyance is specific to the Surface keyboard layout, the entry declares a Condition matching the documented Surface Laptop SMBIOS System SKU, so it is a no-op on other hardware. Holding the power button for several seconds still force-powers the machine off at firmware level, and Sleep/Shut down remain available from the Start menu, so nothing is lost. Kept opt-in (Profiles=opinionated) because it is a personal preference.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-power#selectpowerbuttonactionpluggedin'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Set ACSettingIndex to 1 (Sleep, the Windows default) or delete the value/key under SOFTWARE\Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280; with the policy removed the choice returns to Control Panel > Power Options > Choose what the power button does.'
+            DefaultEnabled = $false
+            Arch           = @('amd64', 'arm64')
+        },
+
+        @{
+            Id             = 'reg-power-button-no-action-dc'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'System & recovery'
+            Profiles       = @('opinionated')
+            Condition      = @{
+                Description = 'Microsoft Surface Laptop devices only (SMBIOS System SKU starts with Surface_Laptop).'
+                Citation    = 'https://learn.microsoft.com/en-us/surface/surface-system-sku-reference'
+                Script      = @'
+$cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+($cs.SystemSKUNumber -like 'Surface_Laptop*') -or ($cs.Model -like '*Surface Laptop*')
+'@
+            }
+            Target         = @{
+                Hive  = 'SOFTWARE'
+                Path  = 'Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280'
+                Name  = 'DCSettingIndex'
+                Kind  = 'DWord'
+                Value = 0
+            }
+            Description    = 'On Surface Laptops only: makes pressing the power button do nothing while on battery (power-button action = Take no action) instead of putting the machine to sleep.'
+            Rationale      = 'The on-battery counterpart of reg-power-button-no-action-ac: without it a Surface Laptop would still sleep on an accidental power-button press whenever it is unplugged, which is the common case for a laptop. Microsoft documents SelectPowerButtonActionOnBattery ("Select the Power button action (on battery)", Computer Configuration > System > Power Management > Button Settings) with the registry key Software\Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280 and allowed values 0 = Take no action, 1 = Sleep (default), 2 = Hibernate, 3 = Shut down; Power.admx puts the on-battery value in DCSettingIndex (the same page documents that value name for the sibling DCPromptForPasswordOnResume_2 policy under the identical key layout). It carries the same documented Surface Laptop SMBIOS System SKU Condition as its plugged-in counterpart, so it is a no-op on other hardware. The lid-close action is deliberately left untouched, so closing the lid still sleeps the machine as usual. Kept opt-in (Profiles=opinionated) as a personal preference.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-power#selectpowerbuttonactiononbattery'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Set DCSettingIndex to 1 (Sleep, the Windows default) or delete the value/key under SOFTWARE\Policies\Microsoft\Power\PowerSettings\7648EFA3-DD9C-4E3E-B566-50F929386280; with the policy removed the choice returns to Control Panel > Power Options > Choose what the power button does.'
+            DefaultEnabled = $false
+            Arch           = @('amd64', 'arm64')
+        },
+
         @{
             Id             = 'reg-time-dst-automatic'
             Type           = 'Registry'

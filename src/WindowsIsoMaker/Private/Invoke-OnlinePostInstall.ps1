@@ -542,6 +542,11 @@ function Invoke-OnlineCatalogEntry {
             EnableOptionalFeature / AddCapability  -> Enable-OnlineWindowsFeature
 
         An unknown Action raises a terminating error.
+
+        Unlike the offline dispatcher, this path runs ON the target machine, so an entry's optional
+        applicability `Condition` (e.g. "Surface Laptop only") is evaluated for real here. An entry
+        whose condition is not satisfied — or whose condition cannot be evaluated — is reported
+        NotApplicable and left unapplied (fail-closed). See Private/CatalogEntryCondition.ps1.
     .PARAMETER Entry
         A single catalog entry to apply.
     .PARAMETER Architecture
@@ -569,6 +574,13 @@ function Invoke-OnlineCatalogEntry {
     )
 
     $action = [string]$Entry.Action
+
+    # This IS the target machine, so a declared Condition can be answered properly. Detection is
+    # read-only, so it runs under -WhatIf too and keeps the preview accurate.
+    $verdict = Test-CatalogEntryCondition -Entry $Entry
+    if (-not $verdict.Satisfied) {
+        return New-ConditionNotApplicableResult -Entry $Entry -Reason $verdict.Reason
+    }
 
     switch ($action) {
         { $_ -in @('RemoveAppx', 'RemoveCapability', 'DisableOptionalFeature') } {

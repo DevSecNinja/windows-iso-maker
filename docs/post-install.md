@@ -51,6 +51,16 @@ Invoke-PostInstallSetup -Profile aggressive -WhatIf
 | `RemoveCapability`      | `dism /Image:` remove                        | `dism /online` remove                                                                  |
 | `EnableOptionalFeature` / `AddCapability` | `dism /Image:` (staged)   | `dism /online` (a **reboot** may be required to finish, e.g. WSL — see [wsl.md](wsl.md)) |
 
+### Hardware-specific entries
+
+An entry may declare a `Condition` describing the machine it applies to (for example
+`reg-power-button-no-action-ac`, which only makes sense on a Surface Laptop). **This is the path
+that evaluates it.** The offline build cannot — the build agent is not the machine the image ends
+up on — so it reports such entries `NotApplicable`; running `post-install.ps1` on the installed
+machine is what actually applies them. A condition that is unmet, or that cannot be evaluated,
+leaves the entry unapplied and is recorded with its reason. See
+[change-rationale.md](change-rationale.md#condition--hardware-specific-entries).
+
 ## Parameters
 
 | Parameter            | Purpose                                                                                          |
