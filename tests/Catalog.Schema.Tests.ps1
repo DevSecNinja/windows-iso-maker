@@ -96,6 +96,29 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             }
         }
 
+        It 'has a well-formed Condition when present (Script + Description, valid PowerShell)' {
+            if ($Entry.ContainsKey('Condition') -and $null -ne $Entry.Condition) {
+                $Entry.Condition | Should -BeOfType [hashtable] -Because 'Condition is an object with Script/Description (+ optional Citation)'
+                $Entry.Condition.Script | Should -Not -BeNullOrEmpty -Because 'a Condition without a Script can never be satisfied'
+                $Entry.Condition.Description | Should -Not -BeNullOrEmpty -Because 'the Condition Description is surfaced verbatim in the NotApplicable reason'
+
+                # The condition is executed on the target machine; a syntax error there would silently
+                # fail closed forever, so parse it here where it is a merge-blocking failure instead.
+                $parseErrors = $null
+                [void][System.Management.Automation.Language.Parser]::ParseInput(
+                    $Entry.Condition.Script, [ref]$null, [ref]$parseErrors)
+                $parseErrors | Should -BeNullOrEmpty -Because "the Condition Script must be valid PowerShell, got: $($parseErrors.Message -join '; ')"
+
+                foreach ($key in $Entry.Condition.Keys) {
+                    $key | Should -BeIn @('Script', 'Description', 'Citation') -Because "unknown Condition field '$key'"
+                }
+                if ($Entry.Condition.ContainsKey('Citation') -and $null -ne $Entry.Condition.Citation) {
+                    ($Entry.Condition.Citation -match '^https?://' -or $Entry.Condition.Citation -eq 'Unverified') |
+                        Should -BeTrue -Because "a Condition Citation must be an http(s) URL or 'Unverified', got '$($Entry.Condition.Citation)'"
+                }
+            }
+        }
+
         It 'has a valid Action (dispatch key)' {
             $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability', 'DisableOptionalFeature') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
         }

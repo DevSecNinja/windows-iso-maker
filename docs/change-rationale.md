@@ -28,6 +28,7 @@ explains the model and highlights the notable defaults.
     Reversal       = 'How to undo it.'
     DefaultEnabled = $true                         # grade-3 entries must be $false
     Profiles       = @('opinionated')              # optional: profile-membership tags (gaming | opinionated)
+    Condition      = @{ Script='...'; Description='...' }  # optional: hardware/machine applicability guard
     Arch           = @('amd64','arm64')
 }
 ```
@@ -63,6 +64,50 @@ Because the service key only appears once the OEM package is installed, such ent
 effect through [`post-install.ps1`](../post-install.ps1) on the installed machine (after a reboot)
 rather than during the offline build.
 
+### `Condition` — hardware-specific entries
+
+Some changes only make sense on particular hardware. Rather than growing a per-feature switch
+(forbidden by Principle III), an entry declares an optional `Condition`:
+
+```powershell
+Condition = @{
+    Description = 'Microsoft Surface Laptop devices only (SMBIOS System SKU starts with Surface_Laptop).'
+    Citation    = 'https://learn.microsoft.com/en-us/surface/surface-system-sku-reference'
+    Script      = @'
+$cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+($cs.SystemSKUNumber -like 'Surface_Laptop*') -or ($cs.Model -like '*Surface Laptop*')
+'@
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `Script` | yes | PowerShell evaluated on the live target machine; its **last** emitted object is coerced to a boolean. Must be read-only detection (it also runs under `-WhatIf`). |
+| `Description` | yes | Plain-English statement of the requirement, surfaced verbatim in the `NotApplicable` reason in the run report / Image BOM. |
+| `Citation` | no | Authoritative source for the detection method. |
+
+A `Condition` describes **the machine the image will run on**, so the two paths deliberately differ:
+
+- **Offline build** ([`Invoke-CatalogEntry`](../src/WindowsIsoMaker/Public/Invoke-CatalogEntry.ps1))
+  never evaluates it — the build agent is not the target machine, so testing it there would check
+  the wrong hardware. The entry is reported `NotApplicable` with a reason pointing at
+  `post-install.ps1`.
+- **Post-install** ([`Invoke-OnlineCatalogEntry`](../src/WindowsIsoMaker/Private/Invoke-OnlinePostInstall.ps1))
+  runs on the target, so it evaluates the condition and applies the entry only when satisfied.
+
+Evaluation always **fails closed**: a condition that throws, fails to parse, emits nothing, or is
+false-y leaves the entry unapplied, so a targeted tweak is never applied to hardware it was not
+meant for because detection broke. The logic lives in
+[`Private/CatalogEntryCondition.ps1`](../src/WindowsIsoMaker/Private/CatalogEntryCondition.ps1).
+
+> `Script` is executed as-is. Catalog files are reviewed, repository-controlled data (the module
+> already bakes catalog-authored `powershell.exe` RunOnce payloads), so this adds no new trust
+> boundary — but a condition must never be sourced from untrusted input.
+
+See `reg-power-button-no-action-ac` / `-dc` for a worked example: on Surface Laptops the power
+button sits next to Delete, so an accidental press sleeps the machine; the entries set the
+documented power-button action to *Take no action* and are a no-op on every other machine.
+
 ## Selecting changes
 
 Selection is resolved by [`Resolve-CatalogSelection`](../src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1)
@@ -72,8 +117,9 @@ from three inputs, in order of increasing precedence:
    where `gaming` is `default` minus the entries tagged `Profiles = @('gaming')` so Xbox / Game Bar
    are preserved, and `opinionated` is `aggressive` plus the entries tagged
    `Profiles = @('opinionated')` personal-taste extras — reversed mouse scroll, Start web-search
-   off, lock-screen Spotlight off, WSL, and the United States-International keyboard layout for
-   English (US)). `Profile` also accepts a list to combine baselines (e.g. `gaming,opinionated`):
+   off, lock-screen Spotlight off, a Surface-Laptop-only power button that does nothing instead of
+   sleeping, WSL, and the United States-International keyboard layout for English (US)).
+   `Profile` also accepts a list to combine baselines (e.g. `gaming,opinionated`):
    the selected profiles are UNIONed, and when `gaming` is one of them the `Profiles = @('gaming')`
    entries stay preserved — so `gaming,opinionated` gives aggressive debloat + opinionated tweaks
    with a working gaming stack.
