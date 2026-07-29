@@ -91,6 +91,11 @@ Entries not applicable to the target `Architecture` are skipped automatically.
   Cited: <https://learn.microsoft.com/en-us/windows/client-management/manage-recall>
 - `reg-disable-widgets` — disables the Widgets board (weather/stock/news feed) via
   `AllowNewsAndInterests`.
+- `reg-disable-device-metadata-apps` — stops the "get the companion app for your device" toasts
+  (e.g. "Power up your precision mouse with Microsoft Mouse and Keyboard Center") by setting
+  `PreventDeviceMetadataFromNetwork`. Drivers still install; only the metadata-driven vendor-app
+  download/advertising stops. Cited:
+  <https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-deviceinstallation#preventdevicemetadatafromnetwork>
 
 Plus common consumer **provisioned app removals** (Candy Crush / King games, Clipchamp,
 Bing News, MSN Weather, Solitaire, Xbox extras, Teams consumer, Get Help, Feedback Hub, etc.),
