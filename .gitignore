@@ -2,7 +2,10 @@
 out/
 
 # Test artifacts
-testResults.xml
+# Pester writes tests/TestResults.xml (see tests/PesterConfiguration.ps1 and ci.yml).
+# gitignore patterns are matched case-sensitively, so the casing here must match exactly
+# or the artifact shows up as untracked on case-sensitive filesystems (Linux/macOS).
+TestResults.xml
 coverage.xml
 
 # Editor / OS cruft
