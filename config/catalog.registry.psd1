@@ -178,6 +178,28 @@
             Arch           = @('amd64', 'arm64')
         },
 
+        @{
+            Id             = 'reg-disable-device-metadata-apps'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'Bundled apps'
+            Target         = @{
+                Hive  = 'SOFTWARE'
+                Path  = 'Policies\Microsoft\Windows\Device Metadata'
+                Name  = 'PreventDeviceMetadataFromNetwork'
+                Kind  = 'DWord'
+                Value = 1
+            }
+            Description    = 'Stops Windows from downloading device metadata and the vendor apps associated with it, which suppresses the "get the companion app for your device" toasts shown when a mouse, keyboard, headset or printer is connected.'
+            Rationale      = 'When a peripheral is attached, the Device Setup Manager fetches device metadata from Microsoft''s device-metadata service and uses it to advertise and auto-download the vendor''s companion app (for example the "Power up your precision mouse with Microsoft Mouse and Keyboard Center" toast for Surface/Microsoft mice, or vendor-app prompts for other peripherals). Microsoft documents the supported control as the DeviceInstallation/PreventDeviceMetadataFromNetwork policy ("Prevent automatic download of applications associated with device metadata", Computer Configuration > System > Device Installation), which maps to SOFTWARE\Policies\Microsoft\Windows\Device Metadata!PreventDeviceMetadataFromNetwork = 1 and overrides the per-machine Device Installation Settings dialog. Drivers still install normally through Windows Update; only the metadata-driven app download/advertising stops. Side effect: some devices show a generic icon/name in Devices and Printers instead of the vendor-supplied one. Fully reversible.'
+            Citation       = 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-deviceinstallation#preventdevicemetadatafromnetwork'
+            EvidenceGrade  = 1
+            Reversible     = $true
+            Reversal       = 'Set PreventDeviceMetadataFromNetwork to 0 (or delete it) under SOFTWARE\Policies\Microsoft\Windows\Device Metadata, then re-enable "Automatically download manufacturers'' apps..." in Device Installation Settings (Control Panel > System > Advanced system settings > Hardware).'
+            DefaultEnabled = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
         # --- Community-documented tweaks (EvidenceGrade 3 => DefaultEnabled=false) ---------
 
         @{
