@@ -18,6 +18,13 @@ function Invoke-CatalogEntry {
 
         Architecture filtering (FR-021), idempotency (FR-017), and -WhatIf (FR-016) are handled
         uniformly by the underlying handlers, so behaviour is Action-agnostic.
+
+        Entries that declare an applicability `Condition` (e.g. "Surface Laptop only") are NOT
+        applied by the offline build: the condition describes the machine the image will be
+        installed on, and the build agent is not that machine, so evaluating it here would test the
+        wrong hardware. Such entries are reported NotApplicable with a reason pointing at
+        post-install.ps1, which evaluates the condition on the installed machine. See
+        Private/CatalogEntryCondition.ps1.
     .PARAMETER Entry
         A single ChangeCatalogEntry object to apply.
     .PARAMETER MountPath
@@ -54,6 +61,19 @@ function Invoke-CatalogEntry {
     )
 
     $action = [string]$Entry.Action
+
+    # A machine-specific Condition cannot be answered while servicing an offline image: the build
+    # host is not the machine the image will run on. Never guess — record it as NotApplicable and
+    # point at the online path that CAN evaluate it.
+    $condition = Get-CatalogEntryCondition -Entry $Entry
+    if ($null -ne $condition) {
+        $description = Get-CatalogConditionField -Condition $condition -Name 'Description'
+        $label = if ($description) { $description } else { 'a machine-specific condition' }
+        return New-ConditionNotApplicableResult -Entry $Entry -Reason (
+            "Entry declares a condition ($label) that describes the target machine, which the " +
+            'offline build cannot evaluate. Run post-install.ps1 on the installed machine to apply it.')
+    }
+
     $handlerParams = @{
         MountPath    = $MountPath
         Catalog      = @($Entry)

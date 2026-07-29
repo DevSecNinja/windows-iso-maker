@@ -125,6 +125,54 @@
       "type": "boolean",
       "default": false,
       "description": "If true, entry lacks an authoritative source and DefaultEnabled MUST be false."
+    },
+    "Category": {
+      "type": "string",
+      "enum": [
+        "Browser",
+        "Bundled apps",
+        "Cloud storage",
+        "Development",
+        "Gaming",
+        "Legacy components",
+        "Personalization",
+        "Privacy & telemetry",
+        "System & recovery"
+      ],
+      "description": "Semantic grouping used for display/reporting only. Profile SELECTION never keys off Category — it keys off the separate 'Profiles' tag."
+    },
+    "Profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["gaming", "opinionated"] },
+      "description": "Optional curated profile-membership tag consumed by Resolve-CatalogSelection. Kept separate from 'Category' so an entry can be, say, Category='Development' AND part of the opinionated profile."
+    },
+    "Condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Script", "Description"],
+      "description": "Optional applicability guard describing the TARGET machine (e.g. 'Surface Laptop only'), so hardware-specific tweaks stay data-driven instead of becoming per-feature switches (Principle III). Because it describes the machine the image will run on, the offline build NEVER evaluates it: Invoke-CatalogEntry reports such an entry NotApplicable and points at post-install.ps1, which evaluates it on the installed machine via Invoke-OnlineCatalogEntry. Evaluation is fail-closed — a condition that throws, returns nothing, or is false-y leaves the entry unapplied.",
+      "properties": {
+        "Script": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PowerShell expression evaluated on the live target machine; its LAST emitted object is coerced to a boolean. MUST be read-only detection (it also runs under -WhatIf). Executed as-is, so it may only come from reviewed, repository-controlled catalog data."
+        },
+        "Description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable statement of what the condition requires, surfaced verbatim in the NotApplicable reason recorded in the run report / Image BOM."
+        },
+        "Citation": {
+          "type": "string",
+          "description": "Optional authoritative source for the detection method (e.g. the Surface System SKU reference).",
+          "anyOf": [
+            { "format": "uri", "pattern": "^https?://" },
+            { "const": "Unverified" }
+          ]
+        }
+      }
     }
   },
   "allOf": [
