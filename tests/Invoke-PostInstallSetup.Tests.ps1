@@ -169,6 +169,38 @@ Describe 'Set-OnlineRegistryTweaks' {
             $res.Status | Should -Be 'Applied'
         }
     }
+
+    It 'reports NotApplicable and never creates the key for an OnlyIfKeyExists entry whose key is absent' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = @(
+                [pscustomobject]@{ Id = 'reg-disable-oem-service'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'ControlSet001\Services\WavesSysSvc'; Name = 'Start'; Kind = 'DWord'; Value = 4; OnlyIfKeyExists = $true } }
+            )
+            Mock Test-OfflineRegistryKey { $false }
+            Mock Get-OfflineRegistryValue { $null }
+            Mock Set-OfflineRegistryValue { }
+
+            $res = Set-OnlineRegistryTweaks -Catalog $catalog -Architecture amd64 -Scope Both
+            $res.Status | Should -Be 'NotApplicable'
+            Should -Invoke Set-OfflineRegistryValue -Times 0
+        }
+    }
+
+    It 'applies an OnlyIfKeyExists entry when the key is present' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = @(
+                [pscustomobject]@{ Id = 'reg-disable-oem-service'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'ControlSet001\Services\WavesSysSvc'; Name = 'Start'; Kind = 'DWord'; Value = 4; OnlyIfKeyExists = $true } }
+            )
+            Mock Test-OfflineRegistryKey { $true }
+            Mock Get-OfflineRegistryValue { 2 }
+            Mock Set-OfflineRegistryValue { }
+
+            $res = Set-OnlineRegistryTweaks -Catalog $catalog -Architecture amd64 -Scope Both
+            $res.Status | Should -Be 'Applied'
+            Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $MountKey -eq 'HKLM\SYSTEM' -and $Value -eq 4 }
+        }
+    }
 }
 
 Describe 'Remove-OnlineBloatware' {

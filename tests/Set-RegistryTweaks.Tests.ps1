@@ -86,4 +86,47 @@ Describe 'Set-RegistryTweaks' {
             Should -Invoke Dismount-OfflineRegistryHive -Times 1
         }
     }
+
+    It 'reports NotApplicable and never creates the key for an OnlyIfKeyExists entry whose key is absent' {
+        InModuleScope WindowsIsoMaker -Parameters @{ MountDir = $script:MountDir } {
+            param($MountDir)
+            $catalog = @(
+                [pscustomobject]@{
+                    Id = 'reg-disable-oem-service'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'ControlSet001\Services\WavesSysSvc'; Name = 'Start'; Kind = 'DWord'; Value = 4; OnlyIfKeyExists = $true }
+                }
+            )
+            Mock Mount-OfflineRegistryHive { [pscustomobject]@{ Hive = 'SYSTEM'; MountKey = 'HKLM\WIM_Test_SYSTEM' } }
+            Mock Dismount-OfflineRegistryHive { }
+            Mock Test-OfflineRegistryKey { $false }
+            Mock Get-OfflineRegistryValue { $null }
+            Mock Set-OfflineRegistryValue { }
+
+            $results = Set-RegistryTweaks -MountPath $MountDir -Catalog $catalog -Architecture amd64
+            $results[0].Status | Should -Be 'NotApplicable'
+            Should -Invoke Set-OfflineRegistryValue -Times 0
+            Should -Invoke Dismount-OfflineRegistryHive -Times 1
+        }
+    }
+
+    It 'applies an OnlyIfKeyExists entry when the key is present' {
+        InModuleScope WindowsIsoMaker -Parameters @{ MountDir = $script:MountDir } {
+            param($MountDir)
+            $catalog = @(
+                [pscustomobject]@{
+                    Id = 'reg-disable-oem-service'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'ControlSet001\Services\WavesSysSvc'; Name = 'Start'; Kind = 'DWord'; Value = 4; OnlyIfKeyExists = $true }
+                }
+            )
+            Mock Mount-OfflineRegistryHive { [pscustomobject]@{ Hive = 'SYSTEM'; MountKey = 'HKLM\WIM_Test_SYSTEM' } }
+            Mock Dismount-OfflineRegistryHive { }
+            Mock Test-OfflineRegistryKey { $true }
+            Mock Get-OfflineRegistryValue { 2 }
+            Mock Set-OfflineRegistryValue { }
+
+            $results = Set-RegistryTweaks -MountPath $MountDir -Catalog $catalog -Architecture amd64
+            $results[0].Status | Should -Be 'Applied'
+            Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $Value -eq 4 }
+        }
+    }
 }

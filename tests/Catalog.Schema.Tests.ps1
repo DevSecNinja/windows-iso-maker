@@ -139,6 +139,12 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
                 $Entry.Target.Path | Should -Not -BeNullOrEmpty
                 $Entry.Target.Name | Should -Not -BeNullOrEmpty
                 $Entry.Target.Kind | Should -BeIn @('DWord', 'QWord', 'String', 'ExpandString', 'MultiString', 'Binary')
+                if ($Entry.Target.ContainsKey('Operation')) {
+                    $Entry.Target.Operation | Should -BeIn @('Set', 'Delete') -Because "the optional Target Operation is 'Set' (default) or 'Delete'"
+                }
+                if ($Entry.Target.ContainsKey('OnlyIfKeyExists')) {
+                    $Entry.Target.OnlyIfKeyExists | Should -BeOfType [bool] -Because 'the optional Target OnlyIfKeyExists guard is a boolean'
+                }
             }
         }
     }

@@ -57,7 +57,18 @@
               "type": "string",
               "enum": ["DWord", "QWord", "String", "ExpandString", "MultiString", "Binary"]
             },
-            "Value": {}
+            "Value": {},
+            "Operation": {
+              "type": "string",
+              "enum": ["Set", "Delete"],
+              "default": "Set",
+              "description": "Optional. 'Delete' removes the value instead of writing it."
+            },
+            "OnlyIfKeyExists": {
+              "type": "boolean",
+              "default": false,
+              "description": "Optional. When true the value is only written if the key already exists; otherwise the entry is reported NotApplicable and the key is NOT created. Used for third-party/OEM components a clean image does not contain (e.g. disabling an OEM service via SYSTEM\\ControlSet001\\Services\\<Name>\\Start)."
+            }
           }
         }
       ]
