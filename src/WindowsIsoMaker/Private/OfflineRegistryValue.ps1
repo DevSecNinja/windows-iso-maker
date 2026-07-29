@@ -33,6 +33,61 @@ function Get-OfflineRegistryValue {
     return $item.$Name
 }
 
+function Test-OfflineRegistryKey {
+    <#
+    .SYNOPSIS
+        Return whether a key path exists under a loaded hive (offline mount key or live HKLM/HKCU
+        root).
+    .DESCRIPTION
+        Used by the 'OnlyIfKeyExists' Target option so an entry that only makes sense for an
+        already-installed component (e.g. disabling a third-party service via its
+        SYSTEM\...\Services\<Name>\Start value) never fabricates the key when the component is
+        absent.
+    .PARAMETER MountKey
+        The mount key / live root (e.g. 'HKLM\WIM_Offline_SYSTEM_1a2b' or 'HKLM\SYSTEM').
+    .PARAMETER Path
+        Sub-path within the hive.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)][string] $MountKey,
+        [Parameter(Mandatory = $true)][string] $Path
+    )
+    return [bool](Test-Path -LiteralPath "Registry::$MountKey\$Path")
+}
+
+function Get-RegistryTargetOption {
+    <#
+    .SYNOPSIS
+        Read an OPTIONAL key from a catalog entry's registry Target in a StrictMode-safe way.
+    .DESCRIPTION
+        A Target is authored as a hashtable but may reach the appliers as a PSCustomObject.
+        Accessing a missing key/property under Set-StrictMode -Version Latest throws, so every
+        optional Target key ('Operation', 'OnlyIfKeyExists') is read through this helper, which
+        returns $null when the option is not present.
+    .PARAMETER Target
+        The entry's Target object.
+    .PARAMETER Name
+        The optional key name to read.
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)][object] $Target,
+        [Parameter(Mandatory = $true)][string] $Name
+    )
+
+    if ($Target -is [System.Collections.IDictionary]) {
+        if ($Target.Contains($Name)) { return $Target[$Name] }
+        return $null
+    }
+    if ($null -ne $Target -and ($Target.PSObject.Properties.Name -contains $Name)) {
+        return $Target.$Name
+    }
+    return $null
+}
+
 function Set-OfflineRegistryValue {
     <#
     .SYNOPSIS

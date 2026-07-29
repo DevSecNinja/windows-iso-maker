@@ -7,10 +7,12 @@
     # entry MUST be DefaultEnabled = $false (enforced by tests/Catalog.Schema.Tests.ps1).
     #
     # 'Target' is an object: Hive (SOFTWARE|SYSTEM|DEFAULT — the offline hive loaded from the
-    # image), Path (relative to the hive root), Name, Kind, Value, and an optional
-    # Operation ('Set' default, or 'Delete' to remove the value). Machine-wide policies live
-    # in SOFTWARE; per-user defaults (so every NEW profile inherits them) live in the DEFAULT
-    # (ntuser) hive.
+    # image), Path (relative to the hive root), Name, Kind, Value, an optional
+    # Operation ('Set' default, or 'Delete' to remove the value), and an optional
+    # OnlyIfKeyExists ($true = only change the value when the key already exists; the entry is
+    # reported NotApplicable instead of creating the key — use it for third-party/OEM components
+    # that a clean image does not contain). Machine-wide policies live in SOFTWARE; per-user
+    # defaults (so every NEW profile inherits them) live in the DEFAULT (ntuser) hive.
     #
     # Recall and Widgets disable are DefaultEnabled = $true per FR-007 (spec-mandated,
     # reversible, grade 1). Every entry carries What/Why/Citation/EvidenceGrade and a Reversal.
@@ -682,6 +684,35 @@
             EvidenceGrade  = 3
             Reversible     = $true
             Reversal       = 'Set the tzautoupdate service Start value to 4 (disabled) under SYSTEM\ControlSet001\Services\tzautoupdate.'
+            DefaultEnabled = $false
+            Unverified     = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        # Third-party/OEM service disable. The service key only exists once the OEM audio package
+        # is installed, so the Target sets OnlyIfKeyExists = $true: on a clean image (or a machine
+        # without Waves) the entry is reported NotApplicable instead of fabricating an orphan
+        # Services key. In practice this lands via post-install.ps1 on the installed machine.
+        @{
+            Id             = 'reg-disable-waves-audio-service'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'Bundled apps'
+            Profiles       = @('opinionated')
+            Target         = @{
+                Hive            = 'SYSTEM'
+                Path            = 'ControlSet001\Services\WavesSysSvc'
+                Name            = 'Start'
+                Kind            = 'DWord'
+                Value           = 4
+                OnlyIfKeyExists = $true
+            }
+            Description    = 'Disables the OEM-bundled "Waves Audio Services" service (WavesSysSvc) by setting its Start value to 4 (Disabled). Only applied when the service is actually present; takes effect after a reboot.'
+            Rationale      = 'WavesSysSvc is the service behind Waves MaxxAudio, pre-installed by several OEMs (notably Dell and HP) alongside the Realtek audio driver. It is widely reported to sit at very high CPU (up to 70-90%) indefinitely, keeping fans spinning; disabling the service stops that while Windows keeps working with the standard audio driver. Setting a service Start value to 4 under SYSTEM\...\Services\<Name> is the documented way to disable a service (SERVICE_DISABLED). The high-CPU behaviour is community/OEM-forum evidence and the trade-off is losing the MaxxAudio enhancements and, on some models, the headphone/speaker auto-switch prompt, so this is EvidenceGrade 3 and strictly opt-in (part of the opinionated profile only).'
+            Citation       = 'https://www.dell.com/community/en/conversations/windows-general/waves-maxxaudio-service-70-90-of-cpu-on-windows-11/647f9984f4ccf8a8dece3709'
+            EvidenceGrade  = 3
+            Reversible     = $true
+            Reversal       = 'Set the WavesSysSvc service Start value back to 2 (Automatic) under SYSTEM\ControlSet001\Services\WavesSysSvc — or re-enable "Waves Audio Services" in services.msc — and reboot. Reinstall the OEM Waves MaxxAudio package if it was removed.'
             DefaultEnabled = $false
             Unverified     = $true
             Arch           = @('amd64', 'arm64')

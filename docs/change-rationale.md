@@ -43,6 +43,26 @@ The `Action` is the dispatch key: [`Invoke-CatalogEntry`](../src/WindowsIsoMaker
 routes each entry to the correct handler. **Adding a new change means adding an entry — never a
 new code path or parameter** (FR-024/FR-025).
 
+### `SetRegistry` target options
+
+A `SetRegistry` target requires `Hive` / `Path` / `Name` / `Kind` / `Value` and accepts two
+optional keys:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `Operation` | `'Set'` | `'Delete'` removes the value instead of writing it. |
+| `OnlyIfKeyExists` | `$false` | `$true` = only write when the key already exists; otherwise the entry is reported `NotApplicable` and the key is **not** created. |
+
+`OnlyIfKeyExists` exists for third-party/OEM components a clean Windows image does not contain —
+for example disabling an OEM **service**, which is done by setting its
+`SYSTEM\ControlSet001\Services\<ServiceName>\Start` value (`2` = Automatic, `3` = Manual,
+`4` = Disabled). No separate "service" action is needed: a service is just a registry target, and
+the guard keeps the build from fabricating an orphan `Services\<Name>` key on images/machines
+where that service is not installed. See `reg-disable-waves-audio-service` for a worked example.
+Because the service key only appears once the OEM package is installed, such entries usually take
+effect through [`post-install.ps1`](../post-install.ps1) on the installed machine (after a reboot)
+rather than during the offline build.
+
 ## Selecting changes
 
 Selection is resolved by [`Resolve-CatalogSelection`](../src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1)

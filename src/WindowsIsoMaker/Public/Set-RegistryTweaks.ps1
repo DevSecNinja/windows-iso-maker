@@ -7,8 +7,11 @@ function Set-RegistryTweaks {
         (SOFTWARE/SYSTEM/DEFAULT) from the mounted image, applies the entries (including the
         default Recall + Widgets disables), and ALWAYS unloads the hives in a finally block so
         they are never left loaded on failure (Principle VI; FR-005). Re-runs are idempotent:
-        an entry whose value already matches is recorded AlreadyApplied (FR-017). -WhatIf
-        reports intended keys without writing (FR-016). Returns a ChangeResult per entry.
+        an entry whose value already matches is recorded AlreadyApplied (FR-017). An entry whose
+        Target sets OnlyIfKeyExists = $true is recorded NotApplicable when its key is absent from
+        the image (used for third-party/OEM components that the image does not contain), so the
+        key is never fabricated. -WhatIf reports intended keys without writing (FR-016). Returns a
+        ChangeResult per entry.
     .PARAMETER MountPath
         Root of the mounted offline image.
     .PARAMETER Catalog
@@ -84,14 +87,21 @@ function Set-RegistryTweaks {
 
                 try {
                     $target = $entry.Target
-                    # 'Operation' is an optional Target key (default = Set). Access it in a
-                    # StrictMode-safe way: a hashtable missing key must not throw.
-                    $operation = if ($target -is [hashtable] -and $target.ContainsKey('Operation')) {
-                        $target['Operation']
+                    # 'Operation' (default = Set) and 'OnlyIfKeyExists' are optional Target keys;
+                    # read them StrictMode-safely (a missing key must not throw).
+                    $operation = Get-RegistryTargetOption -Target $target -Name 'Operation'
+                    $onlyIfKeyExists = [bool](Get-RegistryTargetOption -Target $target -Name 'OnlyIfKeyExists')
+
+                    if ($onlyIfKeyExists -and -not $WhatIfPreference -and
+                        -not (Test-OfflineRegistryKey -MountKey $mountKey -Path $target.Path)) {
+                        # The component this entry targets (e.g. a third-party service) is not in
+                        # the image; never fabricate its key.
+                        $result.Status = 'NotApplicable'
+                        $result.Reason = "Key '$hiveName\$($target.Path)' does not exist in the image; nothing to change."
+                        $results.Add($result)
+                        continue
                     }
-                    else {
-                        $null
-                    }
+
                     if ($operation -eq 'Delete') {
                         if ($WhatIfPreference) {
                             $result.Status = 'Skipped'
@@ -114,7 +124,8 @@ function Set-RegistryTweaks {
                         # Set / Disable => write Kind=Value.
                         if ($WhatIfPreference) {
                             $result.Status = 'Skipped'
-                            $result.Reason = "Preview (-WhatIf): would set $hiveName\$($target.Path)\$($target.Name) = $($target.Value)."
+                            $suffix = if ($onlyIfKeyExists) { ' (only if that key already exists)' } else { '' }
+                            $result.Reason = "Preview (-WhatIf): would set $hiveName\$($target.Path)\$($target.Name) = $($target.Value)$suffix."
                         }
                         else {
                             $current = Get-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name

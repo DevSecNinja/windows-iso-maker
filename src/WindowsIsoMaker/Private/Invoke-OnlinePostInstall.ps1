@@ -19,7 +19,9 @@ function Set-OnlineRegistryTweaks {
         are applied — depending on -Scope — to the CURRENT user (HKCU) and/or the default-user
         profile template (C:\Users\Default\NTUSER.DAT, so NEW profiles inherit them). The template
         hive is loaded once and ALWAYS unloaded in a finally block (Principle VI). Re-runs are
-        idempotent (a value already matching -> AlreadyApplied); -WhatIf reports without writing.
+        idempotent (a value already matching -> AlreadyApplied); an entry whose Target sets
+        OnlyIfKeyExists = $true is reported NotApplicable when its key is absent (the key is never
+        fabricated); -WhatIf reports without writing.
     .PARAMETER Catalog
         Catalog entries to apply. Non-SetRegistry entries are ignored.
     .PARAMETER Architecture
@@ -133,7 +135,8 @@ function Invoke-OnlineRegistryEntry {
     }
 
     $target = $Entry.Target
-    $operation = if ($target -is [hashtable] -and $target.ContainsKey('Operation')) { $target['Operation'] } else { $null }
+    $operation = Get-RegistryTargetOption -Target $target -Name 'Operation'
+    $onlyIfKeyExists = [bool](Get-RegistryTargetOption -Target $target -Name 'OnlyIfKeyExists')
     # RunOnce values are DELETED by Windows once they execute at logon, so a re-run would
     # otherwise re-arm them and report 'Applied' every time. For RunOnce entries we also consult a
     # persistent idempotency marker (the WindowsIsoMaker\State tattoo): if it already records this
@@ -147,9 +150,18 @@ function Invoke-OnlineRegistryEntry {
     $applied = 0
     $already = 0
     $wouldChange = 0
+    $missingKey = 0
     try {
         foreach ($root in $Roots) {
             $label = "$root\$($target.Path)\$($target.Name)"
+            # OnlyIfKeyExists entries target a component that may not be installed (e.g. an OEM
+            # service): never fabricate the key, just report the entry as not applicable. The
+            # not-yet-loaded default-user preview root is excluded (nothing is readable there).
+            if ($onlyIfKeyExists -and -not ($WhatIfPreference -and $root -like 'HKU\WIM_PostInstall_DefaultUser_Preview*') -and
+                -not (Test-OfflineRegistryKey -MountKey $root -Path $target.Path)) {
+                $missingKey++
+                continue
+            }
             if ($operation -eq 'Delete') {
                 $current = Get-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
                 if ($null -eq $current) { $already++; continue }
@@ -184,7 +196,11 @@ function Invoke-OnlineRegistryEntry {
             }
         }
 
-        if ($WhatIfPreference) {
+        if ($missingKey -gt 0 -and $applied -eq 0 -and $already -eq 0 -and $wouldChange -eq 0) {
+            $result.Status = 'NotApplicable'
+            $result.Reason = "Key '$($target.Hive)\$($target.Path)' does not exist on this system; nothing to change."
+        }
+        elseif ($WhatIfPreference) {
             if ($wouldChange -gt 0) {
                 $verb = if ($operation -eq 'Delete') { 'delete' } else { "set to $($target.Value)" }
                 $suffix = if ($already -gt 0) { " ($already already in the desired state)" } else { '' }
