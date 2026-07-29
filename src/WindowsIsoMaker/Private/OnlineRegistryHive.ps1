@@ -34,6 +34,43 @@ function Get-OnlineMachineHiveRoot {
     return "HKLM\$Hive"
 }
 
+function Resolve-OnlineRegistryPath {
+    <#
+    .SYNOPSIS
+        Translate a catalog Target Path authored for the OFFLINE hive into its ONLINE equivalent.
+    .DESCRIPTION
+        SYSTEM-hive catalog paths are authored against an explicit control set ('ControlSet001\...')
+        because the offline loaded SYSTEM hive has no CurrentControlSet symlink — it does not exist
+        until the image boots. On a RUNNING system CurrentControlSet is the authoritative active
+        control set and is NOT always ControlSet001 (HKLM\SYSTEM\Select\Current decides; a Last
+        Known Good rollback can make ControlSet002 active). Writing to an inactive control set
+        would silently have no effect, so the authored prefix is rewritten to CurrentControlSet
+        for the online appliers. All other hives/paths are returned unchanged.
+    .PARAMETER Hive
+        The entry's logical hive ('SOFTWARE', 'SYSTEM' or 'DEFAULT').
+    .PARAMETER Path
+        The entry's Target Path, relative to the hive root.
+    .OUTPUTS
+        System.String — the path to use against the live registry.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Hive,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path
+    )
+
+    if ($Hive -eq 'SYSTEM' -and $Path -match '^ControlSet\d{3}\\') {
+        return ($Path -replace '^ControlSet\d{3}\\', 'CurrentControlSet\')
+    }
+    return $Path
+}
+
 function Mount-DefaultUserRegistryHive {
     <#
     .SYNOPSIS

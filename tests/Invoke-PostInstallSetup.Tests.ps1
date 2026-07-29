@@ -201,6 +201,51 @@ Describe 'Set-OnlineRegistryTweaks' {
             Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $MountKey -eq 'HKLM\SYSTEM' -and $Value -eq 4 }
         }
     }
+
+    It 'writes SYSTEM-hive entries to the ACTIVE control set, not the authored ControlSet001' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = @(
+                [pscustomobject]@{ Id = 'reg-service'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'ControlSet001\Services\W32Time'; Name = 'Start'; Kind = 'DWord'; Value = 2 } }
+            )
+            Mock Get-OfflineRegistryValue { $null }
+            Mock Set-OfflineRegistryValue { }
+
+            $res = Set-OnlineRegistryTweaks -Catalog $catalog -Architecture amd64 -Scope Both
+            $res.Status | Should -Be 'Applied'
+            Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $Path -eq 'CurrentControlSet\Services\W32Time' }
+            Should -Invoke Set-OfflineRegistryValue -Times 0 -ParameterFilter { $Path -like 'ControlSet0*' }
+        }
+    }
+
+    It 'leaves non-SYSTEM paths untranslated' {
+        InModuleScope WindowsIsoMaker {
+            Resolve-OnlineRegistryPath -Hive 'SOFTWARE' -Path 'ControlSet001\Foo' | Should -Be 'ControlSet001\Foo'
+            Resolve-OnlineRegistryPath -Hive 'SYSTEM' -Path 'ControlSet002\Services\Foo' | Should -Be 'CurrentControlSet\Services\Foo'
+            Resolve-OnlineRegistryPath -Hive 'SYSTEM' -Path 'Setup' | Should -Be 'Setup'
+        }
+    }
+
+    It 'reports partial applicability when only some roots have the key' {
+        InModuleScope WindowsIsoMaker {
+            $catalog = @(
+                [pscustomobject]@{ Id = 'reg-user-guarded'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64', 'arm64')
+                    Target = @{ Hive = 'DEFAULT'; Path = 'Software\Foo'; Name = 'Bar'; Kind = 'DWord'; Value = 1; OnlyIfKeyExists = $true } }
+            )
+            Mock Mount-DefaultUserRegistryHive { [pscustomobject]@{ MountKey = 'HKU\WIM_Test_Default'; HiveFile = 'x'; MountKeyName = 'WIM_Test_Default' } }
+            Mock Dismount-OfflineRegistryHive { }
+            # Present for the current user, absent in the default-user template.
+            Mock Test-OfflineRegistryKey { param($MountKey, $Path) $MountKey -eq 'HKCU' }
+            Mock Get-OfflineRegistryValue { $null }
+            Mock Set-OfflineRegistryValue { }
+
+            $res = Set-OnlineRegistryTweaks -Catalog $catalog -Architecture amd64 -Scope Both
+            $res.Status | Should -Be 'Applied'
+            $res.Reason | Should -BeLike '*1 target(s) skipped: key absent*'
+            Should -Invoke Set-OfflineRegistryValue -Times 1
+            Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $MountKey -eq 'HKCU' }
+        }
+    }
 }
 
 Describe 'Remove-OnlineBloatware' {
