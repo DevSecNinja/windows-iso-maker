@@ -63,6 +63,12 @@ Because the service key only appears once the OEM package is installed, such ent
 effect through [`post-install.ps1`](../post-install.ps1) on the installed machine (after a reboot)
 rather than during the offline build.
 
+> **Control sets:** `SYSTEM`-hive paths are authored against `ControlSet001` because the offline
+> hive loaded from the image has no `CurrentControlSet` — that symlink only exists once Windows
+> boots. The online post-install applier rewrites the `ControlSet001\` prefix to
+> `CurrentControlSet\` (`Resolve-OnlineRegistryPath`), so it always writes to the *active* control
+> set even when that is not `ControlSet001` (e.g. after a Last Known Good rollback).
+
 ## Selecting changes
 
 Selection is resolved by [`Resolve-CatalogSelection`](../src/WindowsIsoMaker/Private/Resolve-CatalogSelection.ps1)

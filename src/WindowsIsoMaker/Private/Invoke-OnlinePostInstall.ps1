@@ -135,6 +135,9 @@ function Invoke-OnlineRegistryEntry {
     }
 
     $target = $Entry.Target
+    # SYSTEM-hive paths are authored against ControlSet001 (the offline hive has no
+    # CurrentControlSet); online they must go to the ACTIVE control set instead.
+    $path = Resolve-OnlineRegistryPath -Hive $target.Hive -Path $target.Path
     $operation = Get-RegistryTargetOption -Target $target -Name 'Operation'
     $onlyIfKeyExists = [bool](Get-RegistryTargetOption -Target $target -Name 'OnlyIfKeyExists')
     # RunOnce values are DELETED by Windows once they execute at logon, so a re-run would
@@ -151,35 +154,42 @@ function Invoke-OnlineRegistryEntry {
     $already = 0
     $wouldChange = 0
     $missingKey = 0
+    $unknownKey = 0
     try {
         foreach ($root in $Roots) {
-            $label = "$root\$($target.Path)\$($target.Name)"
+            $label = "$root\$path\$($target.Name)"
             # OnlyIfKeyExists entries target a component that may not be installed (e.g. an OEM
-            # service): never fabricate the key, just report the entry as not applicable. The
-            # not-yet-loaded default-user preview root is excluded (nothing is readable there).
-            if ($onlyIfKeyExists -and -not ($WhatIfPreference -and $root -like 'HKU\WIM_PostInstall_DefaultUser_Preview*') -and
-                -not (Test-OfflineRegistryKey -MountKey $root -Path $target.Path)) {
-                $missingKey++
-                continue
+            # service): never fabricate the key, just report the entry as not applicable for that
+            # root. Under -WhatIf the default-user template is not loaded, so its key existence is
+            # unknown rather than missing and is counted separately.
+            if ($onlyIfKeyExists) {
+                if ($WhatIfPreference -and $root -like 'HKU\WIM_PostInstall_DefaultUser_Preview*') {
+                    $unknownKey++
+                    continue
+                }
+                if (-not (Test-OfflineRegistryKey -MountKey $root -Path $path)) {
+                    $missingKey++
+                    continue
+                }
             }
             if ($operation -eq 'Delete') {
-                $current = Get-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
+                $current = Get-OfflineRegistryValue -MountKey $root -Path $path -Name $target.Name
                 if ($null -eq $current) { $already++; continue }
                 if ($WhatIfPreference) { $wouldChange++; continue }
                 if ($PSCmdlet.ShouldProcess($label, 'Delete registry value')) {
-                    Remove-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
+                    Remove-OfflineRegistryValue -MountKey $root -Path $path -Name $target.Name
                     $applied++
                 }
             }
             else {
-                $current = Get-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name
+                $current = Get-OfflineRegistryValue -MountKey $root -Path $path -Name $target.Name
                 if ($null -ne $current -and "$current" -eq "$($target.Value)") { $already++; continue }
                 if ($isRunOnce -and (Test-WimRunOnceMarker -Root $root -Id $Entry.Id -CommandValue "$($target.Value)")) {
                     $already++; continue
                 }
                 if ($WhatIfPreference) { $wouldChange++; continue }
                 if ($PSCmdlet.ShouldProcess($label, "Set registry value = $($target.Value)")) {
-                    Set-OfflineRegistryValue -MountKey $root -Path $target.Path -Name $target.Name -Kind $target.Kind -Value $target.Value
+                    Set-OfflineRegistryValue -MountKey $root -Path $path -Name $target.Name -Kind $target.Kind -Value $target.Value
                     if ($isRunOnce) {
                         # Non-fatal: the RunOnce command is already armed; failing to persist the
                         # idempotency marker just means the next run re-arms it (old behaviour), so
@@ -196,29 +206,40 @@ function Invoke-OnlineRegistryEntry {
             }
         }
 
-        if ($missingKey -gt 0 -and $applied -eq 0 -and $already -eq 0 -and $wouldChange -eq 0) {
+        # Roots whose key is absent are neither applied nor already-applied: they are reported as
+        # partial applicability so a mixed result never claims it covered "all targets".
+        $actionable = @($Roots).Count - $missingKey - $unknownKey
+        $partial = ''
+        if ($missingKey -gt 0) { $partial += " ($missingKey target(s) skipped: key absent)" }
+        if ($unknownKey -gt 0) { $partial += " ($unknownKey target(s) not evaluated: hive not loaded in preview)" }
+
+        if ($actionable -le 0 -and $missingKey -gt 0) {
             $result.Status = 'NotApplicable'
-            $result.Reason = "Key '$($target.Hive)\$($target.Path)' does not exist on this system; nothing to change."
+            $result.Reason = "Key '$($target.Hive)\$path' does not exist on this system; nothing to change."
         }
         elseif ($WhatIfPreference) {
             if ($wouldChange -gt 0) {
                 $verb = if ($operation -eq 'Delete') { 'delete' } else { "set to $($target.Value)" }
                 $suffix = if ($already -gt 0) { " ($already already in the desired state)" } else { '' }
                 $result.Status = 'Skipped'
-                $result.Reason = "Preview (-WhatIf): would $verb $($target.Hive)\$($target.Path)\$($target.Name) on $wouldChange target(s)$suffix."
+                $result.Reason = "Preview (-WhatIf): would $verb $($target.Hive)\$path\$($target.Name) on $wouldChange target(s)$suffix$partial."
+            }
+            elseif ($actionable -le 0) {
+                $result.Status = 'Skipped'
+                $result.Reason = "Preview (-WhatIf): no target could be evaluated$partial."
             }
             else {
                 $result.Status = 'AlreadyApplied'
-                $result.Reason = "Preview (-WhatIf): already in the desired state on all $(@($Roots).Count) target(s); no change."
+                $result.Reason = "Preview (-WhatIf): already in the desired state on all $actionable applicable target(s); no change$partial."
             }
         }
         elseif ($applied -gt 0) {
             $result.Status = 'Applied'
-            $result.Reason = if ($operation -eq 'Delete') { "Deleted on $applied target(s)." } else { "Set to $($target.Value) on $applied target(s)." }
+            $result.Reason = if ($operation -eq 'Delete') { "Deleted on $applied target(s)$partial." } else { "Set to $($target.Value) on $applied target(s)$partial." }
         }
         else {
             $result.Status = 'AlreadyApplied'
-            $result.Reason = if ($operation -eq 'Delete') { 'Value already absent on all targets.' } else { "Value already set to $($target.Value) on all targets." }
+            $result.Reason = if ($operation -eq 'Delete') { "Value already absent on all $actionable applicable target(s)$partial." } else { "Value already set to $($target.Value) on all $actionable applicable target(s)$partial." }
         }
     }
     catch {
