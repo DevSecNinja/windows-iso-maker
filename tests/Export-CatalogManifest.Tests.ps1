@@ -64,7 +64,7 @@ Describe 'Export-CatalogManifest' {
     }
 
     It 'tags the reversed-scroll extra and WSL as opinionated-only' -ForEach @(
-        @{ Id = 'reg-reverse-mouse-scroll' }
+        @{ Id = 'task-reverse-mouse-scroll' }
         @{ Id = 'feature-wsl' }
     ) {
         $entry = $script:Manifest.entries | Where-Object { $_.id -eq $Id }
@@ -72,6 +72,13 @@ Describe 'Export-CatalogManifest' {
         $entry.profiles | Should -Contain 'opinionated'
         $entry.profiles | Should -Not -Contain 'aggressive'
         $entry.profiles | Should -Not -Contain 'default'
+    }
+
+    It 'renders a scheduled-task target as its full task name, not as a registry path' {
+        $entry = $script:Manifest.entries | Where-Object { $_.id -eq 'task-reverse-mouse-scroll' }
+        $entry | Should -Not -BeNullOrEmpty
+        # A task Target has no Hive/Path/Name, so the registry formatting would emit a useless '\!'.
+        $entry.target | Should -Be '\WindowsIsoMaker\Reverse mouse scroll direction'
     }
 
     It 'writes valid JSON to -OutputPath and returns that path' {

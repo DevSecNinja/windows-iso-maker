@@ -21,6 +21,7 @@
         'Remove-Bloatware',
         'Set-RegistryTweaks',
         'Enable-WindowsFeature',
+        'Register-ScheduledTaskEntry',
         'New-AutounattendXml',
         'New-BootableIso',
         'Compress-BuildArtifact',

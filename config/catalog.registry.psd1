@@ -275,35 +275,6 @@
             Arch           = @('amd64', 'arm64')
         },
 
-        # --- Personalization: macOS-style "natural" (reversed) mouse scrolling -----------
-        # FlipFlopWheel lives per-device under SYSTEM\...\Enum\HID\<device>\Device Parameters,
-        # which do not exist in a generalized offline image (PnP populates them at first boot).
-        # So we bake a machine RunOnce command that, on first boot, sets FlipFlopWheel=1 on every
-        # enumerated HID mouse device. FlipFlopWheel is documented by Microsoft (wheel.docx),
-        # so EvidenceGrade 1; kept opt-in (DefaultEnabled=$false) as a personal-taste preference.
-        @{
-            Id             = 'reg-reverse-mouse-scroll'
-            Type           = 'Registry'
-            Action         = 'SetRegistry'
-            Category       = 'Personalization'
-            Profiles       = @('opinionated')
-            Target         = @{
-                Hive  = 'SOFTWARE'
-                Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'
-                Name  = '!WimReverseMouseScroll'
-                Kind  = 'String'
-                Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Get-ChildItem -Path ''HKLM:\SYSTEM\CurrentControlSet\Enum\HID'' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq ''Device Parameters'' } | ForEach-Object { New-ItemProperty -Path $_.PSPath -Name ''FlipFlopWheel'' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue }"'
-            }
-            Description    = 'Reverses the mouse wheel scroll direction (macOS-style "natural" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.'
-            Rationale      = 'FlipFlopWheel is the Microsoft-documented per-device control that inverts wheel scroll direction (see Microsoft''s "How to reverse the mouse wheel scrolling direction" whitepaper, wheel.docx). It lives under each mouse''s SYSTEM\...\Enum\HID\<device>\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (also a Microsoft-documented mechanism: https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. Kept opt-in (DefaultEnabled=$false) because reversed scrolling is a personal-taste preference, not a general improvement.'
-            Citation       = 'https://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx'
-            EvidenceGrade  = 1
-            Reversible     = $true
-            Reversal       = 'Remove the !WimReverseMouseScroll value under SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce before first boot, or after boot set FlipFlopWheel to 0 (or delete it) under each mouse''s SYSTEM\CurrentControlSet\Enum\HID\<device>\Device Parameters key.'
-            DefaultEnabled = $false
-            Arch           = @('amd64', 'arm64')
-        },
-
         # --- Personalization: Europe/Amsterdam time zone ---------------------------------
         # The time zone is a system-wide setting driven by tzutil (which recomputes the
         # TimeZoneInformation biases/DST rules) rather than a single registry value, so it is
