@@ -20,6 +20,39 @@ You flash the ISO to a USB stick with your usual tool (Rufus, Ventoy, the Media 
 >
 > The Windows Setup files on the stick are never modified.
 
+## ⚠️ When the automatic run does *not* fire
+
+`FirstLogonCommands` is a Windows mechanism with a real limitation. Microsoft
+[documents](https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-firstlogoncommands-synchronouscommand)
+that the commands run with elevated privileges **only when the first user to sign in is a local
+administrator**. If that account is a standard user:
+
+- with UAC enabled, a consent dialog appears and the commands **don't run if it is declined**;
+- with UAC disabled, the commands **don't run at all**.
+
+**This matters for Entra ID sign-in**, which is probably why you're here. Whether the account you
+sign in with becomes a local administrator on the device is decided by your **Entra / Intune device
+settings**, not by this tool — so the automatic run is **not guaranteed** in that scenario. Related:
+`FirstLogonCommands` does not run in **Autopilot** pre-provisioning / self-deploying flows.
+
+Because a silent no-op on a brand-new machine is the worst possible failure, the generated command
+**always leaves a breadcrumb**:
+
+```
+C:\ProgramData\windows-iso-maker\logs\bootstrap.log
+```
+
+It records that discovery started, which toolkit it found (or that it found none), and whether
+elevation succeeded. If nothing was applied, that file says so — and you can simply run the toolkit
+by hand:
+
+```powershell
+# elevated
+C:\ProgramData\windows-iso-maker\Invoke-PostInstall.ps1
+```
+
+If you'd rather not depend on the first-logon hook at all, use `-Mode Toolkit`.
+
 ## Quick start
 
 ```powershell
@@ -39,7 +72,7 @@ the USB drive); the run on the target machine self-elevates.
 | Check | Behaviour |
 |-------|-----------|
 | Target exists | Hard error if the path/drive isn't there. |
-| Target is removable | Refuses the **root of a fixed drive** (a mistyped `C:`) unless `-Force`. A folder target is always allowed. |
+| Target is removable | Refuses the **root of a fixed drive** (a mistyped `C:`) unless `-Force`. USB SSDs that report as "fixed" are still accepted when they sit on a USB bus. A folder target is always allowed. |
 | Windows Setup media | Requires `setup.exe`, `sources\install.wim` (or `.esd`) and a boot loader (`efi\` / `boot\`). Tells you to flash the ISO first, or `-Force` to stage anyway. |
 | Architecture | Derived from the media's UEFI boot loader — `bootx64.efi` → `amd64`, `bootaa64.efi` → `arm64`. Override with `-Architecture`. |
 | Catalog selection | Resolves the `Profile` / `EnableCatalogId` / `DisableCatalogId` **before** touching the stick, so a typo'd id fails here instead of on the new PC. |
@@ -72,16 +105,23 @@ E:\
 
 The rest of the stick — `sources\`, `boot\`, `efi\`, `setup.exe` — is untouched.
 
+Windows Setup finds the answer file through its documented
+[implicit search order](https://learn.microsoft.com/windows-hardware/manufacture/desktop/windows-setup-automation-overview#implicit-answer-file-search-order):
+removable media at the root of the drive, and — for a USB SSD that reports as fixed — the drive
+Setup itself is running from.
+
 ## What happens on the target machine
 
 The generated `Invoke-PostInstall.ps1`:
 
-1. **Self-elevates** if it isn't already running elevated (not needed under `FirstLogon`, which is
-   already elevated, but it makes the manual double-click path work).
-2. **Copies the toolkit to `C:\ProgramData\windows-iso-maker`**, so the run survives the stick being
+1. **Writes a breadcrumb** to `C:\ProgramData\windows-iso-maker\logs\bootstrap.log` before anything
+   else, so even a run that cannot elevate leaves evidence.
+2. **Self-elevates** if it isn't already running elevated, and reports loudly (log + warning) if that
+   fails rather than exiting quietly.
+3. **Copies the toolkit to `C:\ProgramData\windows-iso-maker`**, so the run survives the stick being
    unplugged and can be repeated after a reboot (a WSL install spans reboots).
-3. Starts a **transcript** in `C:\ProgramData\windows-iso-maker\logs\`.
-4. Runs `post-install.ps1` with the settings baked in when you prepared the stick, writing the usual
+4. Starts a **transcript** in `C:\ProgramData\windows-iso-maker\logs\`.
+5. Runs `post-install.ps1` with the settings baked in when you prepared the stick, writing the usual
    auditable run report to `C:\ProgramData\windows-iso-maker\out\`.
 
 Because every catalog change is idempotent, re-running it is always safe:
@@ -107,19 +147,23 @@ can adjust the profile on the machine without re-preparing the stick.
 | `-EnableCatalogId` / `-DisableCatalogId` | Opt-in / opt-out catalog ids for the staged run (explicit ids win). |
 | `-Scope` | Per-user target of the staged run: `CurrentUser`, `FutureUsers`, `Both` (default). |
 | `-Architecture` | `amd64` \| `arm64`. Auto-detected from the media. |
-| `-InstallWsl` / `-WslDistribution` | Have the staged run install WSL (implied by `opinionated`) and which distribution. |
+| `-InstallWsl` / `-WslDistribution` / `-WslServicing` / `-WslAutoReboot` | Have the staged run install WSL (implied by `opinionated`), which distribution, how WSL is obtained, and whether it may reboot on its own. |
 | `-ToolkitFolder` | Folder name at the stick's root (default `windows-iso-maker`). |
 | `-Force` | Allow a fixed-drive root or non-Setup media, and overwrite an existing `Autounattend.xml` / staged toolkit. |
 | `-WhatIf` | Validate everything and report the plan without writing. |
 
 ## Caveats
 
-- **Entra ID / work accounts.** `FirstLogonCommands` runs at the first interactive logon, which is
-  the account you signed in with during OOBE — so per-user tweaks land on your Entra profile
-  (`-Scope Both` also seeds the new-user template). If the device goes through **Autopilot** with an
-  Enrollment Status Page, prefer `-Mode Toolkit` and run it yourself once the desktop settles.
-- **The commands are synchronous.** The desktop appears only after the run finishes. Expect a few
-  minutes on the first logon; the transcript shows progress.
+- **Entra ID / work accounts.** See [the section above](#-when-the-automatic-run-does-not-fire) —
+  the first-logon hook only runs elevated when the signed-in account is a local administrator, which
+  Entra/Intune decides. Check `bootstrap.log`, and prefer `-Mode Toolkit` for **Autopilot** devices.
+- **Security.** The answer file makes Windows run a script from removable media, elevated, with
+  `-ExecutionPolicy Bypass`, at the first logon. That is inherent to the mechanism. Anyone who can
+  modify the staged toolkit could already modify `install.wim` on the same stick, so treat the stick
+  itself as the trust boundary and don't prepare a stick you then leave unattended.
+- **The commands run in order, one at a time.** Modern Windows runs `FirstLogonCommands`
+  asynchronously with respect to other logon work, but each command still runs to completion in
+  sequence. Expect the first logon to be busy for several minutes; the transcript shows progress.
 - **Reboots.** Additive features (notably WSL) finish after a reboot — just re-run the bootstrap
   from `C:\ProgramData\windows-iso-maker`. See [wsl.md](wsl.md).
 - **Hardware-conditional entries** are evaluated here (unlike an offline build) because this runs on

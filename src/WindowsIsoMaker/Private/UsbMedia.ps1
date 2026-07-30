@@ -55,6 +55,7 @@ function Get-UsbTargetInfo {
         FreeSpaceByte = $null
         IsRemovable   = $null
         DriveType     = $null
+        BusType       = $null
     }
 
     if (-not $driveLetter) { return $info }
@@ -75,6 +76,30 @@ function Get-UsbTargetInfo {
     catch {
         # Not Windows, no CIM, or the drive is not a local volume (e.g. a network share).
         Write-BuildLog -Level Verbose -Component 'Get-UsbTargetInfo' -Message "Could not query volume '$($driveLetter):': $($_.Exception.Message)"
+    }
+
+    # DriveType alone is not a reliable "is this a USB stick" test: USB SSDs and USB-NVMe
+    # enclosures - increasingly what people use for Windows media, because the install image is
+    # large - report DriveType 3 (fixed). Fall back to the physical bus so those are not rejected.
+    if ($info.IsRemovable -eq $false) {
+        try {
+            $partition = Get-CimInstance -ClassName 'MSFT_Partition' -Namespace 'root/Microsoft/Windows/Storage' `
+                -Filter ("DriveLetter='{0}'" -f $driveLetter) -ErrorAction Stop | Select-Object -First 1
+            if ($partition) {
+                $disk = Get-CimInstance -ClassName 'MSFT_Disk' -Namespace 'root/Microsoft/Windows/Storage' `
+                    -Filter ("Number={0}" -f $partition.DiskNumber) -ErrorAction Stop | Select-Object -First 1
+                # MSFT_Disk BusType 7 = USB.
+                # https://learn.microsoft.com/previous-versions/windows/desktop/stormgmt/msft-disk
+                if ($disk -and [int]$disk.BusType -eq 7) {
+                    $info.BusType = 'USB'
+                    $info.IsRemovable = $true
+                    Write-BuildLog -Level Verbose -Component 'Get-UsbTargetInfo' -Message "Volume '$($driveLetter):' reports as fixed but sits on a USB bus; treating it as removable."
+                }
+            }
+        }
+        catch {
+            Write-BuildLog -Level Verbose -Component 'Get-UsbTargetInfo' -Message "Could not query the storage bus for '$($driveLetter):': $($_.Exception.Message)"
+        }
     }
 
     return $info
@@ -176,7 +201,10 @@ function New-FirstLogonUnattendXml {
         (disk layout, edition selection, OOBE skip) - this renders an answer file that contains
         NOTHING but a FirstLogonCommands block. Windows Setup therefore behaves exactly as it
         normally would (interactive edition/partition/OOBE, including an Entra ID sign-in); the only
-        addition is that the given commands run once, elevated, at the first logon.
+        addition is that the given commands run once at the first logon.
+
+        Note that FirstLogonCommands run elevated only when the first user to sign in is a local
+        administrator - see the template's header comment and New-PostInstallUsb's help.
 
         That distinction matters: dropping the full build answer file onto stock media would wipe
         the configured disk. This file never touches the install phase.

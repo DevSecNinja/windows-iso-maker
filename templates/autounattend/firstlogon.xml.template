@@ -9,8 +9,14 @@
   This file deliberately contains ONLY the oobeSystem pass with FirstLogonCommands. It does NOT
   configure disks, editions, product keys or OOBE, so Windows Setup runs exactly as it normally
   would on the stock media (interactive edition / partition selection, normal OOBE including an
-  Entra ID sign-in). The only added behaviour is that the listed commands run once, elevated, at
-  the first logon.
+  Entra ID sign-in). The only added behaviour is that the listed commands run once at the first
+  logon.
+
+  Elevation caveat: Microsoft documents that FirstLogonCommands run with elevated privileges only
+  when the first user to sign in is a local administrator. A standard user gets a consent prompt,
+  and the commands do not run if it is declined or if UAC is disabled. The command below therefore
+  logs what it did (or could not do) to %ProgramData%\windows-iso-maker\logs\bootstrap.log.
+  See https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-firstlogoncommands-synchronouscommand
 
   For the full answer file (unattended install, disk layout, edition selection) see
   templates/autounattend/autounattend.xml.template, which is used by the ISO build path.

@@ -46,6 +46,12 @@
 .PARAMETER WslDistribution
     The Linux distribution the staged run installs when WSL is included (default 'Debian').
 
+.PARAMETER WslServicing
+    How the staged run obtains WSL: 'Store' (default), 'WebDownload' or 'Inbox'.
+
+.PARAMETER WslAutoReboot
+    Let the staged run reboot the machine automatically when the WSL install needs it.
+
 .PARAMETER ToolkitFolder
     Folder created at the stick's root to hold the toolkit (default 'windows-iso-maker').
 
@@ -106,6 +112,13 @@ param(
     [string] $WslDistribution,
 
     [Parameter()]
+    [ValidateSet('Store', 'WebDownload', 'Inbox')]
+    [string] $WslServicing,
+
+    [Parameter()]
+    [switch] $WslAutoReboot,
+
+    [Parameter()]
     [ValidateNotNullOrEmpty()]
     [string] $ToolkitFolder,
 
@@ -122,12 +135,12 @@ Import-Module -Name $modulePath -Force -ErrorAction Stop
 
 # Forward only the parameters the user actually set, so command defaults stay authoritative.
 $usbParams = @{ Path = $Path }
-foreach ($name in 'Mode', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'Scope', 'Architecture', 'WslDistribution', 'ToolkitFolder') {
+foreach ($name in 'Mode', 'Profile', 'EnableCatalogId', 'DisableCatalogId', 'Scope', 'Architecture', 'WslDistribution', 'WslServicing', 'ToolkitFolder') {
     if ($PSBoundParameters.ContainsKey($name)) {
         $usbParams[$name] = $PSBoundParameters[$name]
     }
 }
-foreach ($switchName in 'InstallWsl', 'Force') {
+foreach ($switchName in 'InstallWsl', 'WslAutoReboot', 'Force') {
     if ($PSBoundParameters.ContainsKey($switchName)) {
         $usbParams[$switchName] = [switch]$PSBoundParameters[$switchName]
     }

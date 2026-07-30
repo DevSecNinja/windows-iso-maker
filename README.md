@@ -115,7 +115,8 @@ subscription) instead of a custom ISO? Run the same catalog directly on the mach
 
 Flash your stock Windows 11 ISO to a USB stick as usual, then prepare that stick once. Windows Setup
 stays completely interactive (edition, partitioning, OOBE, Entra ID sign-in — **nothing is wiped**);
-the catalog is applied automatically at the first logon. See [docs/usb.md](docs/usb.md).
+the catalog is then applied at the first logon. See [docs/usb.md](docs/usb.md), which also covers the
+case where that automatic run can't fire (the first account must be a local administrator).
 
 ```powershell
 # Validate the stick and show what would be staged — writes nothing

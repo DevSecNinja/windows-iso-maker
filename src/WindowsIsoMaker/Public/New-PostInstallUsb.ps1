@@ -24,6 +24,17 @@ function New-PostInstallUsb {
         Nothing is repartitioned or wiped by this tool. (The unattended-install answer file, with
         disk layout and edition selection, belongs to the ISO build path - see New-AutounattendXml.)
 
+        IMPORTANT - when the automatic run does NOT fire. Microsoft documents that
+        FirstLogonCommands only run elevated if the first user to sign in is a local administrator;
+        a standard user gets a consent prompt (and nothing runs if it is declined or if UAC is
+        disabled). With an Entra ID sign-in, whether that account is a local administrator depends
+        on your Entra/Intune device settings, so the automatic run is NOT guaranteed there.
+        FirstLogonCommands also do not run in Autopilot pre-provisioning / self-deploying flows.
+        The generated bootstrap therefore records what happened to
+        %ProgramData%\windows-iso-maker\logs\bootstrap.log and warns loudly rather than failing
+        silently; you can always re-run it by hand. Use -Mode Toolkit if you would rather not rely
+        on the first-logon hook at all.
+
         The generated bootstrap copies the toolkit from the stick to
         %ProgramData%\windows-iso-maker before running it, so the changes survive the stick being
         removed and can be re-run after a reboot (WSL installs span reboots). Every run writes a
@@ -55,6 +66,10 @@ function New-PostInstallUsb {
         profile; pass -InstallWsl:$false to suppress it there.
     .PARAMETER WslDistribution
         The Linux distribution the staged run installs when WSL is included (default 'Debian').
+    .PARAMETER WslServicing
+        How the staged run obtains WSL: 'Store' (default), 'WebDownload' or 'Inbox'.
+    .PARAMETER WslAutoReboot
+        Let the staged run reboot the machine automatically when the WSL install needs it.
     .PARAMETER ToolkitFolder
         Folder name created at the stick's root to hold the toolkit. Defaults to
         'windows-iso-maker'.
@@ -110,6 +125,13 @@ function New-PostInstallUsb {
         [Parameter()]
         [ValidateNotNullOrEmpty()]
         [string] $WslDistribution = 'Debian',
+
+        [Parameter()]
+        [ValidateSet('Store', 'WebDownload', 'Inbox')]
+        [string] $WslServicing = 'Store',
+
+        [Parameter()]
+        [switch] $WslAutoReboot,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -220,7 +242,8 @@ function New-PostInstallUsb {
 
     $bootstrapScript = New-PostInstallBootstrapScript -Profile $Profile -EnableCatalogId @($EnableCatalogId) `
         -DisableCatalogId @($DisableCatalogId) -Scope $Scope -Architecture $arch `
-        -InstallWsl $installWslArgument -WslDistribution $WslDistribution
+        -InstallWsl $installWslArgument -WslDistribution $WslDistribution `
+        -WslServicing $WslServicing -WslAutoReboot:$WslAutoReboot
 
     if ($PSCmdlet.ShouldProcess($bootstrapPath, 'Write the post-install bootstrap')) {
         Set-Content -LiteralPath $bootstrapPath -Value $bootstrapScript -Encoding UTF8
@@ -230,18 +253,15 @@ function New-PostInstallUsb {
     # --- 9. Hook it into the first logon via the MINIMAL answer file (never the build one). ---
     $writtenAutounattend = $null
     if ($Mode -eq 'FirstLogon') {
-        # Discover the toolkit by scanning the file-system drives for the bootstrap: the stick's
-        # drive letter after installation is not knowable at preparation time.
-        $discovery = "`$ErrorActionPreference='SilentlyContinue'; foreach (`$d in (Get-PSDrive -PSProvider FileSystem)) { " +
-        "`$p = Join-Path `$d.Root '$ToolkitFolder\Invoke-PostInstall.ps1'; " +
-        "if (Test-Path -LiteralPath `$p) { & `$p; break } }"
-        $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$discovery`""
+        $command = New-PostInstallDiscoveryCommand -ToolkitFolder $ToolkitFolder
 
         $description = "Runs the windows-iso-maker '$($Profile -join ',')' profile ($($selected.Count) catalog entries) once at first logon."
         $xml = New-FirstLogonUnattendXml -Command $command -Architecture $arch -Description $description
 
         if ($PSCmdlet.ShouldProcess($autounattendPath, 'Write the first-logon Autounattend.xml')) {
-            Set-Content -LiteralPath $autounattendPath -Value $xml -Encoding UTF8 -NoNewline
+            # UTF-8 WITHOUT a BOM: Set-Content -Encoding UTF8 emits a BOM under Windows PowerShell
+            # 5.1, which contradicts the repository's encoding rule.
+            [System.IO.File]::WriteAllText($autounattendPath, $xml, (New-Object System.Text.UTF8Encoding($false)))
             Write-BuildLog -Level Information -Component 'New-PostInstallUsb' -Message "Wrote first-logon Autounattend.xml -> '$autounattendPath'."
         }
         $writtenAutounattend = $autounattendPath
@@ -250,8 +270,8 @@ function New-PostInstallUsb {
     $nextSteps = if ($Mode -eq 'FirstLogon') {
         @(
             "Boot the target PC from '$($target.Path)' and install Windows normally (edition, disk and OOBE stay interactive).",
-            'Sign in for the first time (a local or Entra ID account) - the catalog is applied automatically, elevated.',
-            "Review the run report under C:\ProgramData\windows-iso-maker\out\ and the transcript under ...\logs\.",
+            "Sign in for the first time - the catalog is applied automatically IF that account is a local administrator (see docs/usb.md).",
+            "Check C:\ProgramData\windows-iso-maker\logs\bootstrap.log to confirm it ran; the run report lands in ...\out\.",
             'Re-run the same bootstrap after a reboot if WSL asked for one.'
         )
     }

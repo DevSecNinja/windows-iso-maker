@@ -246,3 +246,139 @@ Describe 'New-PostInstallUsb' {
             Should -Throw '*root of a FIXED drive*'
     }
 }
+
+Describe 'Get-UsbTargetInfo volume probing' {
+
+    It 'reports a removable volume from Win32_LogicalDisk DriveType 2' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-CimInstance -MockWith {
+                [pscustomobject]@{ DriveType = 2; VolumeName = 'WIN11'; FileSystem = 'FAT32'; FreeSpace = [int64]8GB }
+            } -ParameterFilter { $ClassName -eq 'Win32_LogicalDisk' }
+
+            $info = Get-UsbTargetInfo -Path 'E:'
+            $info.Path          | Should -Be 'E:\'
+            $info.IsVolumeRoot  | Should -BeTrue
+            $info.IsRemovable   | Should -BeTrue
+            $info.Label         | Should -Be 'WIN11'
+            $info.FreeSpaceByte | Should -Be ([int64]8GB)
+        }
+    }
+
+    It 'treats a fixed-reporting volume on a USB bus as removable (USB SSD)' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-CimInstance -MockWith {
+                [pscustomobject]@{ DriveType = 3; VolumeName = 'SSD'; FileSystem = 'NTFS'; FreeSpace = [int64]200GB }
+            } -ParameterFilter { $ClassName -eq 'Win32_LogicalDisk' }
+            Mock Get-CimInstance -MockWith { [pscustomobject]@{ DiskNumber = 2 } } -ParameterFilter { $ClassName -eq 'MSFT_Partition' }
+            # MSFT_Disk BusType 7 = USB.
+            Mock Get-CimInstance -MockWith { [pscustomobject]@{ BusType = 7 } } -ParameterFilter { $ClassName -eq 'MSFT_Disk' }
+
+            $info = Get-UsbTargetInfo -Path 'E:'
+            $info.DriveType   | Should -Be 3
+            $info.BusType     | Should -Be 'USB'
+            $info.IsRemovable | Should -BeTrue
+        }
+    }
+
+    It 'keeps a genuinely internal disk marked as not removable' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-CimInstance -MockWith {
+                [pscustomobject]@{ DriveType = 3; VolumeName = 'OS'; FileSystem = 'NTFS'; FreeSpace = [int64]100GB }
+            } -ParameterFilter { $ClassName -eq 'Win32_LogicalDisk' }
+            Mock Get-CimInstance -MockWith { [pscustomobject]@{ DiskNumber = 0 } } -ParameterFilter { $ClassName -eq 'MSFT_Partition' }
+            # BusType 17 = NVMe.
+            Mock Get-CimInstance -MockWith { [pscustomobject]@{ BusType = 17 } } -ParameterFilter { $ClassName -eq 'MSFT_Disk' }
+
+            (Get-UsbTargetInfo -Path 'C:').IsRemovable | Should -BeFalse
+        }
+    }
+
+    It 'reports unknown volume facts instead of throwing when CIM is unavailable' {
+        InModuleScope WindowsIsoMaker {
+            Mock Get-CimInstance -MockWith { throw 'no CIM here' }
+
+            $info = Get-UsbTargetInfo -Path 'E:'
+            $info.IsRemovable | Should -BeNullOrEmpty
+            $info.DriveType   | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'does not treat a folder as a volume root' {
+        InModuleScope WindowsIsoMaker {
+            (Get-UsbTargetInfo -Path 'C:\some\folder').IsVolumeRoot | Should -BeFalse
+        }
+    }
+}
+
+Describe 'New-PostInstallDiscoveryCommand' {
+
+    It 'emits valid PowerShell that targets the toolkit and logs either outcome' {
+        InModuleScope WindowsIsoMaker {
+            $command = New-PostInstallDiscoveryCommand -ToolkitFolder 'windows-iso-maker'
+
+            $command | Should -BeLike 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "*"'
+            $command | Should -Match 'windows-iso-maker\\Invoke-PostInstall\.ps1'
+            $command | Should -Match 'bootstrap\.log'
+            $command | Should -Match 'NO TOOLKIT FOUND'
+
+            # The inner script is embedded in a -Command "..." argument, so it must not itself
+            # contain a double quote, and it must parse.
+            $inner = $command -replace '^[^"]*"', '' -replace '"$', ''
+            $inner | Should -Not -Match '"'
+            { [scriptblock]::Create($inner) } | Should -Not -Throw
+        }
+    }
+
+    It 'rejects a toolkit folder containing quotes' {
+        InModuleScope WindowsIsoMaker {
+            { New-PostInstallDiscoveryCommand -ToolkitFolder "eviL'; rm -rf /" } | Should -Throw '*quote characters*'
+        }
+    }
+}
+
+Describe 'New-PostInstallBootstrapScript' {
+
+    It 'reports loudly instead of exiting silently when elevation fails' {
+        InModuleScope WindowsIsoMaker {
+            $script = New-PostInstallBootstrapScript -Profile @('default') -Scope Both -Architecture amd64
+
+            $script | Should -Match 'ELEVATION FAILED'
+            $script | Should -Match 'NOTHING WAS APPLIED'
+            $script | Should -Match 'Write-Breadcrumb'
+            # A child that starts and then dies must not be reported as a success.
+            $script | Should -Match 'ELEVATED RUN FAILED'
+            $script | Should -Match '-PassThru'
+            { [scriptblock]::Create($script) } | Should -Not -Throw
+        }
+    }
+
+    It 'carries the WSL servicing settings when the opinionated profile implies WSL' {
+        InModuleScope WindowsIsoMaker {
+            $script = New-PostInstallBootstrapScript -Profile @('opinionated') -Scope Both -Architecture amd64 `
+                -WslDistribution 'Ubuntu' -WslServicing 'WebDownload' -WslAutoReboot
+
+            $script | Should -Match "WslDistribution\s+=\s+'Ubuntu'"
+            $script | Should -Match "WslServicing\s+=\s+'WebDownload'"
+            $script | Should -Match 'WslAutoReboot\s+=\s+\$true'
+        }
+    }
+
+    It 'omits WSL settings for a profile that does not install WSL' {
+        InModuleScope WindowsIsoMaker {
+            $script = New-PostInstallBootstrapScript -Profile @('minimal') -Scope Both -Architecture amd64
+            $script | Should -Not -Match 'WslServicing'
+        }
+    }
+}
+
+Describe 'ConvertTo-PowerShellLiteral' {
+
+    It 'escapes embedded single quotes so a value cannot break out of the literal' {
+        InModuleScope WindowsIsoMaker {
+            ConvertTo-PowerShellLiteral -Value "it's" | Should -Be "'it''s'"
+            ConvertTo-PowerShellLiteral -Value @("a'b", 'c') | Should -Be "@('a''b', 'c')"
+            ConvertTo-PowerShellLiteral -Value $true | Should -Be '$true'
+            ConvertTo-PowerShellLiteral -Value $null | Should -Be '$null'
+        }
+    }
+}
