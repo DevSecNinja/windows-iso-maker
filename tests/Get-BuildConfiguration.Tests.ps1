@@ -211,7 +211,7 @@ Describe 'Get-BuildConfiguration' {
             $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'gaming', 'opinionated'
             $ids = $cfg.SelectedCatalog | ForEach-Object { $_.Id }
             $ids | Should -Not -Contain 'appx-xbox-app'
-            $ids | Should -Contain 'reg-reverse-mouse-scroll'
+            $ids | Should -Contain 'task-reverse-mouse-scroll'
         }
 
         It 'defaults to United States-International keyboard under opinionated' {
