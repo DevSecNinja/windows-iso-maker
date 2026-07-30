@@ -492,16 +492,17 @@ Describe 'Shipped task entries' {
         }
     }
 
-    It 'triggers both tasks on device arrival so devices connected later are covered' {
+    It 'triggers on device arrival only, which already covers boot and logon' {
         InModuleScope WindowsIsoMaker {
-            foreach ($id in @('task-reverse-mouse-scroll')) {
-                $entry = @(Import-ChangeCatalog | Where-Object { $_.Id -eq $id })[0]
-                $eventTriggers = @(@($entry.Target.Triggers) | Where-Object { $_.Type -eq 'Event' })
-                $eventTriggers.Count | Should -BeGreaterThan 0 -Because "$id exists to react to devices appearing later"
-                $eventTriggers[0].EventId | Should -Be 410
-                # A logon trigger backstops the event trigger if that log is ever unavailable.
-                @(@($entry.Target.Triggers) | Where-Object { $_.Type -eq 'Logon' }).Count | Should -BeGreaterThan 0
-            }
+            $entry = @(Import-ChangeCatalog | Where-Object { $_.Id -eq 'task-reverse-mouse-scroll' })[0]
+            $triggers = @($entry.Target.Triggers)
+
+            $triggers.Count | Should -Be 1 -Because 'device arrival is the only signal the task needs'
+            $triggers[0].Type | Should -Be 'Event' -Because 'the task exists to react to devices appearing later'
+            $triggers[0].EventId | Should -Be 410
+            # Every device stack starts at boot and logon too, so a separate logon trigger would
+            # only re-run a payload that had already converged.
+            @($triggers | Where-Object { $_.Type -eq 'Logon' }).Count | Should -Be 0
         }
     }
 

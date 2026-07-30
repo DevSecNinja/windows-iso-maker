@@ -106,10 +106,11 @@ function New-CatalogTaskTriggerXml {
         Render one trigger definition as its Task Scheduler XML element.
     .DESCRIPTION
         Supports the trigger types the catalog needs:
-          Logon — a convergence backstop that runs at every logon.
-          Boot  — runs at system start.
           Event — subscribes to a Windows event log query, which is how a task reacts to a device
-                  arriving (e.g. Kernel-PnP 410 "Device ... was started").
+                  arriving (e.g. Kernel-PnP 410 "Device ... was started"). This is the one the
+                  shipped entry uses; because every device stack also starts at boot and at logon,
+                  it covers those without a separate trigger.
+          Logon / Boot — available for a payload that genuinely has no device event to key off.
         An optional Delay (xs:duration, e.g. 'PT5S') lets the device stack settle before the
         payload inspects it.
 

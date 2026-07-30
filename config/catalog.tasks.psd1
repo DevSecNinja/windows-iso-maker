@@ -41,14 +41,13 @@
                 TaskName   = 'Reverse mouse scroll direction'
                 ScriptName = 'Set-ReverseMouseScroll.ps1'
                 Triggers   = @(
-                    # Device arrival: Kernel-PnP logs 410 ("Device ... was started") whenever a
-                    # device stack starts, including a Bluetooth mouse reconnecting — not just the
-                    # first time it is installed. The short delay lets the stack settle before the
-                    # payload inspects it.
-                    @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' },
-                    # Convergence backstop, so the setting is still applied if that log is ever
-                    # disabled or an arrival event is missed.
-                    @{ Type = 'Logon'; Delay = 'PT30S' }
+                    # Device arrival is the only trigger, and it is enough: Kernel-PnP logs 410
+                    # ("Device ... was started") whenever a device stack starts, including a
+                    # Bluetooth mouse reconnecting — not just the first time it is installed — and
+                    # that also covers boot and logon, when every device starts anyway. A logon
+                    # trigger would only add a second run of a payload that had already converged.
+                    # The short delay lets the stack settle before the payload inspects it.
+                    @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' }
                 )
                 Script     = @'
 #Requires -Version 5.1

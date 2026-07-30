@@ -90,8 +90,7 @@ Target = @{
     TaskName   = 'Reverse mouse scroll direction'
     ScriptName = 'Set-ReverseMouseScroll.ps1'
     Triggers   = @(
-        @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' },
-        @{ Type = 'Logon'; Delay = 'PT30S' }
+        @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' }
     )
     Script     = @'
 # ... payload ...
