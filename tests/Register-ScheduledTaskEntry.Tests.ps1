@@ -16,6 +16,16 @@ BeforeAll {
     $script:RepoRoot = Split-Path -Parent $PSScriptRoot
     Import-Module (Join-Path $script:RepoRoot 'src/WindowsIsoMaker') -Force
 
+    # Payloads are real files under config/tasks (so PSScriptAnalyzer lints them), which the
+    # definition loader reads by name. Tests therefore need a script directory rather than an
+    # inline string; this one is disposed in AfterAll.
+    $script:SampleScriptDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-tasksrc-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -Path $script:SampleScriptDirectory -ItemType Directory -Force | Out-Null
+    [System.IO.File]::WriteAllText(
+        (Join-Path $script:SampleScriptDirectory 'Set-Sample.ps1'),
+        '"sample payload"',
+        (New-Object System.Text.UTF8Encoding($false)))
+
     # A fresh entry per test: the Target is a hashtable, so a single shared instance would let one
     # test's mutation (Arch, Triggers) leak into the next.
     $script:NewSampleEntry = {
@@ -30,22 +40,29 @@ BeforeAll {
             Arch          = @('amd64', 'arm64')
             Target        = @{
                 TaskName   = 'Sample task'
-                ScriptName = 'Set-Sample.ps1'
+                ScriptFile = 'Set-Sample.ps1'
                 Triggers   = @(
                     @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' },
                     @{ Type = 'Logon' }
                 )
-                Script     = '"sample payload"'
             }
         }
+    }
+}
+
+AfterAll {
+    if ($script:SampleScriptDirectory -and (Test-Path -LiteralPath $script:SampleScriptDirectory)) {
+        Remove-Item -LiteralPath $script:SampleScriptDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
 Describe 'Get-CatalogTaskDefinition' {
 
     It 'defaults the task into the shared \WindowsIsoMaker folder' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $definition.TaskFolder | Should -Be '\WindowsIsoMaker'
             $definition.FullTaskName | Should -Be '\WindowsIsoMaker\Sample task'
@@ -53,8 +70,10 @@ Describe 'Get-CatalogTaskDefinition' {
     }
 
     It 'uses the SYSTEM principal so it can write machine state with nobody signed in' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $definition.PrincipalId | Should -Be 'S-1-5-18'
             $definition.LogonType | Should -Be 'S4U'
@@ -63,13 +82,52 @@ Describe 'Get-CatalogTaskDefinition' {
     }
 
     It 'requires a payload script and at least one trigger' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
-            $noScript = [pscustomobject]@{ Id = 'x'; Target = @{ TaskName = 'n'; Script = ''; Triggers = @(@{ Type = 'Logon' }) } }
-            { Get-CatalogTaskDefinition -Entry $noScript } | Should -Throw '*Target.Script*'
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
+            $noScript = [pscustomobject]@{ Id = 'x'; Target = @{ TaskName = 'n'; Triggers = @(@{ Type = 'Logon' }) } }
+            { Get-CatalogTaskDefinition -Entry $noScript } | Should -Throw '*Target.ScriptFile*'
 
-            $noTrigger = [pscustomobject]@{ Id = 'x'; Target = @{ TaskName = 'n'; Script = 'x'; Triggers = @() } }
+            $noTrigger = [pscustomobject]@{ Id = 'x'; Target = @{ TaskName = 'n'; ScriptFile = 'Set-Sample.ps1'; Triggers = @() } }
             { Get-CatalogTaskDefinition -Entry $noTrigger } | Should -Throw '*Triggers*'
+        }
+    }
+
+    It 'reads the payload from config/tasks rather than from the catalog' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
+            $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
+            $definition.Script | Should -Be '"sample payload"'
+            # The staged file keeps the source file's name, so the payload on the target machine
+            # is traceable back to the repository file that produced it.
+            $definition.ScriptName | Should -Be 'Set-Sample.ps1'
+        }
+    }
+
+    It 'fails loudly when the referenced payload file is missing' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
+            $Entry.Target.ScriptFile = 'Set-DoesNotExist.ps1'
+            # Better to fail the build than to register a task pointing at a payload that is not
+            # there, which would only surface as a silent no-op on the user's machine.
+            { Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry) } | Should -Throw '*was not found*'
+        }
+    }
+
+    It 'refuses a ScriptFile that escapes config/tasks' {
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
+            foreach ($bad in @('..\outside.ps1', 'sub/dir.ps1')) {
+                $Entry.Target.ScriptFile = $bad
+                { Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry) } | Should -Throw '*not a path*'
+            }
         }
     }
 }
@@ -77,8 +135,10 @@ Describe 'Get-CatalogTaskDefinition' {
 Describe 'New-CatalogTaskXml' {
 
     It 'produces XML declaring UTF-16, which is the only encoding schtasks accepts for a BOM-ed file' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\payload.ps1'
             $xml | Should -Match '<\?xml version="1\.0" encoding="UTF-16"\?>'
@@ -87,8 +147,10 @@ Describe 'New-CatalogTaskXml' {
     }
 
     It 'escapes the event subscription so the nested query survives as text' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\payload.ps1'
 
@@ -105,8 +167,10 @@ Describe 'New-CatalogTaskXml' {
     }
 
     It 'runs the payload script non-interactively and escapes the description' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\Tasks\Set-Sample.ps1'
             $xml | Should -Match '<Command>powershell\.exe</Command>'
@@ -117,8 +181,10 @@ Describe 'New-CatalogTaskXml' {
     }
 
     It 'never blocks on battery, because docking a monitor or waking a mouse usually happens on battery' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\payload.ps1'
             $xml | Should -Match '<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>'
@@ -138,8 +204,10 @@ Describe 'Write-CatalogTaskPayload' {
     }
 
     It 'writes on first call and reports no change on an identical second call' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry) } {
-            param($Root, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Root, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $paths = Get-CatalogTaskPath -RootPath $Root -Definition $definition
@@ -153,8 +221,10 @@ Describe 'Write-CatalogTaskPayload' {
     }
 
     It 'writes the XML as UTF-16 with a BOM and the payload as UTF-8 without one' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry) } {
-            param($Root, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Root, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $paths = Get-CatalogTaskPath -RootPath $Root -Definition $definition
@@ -171,8 +241,10 @@ Describe 'Write-CatalogTaskPayload' {
     }
 
     It 'rewrites when the content changes' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry) } {
-            param($Root, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Root, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $paths = Get-CatalogTaskPath -RootPath $Root -Definition $definition
@@ -185,14 +257,23 @@ Describe 'Write-CatalogTaskPayload' {
     }
 
     It 'treats a payload containing non-ASCII characters as unchanged on re-run' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry) } {
-            param($Root, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Root, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             # The shipped payloads contain em dashes in their comments. Reading a BOM-less UTF-8
             # file back with the wrong encoding makes those bytes decode to extra characters, so
-            # the content never compares equal and every run looks like a change.
-            $Entry.Target.Script = "# windows-iso-maker — placement helper`r`nWrite-Output 'ok'"
+            # the content never compares equal and every run looks like a change. This exercises
+            # both reads: the source file in config/tasks and the staged copy.
+            $Entry.Target.ScriptFile = 'Set-NonAscii.ps1'
+            [System.IO.File]::WriteAllText(
+                (Join-Path $ScriptDirectory 'Set-NonAscii.ps1'),
+                "# windows-iso-maker — non-ASCII probe`r`nWrite-Output 'ok'",
+                (New-Object System.Text.UTF8Encoding($false)))
+
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
+            $definition.Script | Should -Match '—' -Because 'the source payload must survive the read intact'
             $paths = Get-CatalogTaskPath -RootPath $Root -Definition $definition
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath $paths.TargetScriptPath
 
@@ -214,8 +295,10 @@ Describe 'Register-ScheduledTaskEntry (offline image)' {
     }
 
     It 'stages the payload into the image and arms first-boot registration' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry) } {
-            param($Mount, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Mount, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             Mock Mount-OfflineRegistryHive { [pscustomobject]@{ MountKey = 'HKLM\WIM_Test_SOFTWARE'; HiveFile = 'x' } }
             Mock Dismount-OfflineRegistryHive { }
@@ -238,8 +321,10 @@ Describe 'Register-ScheduledTaskEntry (offline image)' {
     }
 
     It 'reports AlreadyApplied when the payload and the armed command are unchanged' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry) } {
-            param($Mount, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Mount, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             Mock Mount-OfflineRegistryHive { [pscustomobject]@{ MountKey = 'HKLM\WIM_Test_SOFTWARE'; HiveFile = 'x' } }
             Mock Dismount-OfflineRegistryHive { }
@@ -258,8 +343,10 @@ Describe 'Register-ScheduledTaskEntry (offline image)' {
     }
 
     It 'writes nothing under -WhatIf' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry) } {
-            param($Mount, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Mount, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             Mock Mount-OfflineRegistryHive { throw 'must not load a hive in preview' }
             Mock Set-OfflineRegistryValue { throw 'must not write in preview' }
@@ -273,8 +360,10 @@ Describe 'Register-ScheduledTaskEntry (offline image)' {
     }
 
     It 'ignores entries that do not target the requested architecture' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry) } {
-            param($Mount, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Mount = $script:Mount; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Mount, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             $Entry.Arch = @('arm64')
             $result = @(Register-ScheduledTaskEntry -MountPath $Mount -Catalog @([pscustomobject]$Entry) -Architecture amd64)
@@ -286,8 +375,10 @@ Describe 'Register-ScheduledTaskEntry (offline image)' {
 Describe 'Register-OnlineScheduledTask (running system)' {
 
     It 'registers the task and runs it once so already-attached devices converge immediately' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { $true }
             Mock Test-ScheduledTaskRegistered { $false }
             Mock Invoke-ScheduledTaskCommand { [pscustomobject]@{ ExitCode = 0; Output = '' } }
@@ -303,8 +394,10 @@ Describe 'Register-OnlineScheduledTask (running system)' {
     }
 
     It 'reports AlreadyApplied without re-registering when payload and task are current' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { $false }
             Mock Test-ScheduledTaskRegistered { $true }
             Mock Invoke-ScheduledTaskCommand { [pscustomobject]@{ ExitCode = 0; Output = '' } }
@@ -317,8 +410,10 @@ Describe 'Register-OnlineScheduledTask (running system)' {
     }
 
     It 're-registers when the payload changed even though the task exists' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { $true }
             Mock Test-ScheduledTaskRegistered { $true }
             Mock Invoke-ScheduledTaskCommand { [pscustomobject]@{ ExitCode = 0; Output = '' } }
@@ -331,8 +426,10 @@ Describe 'Register-OnlineScheduledTask (running system)' {
     }
 
     It 'fails the entry when schtasks rejects the registration' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { $true }
             Mock Test-ScheduledTaskRegistered { $false }
             Mock Invoke-ScheduledTaskCommand { [pscustomobject]@{ ExitCode = 1; Output = 'ERROR: The task XML is malformed.' } }
@@ -345,8 +442,10 @@ Describe 'Register-OnlineScheduledTask (running system)' {
     }
 
     It 'still reports Applied when only the initial run could not start' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { $true }
             Mock Test-ScheduledTaskRegistered { $false }
             Mock Invoke-ScheduledTaskCommand {
@@ -362,8 +461,10 @@ Describe 'Register-OnlineScheduledTask (running system)' {
     }
 
     It 'writes nothing under -WhatIf' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Write-CatalogTaskPayload { throw 'must not write in preview' }
             Mock Invoke-ScheduledTaskCommand { throw 'must not call schtasks in preview' }
 
@@ -386,8 +487,10 @@ Describe 'Payload directory hardening' {
     }
 
     It 'hardens the payload directory after writing, since the payload runs as SYSTEM' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry) } {
-            param($Root, $Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Root = $script:Scratch; Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Root, $Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Set-CatalogTaskDirectorySecurity { }
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $paths = Get-CatalogTaskPath -RootPath $Root -Definition $definition
@@ -428,8 +531,10 @@ Describe 'Payload directory hardening' {
 Describe 'How the payload is launched' {
 
     It 'leaves SYSTEM tasks on plain powershell.exe, having no desktop to flash on' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\payload.ps1'
             ([xml]$xml).Task.Actions.Exec.Command | Should -Be 'powershell.exe'
@@ -437,8 +542,10 @@ Describe 'How the payload is launched' {
     }
 
     It 'uses RemoteSigned rather than Bypass, keeping the Mark-of-the-Web check' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             $definition = Get-CatalogTaskDefinition -Entry ([pscustomobject]$Entry)
             $xml = New-CatalogTaskXml -Definition $definition -ScriptPath 'C:\payload.ps1'
             # The payload is generated locally, so it has no MotW and runs unsigned under
@@ -453,8 +560,10 @@ Describe 'How the payload is launched' {
 Describe 'Dispatchers route the new Action' {
 
     It 'sends RegisterScheduledTask to the offline handler' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Register-ScheduledTaskEntry {
                 @([pscustomobject]@{ PSTypeName = 'WindowsIsoMaker.ChangeResult'; Id = 'task-sample'; Type = 'ScheduledTask'; Status = 'Applied'; Reason = 'x'; Citation = 'y' })
             }
@@ -467,8 +576,10 @@ Describe 'Dispatchers route the new Action' {
     }
 
     It 'sends RegisterScheduledTask to the online handler' {
-        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry) } {
-            param($Entry)
+        InModuleScope WindowsIsoMaker -Parameters @{ Entry = (& $script:NewSampleEntry); ScriptDirectory = $script:SampleScriptDirectory } {
+            param($Entry, $ScriptDirectory)
+            $taskScriptDir = $ScriptDirectory
+            Mock Get-CatalogTaskScriptDirectory { $taskScriptDir }.GetNewClosure()
             Mock Register-OnlineScheduledTask {
                 @([pscustomobject]@{ PSTypeName = 'WindowsIsoMaker.ChangeResult'; Id = 'task-sample'; Type = 'ScheduledTask'; Status = 'Applied'; Reason = 'x'; Citation = 'y' })
             }
@@ -509,7 +620,9 @@ Describe 'Shipped task entries' {
     It 'only restarts mouse devices it actually changed, so the arrival trigger cannot feed itself' {
         InModuleScope WindowsIsoMaker {
             $entry = @(Import-ChangeCatalog | Where-Object { $_.Id -eq 'task-reverse-mouse-scroll' })[0]
-            $payload = [string]$entry.Target.Script
+            # Reads the real payload through the loader, so this also proves the shipped entry's
+            # ScriptFile resolves against config/tasks.
+            $payload = (Get-CatalogTaskDefinition -Entry $entry).Script
             # Only devices bound to the mouse HID mapper are touched (not keyboards).
             $payload | Should -Match "Service -ne 'mouhid'"
             # Devices already at 1 are skipped before any write or restart.
@@ -517,5 +630,4 @@ Describe 'Shipped task entries' {
             $payload | Should -Match 'pnputil\.exe /restart-device'
         }
     }
-
 }

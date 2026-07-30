@@ -6,7 +6,7 @@ The catalog lives in:
 - [config/catalog.appx.psd1](../config/catalog.appx.psd1) — provisioned app removals
 - [config/catalog.capabilities.psd1](../config/catalog.capabilities.psd1) — capabilities & optional features (incl. WSL)
 - [config/catalog.registry.psd1](../config/catalog.registry.psd1) — registry tweaks
-- [config/catalog.tasks.psd1](../config/catalog.tasks.psd1) — persistent helper tasks (settings that must be re-applied when a device appears)
+- [config/catalog.tasks.psd1](../config/catalog.tasks.psd1) — persistent helper tasks (settings that must be re-applied when a device appears), whose payload scripts live in [config/tasks/](../config/tasks)
 
 The catalog files themselves are the authoritative, always-up-to-date documentation: each
 entry states **what** it does, **why**, a **citation**, and an **evidence grade**. This page
@@ -82,29 +82,32 @@ yet when the change is made:
   only reaches the mice enumerated at that moment; a mouse paired next week keeps the driver
   default and scrolls the other way.
 
-Such settings need something that re-runs when the device shows up. An entry declares a small
-payload script plus the triggers that should re-run it:
+Such settings need something that re-runs when the device shows up. An entry names a payload
+script and the triggers that should re-run it:
 
 ```powershell
 Target = @{
     TaskName   = 'Reverse mouse scroll direction'
-    ScriptName = 'Set-ReverseMouseScroll.ps1'
+    ScriptFile = 'Set-ReverseMouseScroll.ps1'   # a real file in config/tasks/
     Triggers   = @(
         @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' }
     )
-    Script     = @'
-# ... payload ...
-'@
 }
 ```
 
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `TaskName` | yes | Task name, created inside the shared `\WindowsIsoMaker` Task Scheduler folder. |
-| `Script` | yes | The payload, run by `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File`. Parsed by the schema tests, so a syntax error is a merge-blocking failure rather than a task that fails silently forever. |
-| `ScriptName` | no | Payload filename under `%ProgramData%\WindowsIsoMaker\Tasks` (defaults to `<Id>.ps1`). |
+| `ScriptFile` | yes | File name of the payload in [`config/tasks/`](../config/tasks), copied verbatim to the target machine and run by `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File`. Must be a bare file name, not a path. |
 | `TaskFolder` | no | Overrides the `\WindowsIsoMaker` folder. |
 | `Triggers` | yes | One or more of `Event` (needs `Log`, `Source`, `EventId`), `Logon`, `Boot`; each accepts an optional `Delay` (xs:duration). |
+
+**Payloads are real script files, not here-strings.** They live in `config/tasks/` and are
+referenced by name, so PSScriptAnalyzer lints them exactly like the rest of the codebase (CI
+analyses `./config/tasks` alongside `./src` and `./tests`) and an editor treats them as PowerShell.
+A payload embedded in the `.psd1` would be the one piece of PowerShell in the repository that
+nothing checks. The schema gate additionally parses each referenced file and fails the build if it
+is missing, so a broken reference cannot reach a machine as a silent no-op.
 
 Tasks run as **SYSTEM**: they configure machine state and must work with nobody signed in. That
 also keeps them off the interactive desktop, so they can never flash a console window at the user.

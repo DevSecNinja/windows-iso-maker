@@ -103,6 +103,7 @@ subscription) instead of a custom ISO? Run the same catalog directly on the mach
 build.ps1                     # Thin local entry point -> Invoke-IsoBuild
 post-install.ps1              # Thin local entry point -> Invoke-PostInstallSetup (apply to a running PC)
 config/                       # build.config.psd1 + catalog.*.psd1 (the change catalog)
+                              # config/tasks/ holds scheduled-task payload scripts (linted .ps1)
 src/WindowsIsoMaker/          # The PowerShell module (Public/ + Private/)
 templates/autounattend/       # Autounattend.xml template
 tests/                        # Pester v5 tests (incl. the catalog documentation gate)
@@ -124,7 +125,7 @@ docs/                         # This documentation
 ## Development
 
 ```powershell
-Invoke-ScriptAnalyzer -Path ./src,./tests,./build.ps1 -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path ./src,./tests,./config/tasks,./build.ps1 -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 Invoke-Pester -Configuration (New-PesterConfiguration @{ Run = @{ Path = './tests' } })
 ```
 

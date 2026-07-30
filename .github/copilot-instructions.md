@@ -25,10 +25,11 @@ citation-backed system changes. The same code path runs locally and in GitHub Ac
   `Enable-WindowsFeature`, `RegisterScheduledTask`→`Register-ScheduledTaskEntry`).
 - **Settings that outlive the run.** `RegisterScheduledTask` exists for settings Windows stores
   per device (e.g. `FlipFlopWheel` mouse scroll direction), which a one-shot write can never apply
-  to devices connected later. Such entries carry a payload script + triggers and install a SYSTEM
-  task in the shared `\WindowsIsoMaker` Task Scheduler folder. Payloads must be convergent (check
-  state first, no-op when already correct) because they are self-triggering. An entry only belongs
-  here when Windows raises a real event to trigger on — if it would need polling, leave it out.
+  to devices connected later. Such entries name a payload script in `config/tasks/` (a real, linted
+  `.ps1` — never an inline here-string) plus triggers, and install a SYSTEM task in the shared
+  `\WindowsIsoMaker` Task Scheduler folder. Payloads must be convergent (check state first, no-op
+  when already correct) because they are self-triggering. An entry only belongs here when Windows
+  raises a real event to trigger on — if it would need polling, leave it out.
 - **Selection logic** lives in `Resolve-CatalogSelection.ps1`: `Profile`
   (`minimal`/`default`/`aggressive`/`gaming`/`opinionated`, unioned as a list) + `Toggles` map +
   `EnableCatalogId`/`DisableCatalogId` (explicit ids win). Note the schema `Category` field is for
@@ -70,7 +71,7 @@ Windows + admin only.
 
 ```powershell
 # Lint (must be zero Error/Warning findings)
-Invoke-ScriptAnalyzer -Path ./src,./tests,./build.ps1,./post-install.ps1 -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path ./src,./tests,./config/tasks,./build.ps1,./post-install.ps1 -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 # Full test suite
 Invoke-Pester -Configuration (./tests/PesterConfiguration.ps1)

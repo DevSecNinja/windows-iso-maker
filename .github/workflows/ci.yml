@@ -38,7 +38,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $targets = @('./src', './tests', './build.ps1', './post-install.ps1')
+          # config/tasks holds the scheduled-task payload scripts: they are real .ps1 files
+          # precisely so they are linted like any other code, rather than hiding in the catalog.
+          $targets = @('./src', './tests', './config/tasks', './build.ps1', './post-install.ps1')
           $findings = foreach ($t in $targets) {
               Invoke-ScriptAnalyzer -Path $t -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
           }

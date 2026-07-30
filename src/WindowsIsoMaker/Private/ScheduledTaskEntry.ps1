@@ -27,6 +27,27 @@ $script:WimTaskPayloadRelativePath = 'ProgramData\WindowsIsoMaker\Tasks'
 # Machine RunOnce key (relative to the SOFTWARE hive root) used to register staged tasks at first
 # boot, since an offline image cannot register them directly.
 $script:WimRunOncePath = 'Microsoft\Windows\CurrentVersion\RunOnce'
+# Payload scripts live here in the repository, beside the catalog that references them.
+$script:WimTaskSourceRelativePath = 'config\tasks'
+
+function Get-CatalogTaskScriptDirectory {
+    <#
+    .SYNOPSIS
+        Resolve the repository directory holding task payload scripts (config/tasks).
+    .DESCRIPTION
+        Payload scripts are kept as real .ps1 files rather than here-strings inside the catalog so
+        PSScriptAnalyzer lints them and the schema gate can parse them as files. This mirrors how
+        Import-ChangeCatalog locates config/, so both resolve against the same repository root.
+    .OUTPUTS
+        System.String — full path to the payload script directory.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $repoRoot = Split-Path -Parent (Split-Path -Parent $script:ModuleRoot)
+    return (Join-Path -Path $repoRoot -ChildPath $script:WimTaskSourceRelativePath)
+}
 
 function Get-CatalogTaskDefinition {
     <#
@@ -36,8 +57,14 @@ function Get-CatalogTaskDefinition {
         Reads the optional Target fields StrictMode-safely (via Get-RegistryTargetOption, the
         established catalog-Target reader) and applies the defaults every task shares: the
         \WindowsIsoMaker folder and the SYSTEM principal.
+
+        The payload itself is NOT stored in the catalog. Target.ScriptFile names a .ps1 file under
+        config/tasks, which is read here — keeping the payload a real script that PSScriptAnalyzer
+        and the schema gate can both analyse, instead of a here-string that nothing lints.
     .PARAMETER Entry
         A single catalog entry whose Action is 'RegisterScheduledTask'.
+    .PARAMETER ScriptDirectory
+        Directory holding the payload scripts. Defaults to the repository's config/tasks.
     .OUTPUTS
         PSCustomObject with TaskName, TaskFolder, FullTaskName, ScriptName, Script, Triggers,
         PrincipalId, LogonType, RunLevel and Description.
@@ -47,7 +74,10 @@ function Get-CatalogTaskDefinition {
     param(
         [Parameter(Mandatory = $true)]
         [ValidateNotNull()]
-        [object] $Entry
+        [object] $Entry,
+
+        [Parameter()]
+        [string] $ScriptDirectory
     )
 
     $target = $Entry.Target
@@ -60,14 +90,30 @@ function Get-CatalogTaskDefinition {
         throw "Entry '$($Entry.Id)' must declare Target.TaskName."
     }
 
-    $scriptBody = [string](Get-RegistryTargetOption -Target $target -Name 'Script')
-    if ([string]::IsNullOrWhiteSpace($scriptBody)) {
-        throw "Entry '$($Entry.Id)' must declare Target.Script (the payload the task runs)."
+    $scriptName = [string](Get-RegistryTargetOption -Target $target -Name 'ScriptFile')
+    if ([string]::IsNullOrWhiteSpace($scriptName)) {
+        throw "Entry '$($Entry.Id)' must declare Target.ScriptFile (the payload script under config/tasks)."
+    }
+    # A path separator would let an entry read outside config/tasks; payloads are repository files,
+    # so only a bare file name is accepted.
+    if ($scriptName -match '[\\/]' -or $scriptName -eq '.' -or $scriptName -eq '..') {
+        throw "Entry '$($Entry.Id)' Target.ScriptFile must be a file name in config/tasks, not a path ('$scriptName')."
     }
 
-    $scriptName = [string](Get-RegistryTargetOption -Target $target -Name 'ScriptName')
-    if ([string]::IsNullOrWhiteSpace($scriptName)) {
-        $scriptName = "$($Entry.Id).ps1"
+    if ([string]::IsNullOrWhiteSpace($ScriptDirectory)) {
+        $ScriptDirectory = Get-CatalogTaskScriptDirectory
+    }
+    $scriptPath = Join-Path -Path $ScriptDirectory -ChildPath $scriptName
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        throw "Entry '$($Entry.Id)' references payload script '$scriptName', which was not found in '$ScriptDirectory'."
+    }
+
+    # Read with an explicit encoding: Get-Content -Raw decodes a BOM-less UTF-8 file as ANSI under
+    # Windows PowerShell 5.1, which would corrupt non-ASCII characters and break the staged-file
+    # comparison that makes re-runs idempotent.
+    $scriptBody = [System.IO.File]::ReadAllText($scriptPath, (New-Object System.Text.UTF8Encoding($false)))
+    if ([string]::IsNullOrWhiteSpace($scriptBody)) {
+        throw "Entry '$($Entry.Id)' payload script '$scriptName' is empty."
     }
 
     $folder = [string](Get-RegistryTargetOption -Target $target -Name 'TaskFolder')

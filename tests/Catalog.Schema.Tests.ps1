@@ -175,7 +175,9 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             if ($Entry.Action -eq 'RegisterScheduledTask') {
                 $Entry.Target | Should -BeOfType [hashtable]
                 $Entry.Target.TaskName | Should -Not -BeNullOrEmpty -Because 'the task needs a name to be registered under'
-                $Entry.Target.Script | Should -Not -BeNullOrEmpty -Because 'a task without a payload script does nothing'
+                $Entry.Target.ScriptFile | Should -Not -BeNullOrEmpty -Because 'a task without a payload script does nothing'
+                $Entry.Target.ContainsKey('Script') | Should -BeFalse -Because 'payloads live in config/tasks as real .ps1 files so PSScriptAnalyzer lints them, never inline in the catalog'
+                $Entry.Target.ScriptFile | Should -Not -Match '[\\/]' -Because 'ScriptFile is a file name in config/tasks, not a path'
 
                 if ($Entry.Target.ContainsKey('TaskFolder')) {
                     $Entry.Target.TaskFolder | Should -Not -BeNullOrEmpty -Because 'an explicit TaskFolder must name a folder'
@@ -194,10 +196,30 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
 
                 # The payload runs unattended on the target machine, where a syntax error would
                 # fail silently forever. Parse it here, where it is a merge-blocking failure.
+                $repoRoot = Split-Path -Parent $PSScriptRoot
+                $scriptPath = Join-Path -Path (Join-Path -Path $repoRoot -ChildPath 'config/tasks') -ChildPath $Entry.Target.ScriptFile
+                Test-Path -LiteralPath $scriptPath | Should -BeTrue -Because "Target.ScriptFile must resolve to a file under config/tasks, looked for '$scriptPath'"
+
                 $parseErrors = $null
-                [void][System.Management.Automation.Language.Parser]::ParseInput(
-                    $Entry.Target.Script, [ref]$null, [ref]$parseErrors)
+                [void][System.Management.Automation.Language.Parser]::ParseFile(
+                    $scriptPath, [ref]$null, [ref]$parseErrors)
                 $parseErrors | Should -BeNullOrEmpty -Because "the task payload must be valid PowerShell, got: $($parseErrors.Message -join '; ')"
+            }
+        }
+    }
+
+    Context 'Task payload scripts' {
+        It 'has no orphaned payload script under config/tasks' {
+            $repoRoot = Split-Path -Parent $PSScriptRoot
+            $taskDir = Join-Path -Path $repoRoot -ChildPath 'config/tasks'
+            if (Test-Path -LiteralPath $taskDir) {
+                $referenced = @($script:RuntimeEntries |
+                        Where-Object { $_.Entry.Action -eq 'RegisterScheduledTask' } |
+                        ForEach-Object { $_.Entry.Target.ScriptFile })
+                $onDisk = @(Get-ChildItem -LiteralPath $taskDir -Filter '*.ps1' -File | ForEach-Object { $_.Name })
+                foreach ($file in $onDisk) {
+                    $referenced | Should -Contain $file -Because "config/tasks/$file is not referenced by any catalog entry; a payload nothing installs is dead code"
+                }
             }
         }
     }
