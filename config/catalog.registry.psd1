@@ -786,6 +786,33 @@ $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
             Arch           = @('amd64', 'arm64')
         },
 
+        # Built-in OpenSSH agent disable, for setups where a third-party agent (1Password,
+        # KeePassXC, ...) owns the \\.\pipe\openssh-ssh-agent named pipe. OnlyIfKeyExists guards
+        # the (unlikely) case of an image with the OpenSSH Client capability removed.
+        @{
+            Id             = 'reg-disable-openssh-agent'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'Development'
+            Profiles       = @('opinionated')
+            Target         = @{
+                Hive            = 'SYSTEM'
+                Path            = 'ControlSet001\Services\ssh-agent'
+                Name            = 'Start'
+                Kind            = 'DWord'
+                Value           = 4
+                OnlyIfKeyExists = $true
+            }
+            Description    = 'Disables the built-in "OpenSSH Authentication Agent" service (ssh-agent) by setting its Start value to 4 (Disabled), so a third-party SSH agent such as 1Password can own the OpenSSH named pipe.'
+            Rationale      = 'The Windows OpenSSH Authentication Agent serves keys over the named pipe \\.\pipe\openssh-ssh-agent. Third-party agents (1Password, and equally KeePassXC or Bitwarden) reuse that same pipe, so when the built-in ssh-agent service is running it takes the pipe first and clients silently talk to the wrong agent — 1Password''s own Windows setup guide therefore instructs you to stop the service and set its Startup type to Disabled. Setting the service Start value to 4 under SYSTEM\...\Services\ssh-agent is the documented registry representation of "Disabled" (SERVICE_DISABLED) and is exactly what services.msc writes. Stock Windows 11 already ships ssh-agent as Disabled, so offline this is a guarantee rather than a change; it mainly matters through post-install.ps1 on machines where something (a dev tool, Git for Windows setup, or a previous manual "sc config ssh-agent start=auto") turned it on. Grade 2: the disable step is documented by 1Password (reputable third-party) rather than by Microsoft, and the Start=4 mapping is Microsoft-documented service configuration. Kept opt-in (Profiles=opinionated) because it breaks the native ssh-agent workflow for anyone not using a third-party agent.'
+            Citation       = 'https://www.1password.dev/ssh/get-started#check-if-the-openssh-authentication-agent-service-is-installed-and-running'
+            EvidenceGrade  = 2
+            Reversible     = $true
+            Reversal       = 'Set the ssh-agent service Start value back to 3 (Manual) — or 2 (Automatic) if you want it to start on boot — under SYSTEM\ControlSet001\Services\ssh-agent, or set "OpenSSH Authentication Agent" back to Manual/Automatic in services.msc, then start the service.'
+            DefaultEnabled = $false
+            Arch           = @('amd64', 'arm64')
+        },
+
         # --- Personalization: taskbar & File Explorer per-user tweaks (current + future) ---
         @{
             Id             = 'reg-hide-taskbar-search'
