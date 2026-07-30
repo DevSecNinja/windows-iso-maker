@@ -24,7 +24,7 @@
     # --- Data-driven change selection (FR-024) ---
     Profile          = 'default'  # 'minimal' | 'default' | 'aggressive' | 'gaming' | 'opinionated'; accepts a list, e.g. @('gaming','opinionated')
     Toggles          = @{}        # per-id override map, e.g. @{ 'appx-todos' = $false; 'feature-wsl' = $true }
-    EnableCatalogId  = @('reg-reverse-mouse-scroll')  # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
+    EnableCatalogId  = @('reg-reverse-mouse-scroll', 'reg-disable-openssh-agent')  # opt-in specific catalog entries by Id (e.g. 'remove-edge','feature-wsl')
     DisableCatalogId = @()        # force-disable specific catalog entries by Id (explicit ids win)
 
     # --- Autounattend.xml generation (FR-027) ---
