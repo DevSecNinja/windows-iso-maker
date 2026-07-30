@@ -550,6 +550,117 @@ function Enable-OnlineWindowsFeature {
     return $results.ToArray()
 }
 
+function Register-OnlineScheduledTask {
+    <#
+    .SYNOPSIS
+        Apply 'RegisterScheduledTask' catalog entries to the RUNNING system.
+    .DESCRIPTION
+        Online counterpart of Register-ScheduledTaskEntry. Because the Task Scheduler service IS
+        running here, the task is registered immediately instead of being deferred to a first-boot
+        RunOnce: the payload script and generated task XML are written under
+        %ProgramData%\WindowsIsoMaker\Tasks and registered with 'schtasks /create /xml /f' into the
+        shared \WindowsIsoMaker folder.
+
+        A freshly registered (or updated) task is also RUN once straight away. Without that, a task
+        triggered by device arrival would not converge the devices that are ALREADY attached until
+        the next time one of them appeared — which is exactly the gap that made a mouse paired
+        after the original run keep the wrong scroll direction.
+
+        Idempotency (FR-017): if the payload files are unchanged AND the task is already
+        registered, nothing is written or run and the entry reports AlreadyApplied. -WhatIf
+        reports without writing (FR-016).
+    .PARAMETER Catalog
+        Catalog entries to apply. Entries whose Action is not 'RegisterScheduledTask' are ignored.
+    .PARAMETER Architecture
+        Target architecture; entries not applicable to it are skipped.
+    .OUTPUTS
+        System.Object[] of ChangeResult objects.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]] $Catalog,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('amd64', 'arm64')]
+        [string] $Architecture
+    )
+
+    $taskEntries = @(@($Catalog) | Where-Object {
+            $_.Action -eq 'RegisterScheduledTask' -and (@($_.Arch) -contains $Architecture)
+        })
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    if ($taskEntries.Count -eq 0) {
+        return $results.ToArray()
+    }
+
+    $systemDrive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' }
+
+    foreach ($entry in $taskEntries) {
+        $result = [pscustomobject]@{
+            PSTypeName = 'WindowsIsoMaker.ChangeResult'
+            Id         = $entry.Id
+            Type       = 'ScheduledTask'
+            Status     = 'Skipped'
+            Reason     = $null
+            Citation   = $entry.Citation
+        }
+
+        try {
+            $definition = Get-CatalogTaskDefinition -Entry $entry
+            $paths = Get-CatalogTaskPath -RootPath "$($systemDrive.TrimEnd('\'))\" -Definition $definition -TargetSystemDrive $systemDrive
+            $xml = New-CatalogTaskXml -Definition $definition -ScriptPath $paths.TargetScriptPath
+
+            if ($WhatIfPreference) {
+                $result.Status = 'Skipped'
+                $result.Reason = "Preview (-WhatIf): would register scheduled task '$($definition.FullTaskName)'."
+                $results.Add($result)
+                continue
+            }
+
+            $payloadChanged = $false
+            if ($PSCmdlet.ShouldProcess($paths.ScriptPath, 'Write scheduled-task payload')) {
+                $payloadChanged = Write-CatalogTaskPayload -Paths $paths -Script $definition.Script -Xml $xml
+            }
+
+            if (-not $payloadChanged -and (Test-ScheduledTaskRegistered -FullTaskName $definition.FullTaskName)) {
+                $result.Status = 'AlreadyApplied'
+                $result.Reason = "Scheduled task '$($definition.FullTaskName)' is already registered and up to date."
+                $results.Add($result)
+                continue
+            }
+
+            if ($PSCmdlet.ShouldProcess($definition.FullTaskName, 'Register scheduled task')) {
+                $register = Invoke-ScheduledTaskCommand -Arguments @(
+                    '/create', '/tn', $definition.FullTaskName, '/xml', $paths.XmlPath, '/f')
+                if ($register.ExitCode -ne 0) {
+                    throw "schtasks failed to register '$($definition.FullTaskName)' (exit $($register.ExitCode)): $($register.Output.Trim())"
+                }
+
+                # Converge the machine now rather than waiting for the next trigger. A failure here
+                # is non-fatal: the task is registered and will run on its own next trigger.
+                $run = Invoke-ScheduledTaskCommand -Arguments @('/run', '/tn', $definition.FullTaskName)
+                $runNote = if ($run.ExitCode -eq 0) { ' and ran it once' } else { ' (initial run did not start; it will run on its next trigger)' }
+
+                $result.Status = 'Applied'
+                $result.Reason = "Registered scheduled task '$($definition.FullTaskName)'$runNote."
+            }
+        }
+        catch {
+            $result.Status = 'Failed'
+            $result.Reason = $_.Exception.Message
+            Write-BuildLog -Level Warning -Component 'Register-OnlineScheduledTask' -Message "Entry '$($entry.Id)' failed: $($_.Exception.Message)"
+        }
+
+        $results.Add($result)
+    }
+
+    return $results.ToArray()
+}
+
 function Invoke-OnlineCatalogEntry {
     <#
     .SYNOPSIS
@@ -561,6 +672,7 @@ function Invoke-OnlineCatalogEntry {
             RemoveAppx / RemoveCapability          -> Remove-OnlineBloatware
             SetRegistry                            -> Set-OnlineRegistryTweaks
             EnableOptionalFeature / AddCapability  -> Enable-OnlineWindowsFeature
+            RegisterScheduledTask                  -> Register-OnlineScheduledTask
 
         An unknown Action raises a terminating error.
 
@@ -613,8 +725,11 @@ function Invoke-OnlineCatalogEntry {
         { $_ -in @('EnableOptionalFeature', 'AddCapability') } {
             $results = @(Enable-OnlineWindowsFeature -Catalog @($Entry) -Architecture $Architecture)
         }
+        'RegisterScheduledTask' {
+            $results = @(Register-OnlineScheduledTask -Catalog @($Entry) -Architecture $Architecture)
+        }
         default {
-            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability."
+            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability, RegisterScheduledTask."
         }
     }
 

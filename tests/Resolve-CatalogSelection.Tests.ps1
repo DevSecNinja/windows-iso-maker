@@ -75,7 +75,7 @@ Describe 'Opinionated profile baseline' {
             $opinionatedIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile opinionated | ForEach-Object { $_.Id })
             $aggressiveIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile aggressive | ForEach-Object { $_.Id })
 
-            foreach ($id in @('reg-reverse-mouse-scroll', 'reg-disable-start-web-search', 'reg-disable-lockscreen-spotlight', 'feature-wsl', 'feature-vmplatform')) {
+            foreach ($id in @('task-reverse-mouse-scroll', 'reg-disable-start-web-search', 'reg-disable-lockscreen-spotlight', 'feature-wsl', 'feature-vmplatform')) {
                 $opinionatedIds | Should -Contain $id -Because 'the opinionated profile enables the personal-taste extras'
                 $aggressiveIds | Should -Not -Contain $id -Because 'those extras are only in the opinionated profile'
             }
@@ -111,7 +111,7 @@ Describe 'Combining profiles (union with gaming veto)' {
             }
 
             # Opinionated extras are included.
-            foreach ($id in @('reg-reverse-mouse-scroll', 'feature-wsl', 'feature-vmplatform', 'reg-disable-start-web-search')) {
+            foreach ($id in @('task-reverse-mouse-scroll', 'feature-wsl', 'feature-vmplatform', 'reg-disable-start-web-search')) {
                 $comboIds | Should -Contain $id -Because 'opinionated in the combination adds its personal-taste extras'
             }
 

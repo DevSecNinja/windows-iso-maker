@@ -62,8 +62,20 @@ function Export-CatalogManifest {
 
         $target = & $prop 'Target' $null
         if ($target -is [System.Collections.IDictionary]) {
-            # Registry target -> a readable "Hive\Path!Name" string.
-            $target = ('{0}\{1}!{2}' -f $target['Hive'], $target['Path'], $target['Name'])
+            if ($target.Contains('TaskName')) {
+                # Scheduled-task target -> the full task name, which is what a reader would look
+                # for in Task Scheduler. Rendering it through the registry format below would
+                # produce a meaningless '\!'.
+                $folder = if ($target.Contains('TaskFolder') -and $target['TaskFolder']) {
+                    '\' + ([string]$target['TaskFolder']).Trim('\')
+                }
+                else { '\WindowsIsoMaker' }
+                $target = "$folder\$($target['TaskName'])"
+            }
+            else {
+                # Registry target -> a readable "Hive\Path!Name" string.
+                $target = ('{0}\{1}!{2}' -f $target['Hive'], $target['Path'], $target['Name'])
+            }
         }
 
         $manifestEntries.Add([ordered]@{
