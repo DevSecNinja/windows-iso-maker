@@ -29,6 +29,7 @@ explains the model and highlights the notable defaults.
     Reversal       = 'How to undo it.'
     DefaultEnabled = $true                         # grade-3 entries must be $false
     Profiles       = @('opinionated')              # optional: profile-membership tags (gaming | opinionated)
+    RunAfter       = @('reg-region-format-nl')     # optional: ids this entry must be applied after
     Condition      = @{ Script='...'; Description='...' }  # optional: hardware/machine applicability guard
     Arch           = @('amd64','arm64')
 }
@@ -152,6 +153,49 @@ To remove one, delete the task and its payload:
 schtasks /delete /tn "\WindowsIsoMaker\Reverse mouse scroll direction" /f
 Remove-Item "$env:ProgramData\WindowsIsoMaker\Tasks\Set-ReverseMouseScroll.ps1*"
 ```
+
+### `RunAfter` — ordering between entries
+
+Most changes are independent, so the catalog is applied in authoring order. Where sequence
+*changes the outcome*, an entry declares its prerequisites instead of relying on where it happens
+to sit in the file:
+
+```powershell
+RunAfter = @('reg-region-format-nl')
+```
+
+[`Import-ChangeCatalog`](../src/WindowsIsoMaker/Private/Import-ChangeCatalog.ps1) validates every
+id against the full catalog (an unknown id is a load-time error) and then
+[`Resolve-CatalogOrder`](../src/WindowsIsoMaker/Private/Resolve-CatalogOrder.ps1) **stable
+topologically sorts** the catalog. Because that happens at load, the order holds everywhere: the
+offline build, `post-install.ps1`, and the manifest/BOM exports. "Stable" means entries that are
+not constrained keep their authoring order, so adding a `RunAfter` never silently shuffles the
+rest of the catalog.
+
+Both appliers apply entries in that resolved order, **including across hives** —
+[`Set-RegistryTweaks`](../src/WindowsIsoMaker/Public/Set-RegistryTweaks.ps1) mounts each offline
+hive on first use and unloads them all at the end rather than grouping entries by hive, because
+grouping would emit every `SOFTWARE` entry before every `SYSTEM` one and silently break a
+cross-hive constraint.
+
+`RunAfter` is **ordering only**:
+
+- it never enables the referenced entry, and
+- a prerequisite that the architecture/profile selection filtered out simply imposes no constraint
+  (it cannot be violated if it never runs). `Resolve-CatalogSelection` logs a **warning** in that
+  case, since it usually means someone disabled the prerequisite and the ordering-sensitive entry
+  no longer does what its rationale promises.
+
+Self-references and dependency cycles are rejected at load time.
+
+The motivating case is **first-logon `RunOnce` commands**. `reg-region-format-nl` runs
+`Set-Culture`, which rewrites the whole `HKCU\Control Panel\International` key from the locale
+defaults, so `reg-number-format-us-first-logon` has to restore the US number separators (which keep
+Excel on a comma CSV delimiter) *after* it. Windows does not contractually document the order in
+which `RunOnce` values execute, so that entry is ordered belt-and-braces: `RunAfter` guarantees its
+value is **written** last (which wins if execution follows enumeration/write order), and its value
+name `!WimZzNumberFormatUS` sorts after `!WimRegionFormatNL` (which wins if execution follows
+lexical order). Prefer that pattern for any new ordering-sensitive `RunOnce` pair.
 
 ### `Condition` — hardware-specific entries
 

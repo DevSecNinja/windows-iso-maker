@@ -31,7 +31,9 @@ function Resolve-CatalogSelection {
                            other profile, so this is the maintainer's "kitchen sink" preference set.
 
         Any id referenced by Toggles/EnableCatalogId/DisableCatalogId that does not exist in the
-        catalog raises a terminating error.
+        catalog raises a terminating error. A selected entry whose `RunAfter` prerequisite was NOT
+        selected logs a warning: the ordering constraint silently stops applying, which is the case
+        where an ordering-sensitive entry no longer does what its rationale promises.
     .PARAMETER Catalog
         The full flattened catalog (from Import-ChangeCatalog).
     .PARAMETER Architecture
@@ -126,6 +128,19 @@ function Resolve-CatalogSelection {
 
         if ($enabled) {
             $selected.Add($entry)
+        }
+    }
+
+    # A selected entry whose RunAfter prerequisite is NOT in the run has lost its ordering
+    # guarantee — usually because someone disabled the prerequisite explicitly. That is legal (the
+    # prerequisite may simply not be wanted), but it is exactly the case where an ordering-sensitive
+    # entry silently stops doing what its rationale claims, so surface it.
+    $selectedIds = @($selected | ForEach-Object { $_.Id })
+    foreach ($entry in $selected) {
+        foreach ($dep in (Get-CatalogEntryRunAfter -Entry $entry)) {
+            if ($selectedIds -notcontains $dep) {
+                Write-BuildLog -Level Warning -Component 'Resolve-CatalogSelection' -Message "Entry '$($entry.Id)' declares RunAfter '$dep', which is not part of this run; its ordering constraint does not apply."
+            }
         }
     }
 

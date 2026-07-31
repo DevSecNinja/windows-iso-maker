@@ -3,15 +3,17 @@ function Set-RegistryTweaks {
     .SYNOPSIS
         Apply registry-tweak catalog entries to a mounted image's offline hives.
     .DESCRIPTION
-        Groups the provided registry catalog entries by hive, loads each required offline hive
-        (SOFTWARE/SYSTEM/DEFAULT) from the mounted image, applies the entries (including the
-        default Recall + Widgets disables), and ALWAYS unloads the hives in a finally block so
-        they are never left loaded on failure (Principle VI; FR-005). Re-runs are idempotent:
-        an entry whose value already matches is recorded AlreadyApplied (FR-017). An entry whose
-        Target sets OnlyIfKeyExists = $true is recorded NotApplicable when its key is absent from
-        the image (used for third-party/OEM components that the image does not contain), so the
-        key is never fabricated. -WhatIf reports intended keys without writing (FR-016). Returns a
-        ChangeResult per entry.
+        Applies the provided registry catalog entries to a mounted image IN CATALOG ORDER (the
+        order Import-ChangeCatalog resolved from the entries' RunAfter declarations), loading each
+        required offline hive (SOFTWARE/SYSTEM/DEFAULT) on first use and ALWAYS unloading every
+        loaded hive in a finally block so none is left loaded on failure (Principle VI; FR-005).
+        Order is preserved even across hives, because some changes are only correct in sequence
+        (e.g. first-logon RunOnce commands, which Windows executes in the order their values were
+        written). Re-runs are idempotent: an entry whose value already matches is recorded
+        AlreadyApplied (FR-017). An entry whose Target sets OnlyIfKeyExists = $true is recorded
+        NotApplicable when its key is absent from the image (used for third-party/OEM components
+        that the image does not contain), so the key is never fabricated. -WhatIf reports intended
+        keys without writing (FR-016). Returns a ChangeResult per entry.
     .PARAMETER MountPath
         Root of the mounted offline image.
     .PARAMETER Catalog
@@ -60,101 +62,98 @@ function Set-RegistryTweaks {
         return $results.ToArray()
     }
 
-    # Group by hive so each hive is loaded/unloaded exactly once.
-    $byHive = $registryEntries | Group-Object -Property { $_.Target.Hive }
-
-    foreach ($group in $byHive) {
-        $hiveName = $group.Name
-        $handle = $null
-        $loaded = $false
-
-        try {
-            if (-not $WhatIfPreference) {
-                $handle = Mount-OfflineRegistryHive -MountPath $MountPath -Hive $hiveName
-                $loaded = $true
+    # Apply in CATALOG order (which Import-ChangeCatalog has already resolved against the RunAfter
+    # declarations) rather than grouping by hive: grouping would emit every SOFTWARE entry before
+    # every SYSTEM entry, silently breaking any ordering constraint that crosses hives. Each hive is
+    # still loaded at most once — it is mounted on first use and every mounted hive is unloaded in
+    # the finally block (FR-005).
+    $handles = @{}
+    try {
+        foreach ($entry in $registryEntries) {
+            $hiveName = [string]$entry.Target.Hive
+            if (-not $WhatIfPreference -and -not $handles.ContainsKey($hiveName)) {
+                $handles[$hiveName] = Mount-OfflineRegistryHive -MountPath $MountPath -Hive $hiveName
             }
-            $mountKey = if ($handle) { $handle.MountKey } else { "HKLM\WIM_Preview_$hiveName" }
+            $mountKey = if ($handles.ContainsKey($hiveName)) { $handles[$hiveName].MountKey } else { "HKLM\WIM_Preview_$hiveName" }
 
-            foreach ($entry in $group.Group) {
-                $result = [pscustomobject]@{
-                    PSTypeName = 'WindowsIsoMaker.ChangeResult'
-                    Id         = $entry.Id
-                    Type       = 'Registry'
-                    Status     = 'Skipped'
-                    Reason     = $null
-                    Citation   = $entry.Citation
+            $result = [pscustomobject]@{
+                PSTypeName = 'WindowsIsoMaker.ChangeResult'
+                Id         = $entry.Id
+                Type       = 'Registry'
+                Status     = 'Skipped'
+                Reason     = $null
+                Citation   = $entry.Citation
+            }
+
+            try {
+                $target = $entry.Target
+                # 'Operation' (default = Set) and 'OnlyIfKeyExists' are optional Target keys;
+                # read them StrictMode-safely (a missing key must not throw).
+                $operation = Get-RegistryTargetOption -Target $target -Name 'Operation'
+                $onlyIfKeyExists = [bool](Get-RegistryTargetOption -Target $target -Name 'OnlyIfKeyExists')
+
+                if ($onlyIfKeyExists -and -not $WhatIfPreference -and
+                    -not (Test-OfflineRegistryKey -MountKey $mountKey -Path $target.Path)) {
+                    # The component this entry targets (e.g. a third-party service) is not in
+                    # the image; never fabricate its key.
+                    $result.Status = 'NotApplicable'
+                    $result.Reason = "Key '$hiveName\$($target.Path)' does not exist in the image; nothing to change."
+                    $results.Add($result)
+                    continue
                 }
 
-                try {
-                    $target = $entry.Target
-                    # 'Operation' (default = Set) and 'OnlyIfKeyExists' are optional Target keys;
-                    # read them StrictMode-safely (a missing key must not throw).
-                    $operation = Get-RegistryTargetOption -Target $target -Name 'Operation'
-                    $onlyIfKeyExists = [bool](Get-RegistryTargetOption -Target $target -Name 'OnlyIfKeyExists')
-
-                    if ($onlyIfKeyExists -and -not $WhatIfPreference -and
-                        -not (Test-OfflineRegistryKey -MountKey $mountKey -Path $target.Path)) {
-                        # The component this entry targets (e.g. a third-party service) is not in
-                        # the image; never fabricate its key.
-                        $result.Status = 'NotApplicable'
-                        $result.Reason = "Key '$hiveName\$($target.Path)' does not exist in the image; nothing to change."
-                        $results.Add($result)
-                        continue
-                    }
-
-                    if ($operation -eq 'Delete') {
-                        if ($WhatIfPreference) {
-                            $result.Status = 'Skipped'
-                            $result.Reason = "Preview (-WhatIf): would delete $hiveName\$($target.Path)\$($target.Name)."
-                        }
-                        else {
-                            $current = Get-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
-                            if ($null -eq $current) {
-                                $result.Status = 'AlreadyApplied'
-                                $result.Reason = 'Value already absent.'
-                            }
-                            elseif ($PSCmdlet.ShouldProcess("$hiveName\$($target.Path)\$($target.Name)", 'Delete registry value')) {
-                                Remove-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
-                                $result.Status = 'Applied'
-                                $result.Reason = 'Value deleted.'
-                            }
-                        }
+                if ($operation -eq 'Delete') {
+                    if ($WhatIfPreference) {
+                        $result.Status = 'Skipped'
+                        $result.Reason = "Preview (-WhatIf): would delete $hiveName\$($target.Path)\$($target.Name)."
                     }
                     else {
-                        # Set / Disable => write Kind=Value.
-                        if ($WhatIfPreference) {
-                            $result.Status = 'Skipped'
-                            $suffix = if ($onlyIfKeyExists) { ' (only if that key already exists)' } else { '' }
-                            $result.Reason = "Preview (-WhatIf): would set $hiveName\$($target.Path)\$($target.Name) = $($target.Value)$suffix."
+                        $current = Get-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
+                        if ($null -eq $current) {
+                            $result.Status = 'AlreadyApplied'
+                            $result.Reason = 'Value already absent.'
                         }
-                        else {
-                            $current = Get-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
-                            if ($null -ne $current -and "$current" -eq "$($target.Value)") {
-                                $result.Status = 'AlreadyApplied'
-                                $result.Reason = "Value already set to $($target.Value)."
-                            }
-                            elseif ($PSCmdlet.ShouldProcess("$hiveName\$($target.Path)\$($target.Name)", "Set registry value = $($target.Value)")) {
-                                Set-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name -Kind $target.Kind -Value $target.Value
-                                $result.Status = 'Applied'
-                                $result.Reason = "Set to $($target.Value)."
-                            }
+                        elseif ($PSCmdlet.ShouldProcess("$hiveName\$($target.Path)\$($target.Name)", 'Delete registry value')) {
+                            Remove-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
+                            $result.Status = 'Applied'
+                            $result.Reason = 'Value deleted.'
                         }
                     }
                 }
-                catch {
-                    $result.Status = 'Failed'
-                    $result.Reason = $_.Exception.Message
-                    Write-BuildLog -Level Warning -Component 'Set-RegistryTweaks' -Message "Entry '$($entry.Id)' failed: $($_.Exception.Message)"
+                else {
+                    # Set / Disable => write Kind=Value.
+                    if ($WhatIfPreference) {
+                        $result.Status = 'Skipped'
+                        $suffix = if ($onlyIfKeyExists) { ' (only if that key already exists)' } else { '' }
+                        $result.Reason = "Preview (-WhatIf): would set $hiveName\$($target.Path)\$($target.Name) = $($target.Value)$suffix."
+                    }
+                    else {
+                        $current = Get-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name
+                        if ($null -ne $current -and "$current" -eq "$($target.Value)") {
+                            $result.Status = 'AlreadyApplied'
+                            $result.Reason = "Value already set to $($target.Value)."
+                        }
+                        elseif ($PSCmdlet.ShouldProcess("$hiveName\$($target.Path)\$($target.Name)", "Set registry value = $($target.Value)")) {
+                            Set-OfflineRegistryValue -MountKey $mountKey -Path $target.Path -Name $target.Name -Kind $target.Kind -Value $target.Value
+                            $result.Status = 'Applied'
+                            $result.Reason = "Set to $($target.Value)."
+                        }
+                    }
                 }
+            }
+            catch {
+                $result.Status = 'Failed'
+                $result.Reason = $_.Exception.Message
+                Write-BuildLog -Level Warning -Component 'Set-RegistryTweaks' -Message "Entry '$($entry.Id)' failed: $($_.Exception.Message)"
+            }
 
-                $results.Add($result)
-            }
+            $results.Add($result)
         }
-        finally {
-            # Guarantee the hive is unloaded even if applying an entry threw (FR-005).
-            if ($loaded -and $handle) {
-                Dismount-OfflineRegistryHive -Handle $handle
-            }
+    }
+    finally {
+        # Guarantee every hive is unloaded even if applying an entry threw (FR-005).
+        foreach ($handle in @($handles.Values)) {
+            Dismount-OfflineRegistryHive -Handle $handle
         }
     }
 

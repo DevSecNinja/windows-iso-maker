@@ -96,8 +96,19 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             }
         }
 
-        It 'has a well-formed Condition when present (Script + Description, valid PowerShell)' {
-            if ($Entry.ContainsKey('Condition') -and $null -ne $Entry.Condition) {
+        It 'has a well-formed RunAfter ordering declaration when present' {
+            if ($Entry.ContainsKey('RunAfter') -and $null -ne $Entry.RunAfter) {
+                @($Entry.RunAfter).Count | Should -BeGreaterThan 0 -Because 'a present RunAfter must be a non-empty list of catalog ids'
+                foreach ($dep in @($Entry.RunAfter)) {
+                    $dep | Should -Not -BeNullOrEmpty
+                    $dep | Should -Not -Be $Entry.Id -Because 'an entry cannot run after itself'
+                }
+                (@($Entry.RunAfter) | Sort-Object -Unique).Count |
+                    Should -Be @($Entry.RunAfter).Count -Because 'RunAfter ids must be unique'
+            }
+        }
+
+        It 'has a well-formed Condition when present (Script + Description, valid PowerShell)' {            if ($Entry.ContainsKey('Condition') -and $null -ne $Entry.Condition) {
                 $Entry.Condition | Should -BeOfType [hashtable] -Because 'Condition is an object with Script/Description (+ optional Citation)'
                 $Entry.Condition.Script | Should -Not -BeNullOrEmpty -Because 'a Condition without a Script can never be satisfied'
                 $Entry.Condition.Description | Should -Not -BeNullOrEmpty -Because 'the Condition Description is surfaced verbatim in the NotApplicable reason'
@@ -226,6 +237,17 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
             $optIn | Should -Not -BeNullOrEmpty
             foreach ($e in $optIn) {
                 $e.Entry.DefaultEnabled | Should -BeFalse -Because 'FR-008 keeps Edge/OneDrive removal opt-in'
+            }
+        }
+
+        It 'only references existing ids from RunAfter' {
+            $ids = @($script:RuntimeEntries | ForEach-Object { $_.Id })
+            foreach ($e in $script:RuntimeEntries) {
+                if ($e.Entry.ContainsKey('RunAfter') -and $null -ne $e.Entry.RunAfter) {
+                    foreach ($dep in @($e.Entry.RunAfter)) {
+                        $ids | Should -Contain $dep -Because "entry '$($e.Id)' declares RunAfter = '$dep', which must be a known catalog id"
+                    }
+                }
             }
         }
     }

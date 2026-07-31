@@ -148,6 +148,13 @@
       "items": { "type": "string", "enum": ["gaming", "opinionated"] },
       "description": "Optional curated profile-membership tag consumed by Resolve-CatalogSelection. Kept separate from 'Category' so an entry can be, say, Category='Development' AND part of the opinionated profile."
     },
+    "RunAfter": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+      "description": "Optional ordering declaration: ids of catalog entries that MUST be applied before this one. Import-ChangeCatalog validates every id against the full catalog and then stable-topologically sorts the catalog (Resolve-CatalogOrder), so the constraint holds in the offline build, the online post-install, and the exports alike. It is ORDERING ONLY: it never enables the referenced entry, and a prerequisite filtered out by the architecture/profile selection simply imposes no constraint. Needed where sequence changes the outcome — e.g. first-logon RunOnce commands, which Windows executes in registry enumeration (write) order, so a value that repairs what an earlier command overwrote must be written after it. Self-references and cycles are rejected at load time."
+    },
     "Condition": {
       "type": "object",
       "additionalProperties": false,
