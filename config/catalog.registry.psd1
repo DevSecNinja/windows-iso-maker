@@ -545,9 +545,10 @@
         # Set-Culture (reg-region-format-nl) REPLACES the whole HKCU\Control Panel\International key
         # with the nl-NL defaults, which wipes the sDecimal/sThousand/sList values the first user
         # inherited from the DEFAULT hive — so without this entry Excel falls back to a ';' CSV
-        # delimiter on the very first profile. This RunOnce re-applies the three values, and the
-        # RunAfter declaration below is what guarantees it is written (and therefore executed)
-        # after the regional-format RunOnce.
+        # delimiter on the very first profile. This RunOnce re-applies the three values. Windows
+        # does not document the order RunOnce values execute in, so ordering is belt-and-braces:
+        # RunAfter guarantees this value is WRITTEN last (enumeration/write order) and the 'Zz'
+        # value name sorts last among the !Wim* values (lexical order).
         @{
             Id             = 'reg-number-format-us-first-logon'
             Type           = 'Registry'
@@ -558,16 +559,16 @@
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'
-                Name  = '!WimNumberFormatUS'
+                Name  = '!WimZzNumberFormatUS'
                 Kind  = 'String'
                 Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$i = ''HKCU:\Control Panel\International''; Set-ItemProperty -Path $i -Name ''sDecimal'' -Value ''.''; Set-ItemProperty -Path $i -Name ''sThousand'' -Value '',''; Set-ItemProperty -Path $i -Name ''sList'' -Value '',''"'
             }
             Description    = 'Re-applies the US number format (sDecimal ".", sThousand ",", sList ",") to the first logged-on user after the regional-format RunOnce, so Excel keeps a comma CSV delimiter.'
-            Rationale      = 'reg-number-format-{decimal,thousands,list}-us write these values to the DEFAULT hive, which new profiles inherit — but reg-region-format-nl runs Set-Culture at first logon, and Set-Culture rewrites the ENTIRE HKCU\Control Panel\International key from the nl-NL locale defaults (sDecimal ",", sThousand ".", sList ";"). The inherited overrides are therefore destroyed on the first profile and Excel opens comma-separated CSVs as a single column. Because Set-Culture is a cmdlet that cannot run offline, the correction must also happen at first logon and strictly AFTER it: Windows executes RunOnce values in registry enumeration order, and registry values enumerate in the order they were written rather than alphabetically, so this entry declares RunAfter = reg-region-format-nl and the catalog loader orders the two accordingly. Harmless (idempotent) when the regional-format entry is disabled: it just re-asserts the same values the DEFAULT hive already carries. Grade 2 because the RunOnce mechanism and the NLS value names are Microsoft-documented but the enumeration-order behaviour is observed, not a documented contract.'
+            Rationale      = 'reg-number-format-{decimal,thousands,list}-us write these values to the DEFAULT hive, which new profiles inherit — but reg-region-format-nl runs Set-Culture at first logon, and Set-Culture rewrites the ENTIRE HKCU\Control Panel\International key from the nl-NL locale defaults (sDecimal ",", sThousand ".", sList ";"). The inherited overrides are therefore destroyed on the first profile and Excel opens comma-separated CSVs as a single column. Because Set-Culture is a cmdlet that cannot run offline, the correction must also happen at first logon and strictly AFTER it. Windows does not contractually document the order in which RunOnce values execute, so this entry is ordered belt-and-braces: it declares RunAfter = reg-region-format-nl (so the catalog loader always WRITES it after, which wins if values are executed in enumeration/write order) AND its value name sorts after !WimRegionFormatNL (which wins if they are executed in lexical order). Harmless (idempotent) when the regional-format entry is disabled: it just re-asserts the same values the DEFAULT hive already carries. Grade 2 because the RunOnce mechanism and the NLS value names are Microsoft-documented but the execution-order behaviour is observed, not a documented contract.'
             Citation       = 'https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys'
             EvidenceGrade  = 2
             Reversible     = $true
-            Reversal       = 'Remove the !WimNumberFormatUS value under SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce before first boot, or after boot set sDecimal=",", sThousand="." and sList=";" under HKCU\Control Panel\International to restore the NL defaults.'
+            Reversal       = 'Remove the !WimZzNumberFormatUS value under SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce before first boot, or after boot set sDecimal=",", sThousand="." and sList=";" under HKCU\Control Panel\International to restore the NL defaults.'
             DefaultEnabled = $false
             Arch           = @('amd64', 'arm64')
         },

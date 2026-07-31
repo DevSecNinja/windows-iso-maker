@@ -129,4 +129,40 @@ Describe 'Set-RegistryTweaks' {
             Should -Invoke Set-OfflineRegistryValue -Times 1 -ParameterFilter { $Value -eq 4 }
         }
     }
+
+    It 'writes in catalog order across hives and loads each hive once' {
+        InModuleScope WindowsIsoMaker -Parameters @{ MountDir = $script:MountDir } {
+            param($MountDir)
+            # Ordering must survive interleaved hives: grouping by hive would emit both SOFTWARE
+            # entries before the SYSTEM one and silently break a cross-hive RunAfter constraint.
+            $catalog = @(
+                [pscustomobject]@{
+                    Id = 'first-software'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64')
+                    Target = @{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'First'; Kind = 'DWord'; Value = 1 }
+                }
+                [pscustomobject]@{
+                    Id = 'second-system'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64')
+                    Target = @{ Hive = 'SYSTEM'; Path = 'B'; Name = 'Second'; Kind = 'DWord'; Value = 1 }
+                }
+                [pscustomobject]@{
+                    Id = 'third-software'; Type = 'Registry'; Action = 'SetRegistry'; Citation = 'x'; Arch = @('amd64')
+                    Target = @{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'Third'; Kind = 'DWord'; Value = 1 }
+                }
+            )
+
+            $script:WrittenNames = [System.Collections.Generic.List[string]]::new()
+            Mock Mount-OfflineRegistryHive { param($MountPath, $Hive) [pscustomobject]@{ Hive = $Hive; MountKey = "HKLM\WIM_Test_$Hive" } }
+            Mock Dismount-OfflineRegistryHive { }
+            Mock Get-OfflineRegistryValue { $null }
+            Mock Set-OfflineRegistryValue { $script:WrittenNames.Add($Name) }
+
+            $results = Set-RegistryTweaks -MountPath $MountDir -Catalog $catalog -Architecture amd64
+
+            @($results | ForEach-Object { $_.Id }) | Should -Be @('first-software', 'second-system', 'third-software')
+            @($script:WrittenNames) | Should -Be @('First', 'Second', 'Third')
+            # SOFTWARE is reused for the third entry rather than mounted a second time.
+            Should -Invoke Mount-OfflineRegistryHive -Times 2 -Exactly
+            Should -Invoke Dismount-OfflineRegistryHive -Times 2 -Exactly
+        }
+    }
 }

@@ -172,9 +172,41 @@ Describe 'Import-ChangeCatalog RunAfter integration' {
         }
     }
 
-    It 'rejects a RunAfter id that does not exist in the catalog' {
+    It 'reaches the offline applier in the resolved order (end to end)' {
         InModuleScope WindowsIsoMaker {
-            $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-runafter-" + [guid]::NewGuid().ToString('N'))
+            # The ordering only matters if it survives all the way to the physical write, so assert
+            # on Set-RegistryTweaks' own per-entry results rather than on the catalog array.
+            $selected = Resolve-CatalogSelection -Catalog (Import-ChangeCatalog) -Architecture amd64 -Profile opinionated
+            $mountDir = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-order-" + [guid]::NewGuid().ToString('N'))
+            New-Item -Path $mountDir -ItemType Directory -Force | Out-Null
+            try {
+                $applied = @(Set-RegistryTweaks -MountPath $mountDir -Catalog $selected -Architecture amd64 -WhatIf |
+                        ForEach-Object { $_.Id })
+                $applied | Should -Contain 'reg-number-format-us-first-logon'
+                [Array]::IndexOf($applied, 'reg-number-format-us-first-logon') |
+                    Should -BeGreaterThan ([Array]::IndexOf($applied, 'reg-region-format-nl'))
+            }
+            finally {
+                Remove-Item -LiteralPath $mountDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    It 'keeps the repair RunOnce value name sorting last, so lexical execution order works too' {
+        InModuleScope WindowsIsoMaker {
+            # Belt and braces: Windows does not document RunOnce execution order, so the repair must
+            # win under BOTH write order (RunAfter) and lexical order (value name).
+            $catalog = @(Import-ChangeCatalog)
+            $region = @($catalog | Where-Object { $_.Id -eq 'reg-region-format-nl' })[0]
+            $repair = @($catalog | Where-Object { $_.Id -eq 'reg-number-format-us-first-logon' })[0]
+
+            $region.Target.Path | Should -Be $repair.Target.Path
+            ([string]::Compare($repair.Target.Name, $region.Target.Name, $true)) |
+                Should -BeGreaterThan 0 -Because 'the repair value name must sort after the regional-format one'
+        }
+    }
+
+    It 'rejects a RunAfter id that does not exist in the catalog' {        InModuleScope WindowsIsoMaker {            $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("wim-runafter-" + [guid]::NewGuid().ToString('N'))
             New-Item -Path $dir -ItemType Directory -Force | Out-Null
             try {
                 $content = @'
