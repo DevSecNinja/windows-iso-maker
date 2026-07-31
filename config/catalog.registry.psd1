@@ -351,7 +351,7 @@
                 Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Set-Culture -CultureInfo nl-NL; Set-WinHomeLocation -GeoId 176"'
             }
             Description    = 'Sets the regional format to Dutch (Netherlands) — 24-hour HH:mm time and dd-MM-yyyy short date (e.g. 20:03 16-07-2026) — and the home location to the Netherlands, without changing the English UI language.'
-            Rationale      = 'The taskbar clock/date format is driven by the per-user "region format" (UserLocale) under HKCU\Control Panel\International, not the display language. Microsoft''s supported cmdlets to set it are Set-Culture (region format) and Set-WinHomeLocation (Region > Country/region, GeoId 176 = Netherlands). nl-NL yields the 24-hour HH:mm time and dd-MM-yyyy short date the user wants. These are per-user, cannot be run against an offline image, and are applied via a first-boot RunOnce that runs in the logged-on user''s context. The English (en-US) UI/system locale is intentionally left unchanged. Kept opt-in (Profiles=opinionated) as a personal/regional preference. NOTE: Set-Culture rewrites the whole HKCU\Control Panel\International key from the locale defaults, so it also resets sDecimal/sThousand/sList — reg-number-format-us-first-logon (authored after this entry, and therefore executed after it) restores them.'
+            Rationale      = 'The taskbar clock/date format is driven by the per-user "region format" (UserLocale) under HKCU\Control Panel\International, not the display language. Microsoft''s supported cmdlets to set it are Set-Culture (region format) and Set-WinHomeLocation (Region > Country/region, GeoId 176 = Netherlands). nl-NL yields the 24-hour HH:mm time and dd-MM-yyyy short date the user wants. These are per-user, cannot be run against an offline image, and are applied via a first-boot RunOnce that runs in the logged-on user''s context. The English (en-US) UI/system locale is intentionally left unchanged. Kept opt-in (Profiles=opinionated) as a personal/regional preference. NOTE: Set-Culture rewrites the whole HKCU\Control Panel\International key from the locale defaults, so it also resets sDecimal/sThousand/sList — reg-number-format-us-first-logon declares RunAfter on this entry and restores them.'
             Citation       = 'https://learn.microsoft.com/en-us/powershell/module/international/set-culture'
             EvidenceGrade  = 1
             Reversible     = $true
@@ -545,16 +545,16 @@
         # Set-Culture (reg-region-format-nl) REPLACES the whole HKCU\Control Panel\International key
         # with the nl-NL defaults, which wipes the sDecimal/sThousand/sList values the first user
         # inherited from the DEFAULT hive — so without this entry Excel falls back to a ';' CSV
-        # delimiter on the very first profile. This RunOnce re-applies the three values after
-        # Set-Culture has run. RunOnce values are executed in registry enumeration order, which is
-        # INSERTION order (not alphabetical), so this entry MUST stay after reg-region-format-nl in
-        # the catalog — that is what makes it run last.
+        # delimiter on the very first profile. This RunOnce re-applies the three values, and the
+        # RunAfter declaration below is what guarantees it is written (and therefore executed)
+        # after the regional-format RunOnce.
         @{
             Id             = 'reg-number-format-us-first-logon'
             Type           = 'Registry'
             Action         = 'SetRegistry'
             Category       = 'Personalization'
             Profiles       = @('opinionated')
+            RunAfter       = @('reg-region-format-nl')
             Target         = @{
                 Hive  = 'SOFTWARE'
                 Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'
@@ -563,7 +563,7 @@
                 Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$i = ''HKCU:\Control Panel\International''; Set-ItemProperty -Path $i -Name ''sDecimal'' -Value ''.''; Set-ItemProperty -Path $i -Name ''sThousand'' -Value '',''; Set-ItemProperty -Path $i -Name ''sList'' -Value '',''"'
             }
             Description    = 'Re-applies the US number format (sDecimal ".", sThousand ",", sList ",") to the first logged-on user after the regional-format RunOnce, so Excel keeps a comma CSV delimiter.'
-            Rationale      = 'reg-number-format-{decimal,thousands,list}-us write these values to the DEFAULT hive, which new profiles inherit — but reg-region-format-nl runs Set-Culture at first logon, and Set-Culture rewrites the ENTIRE HKCU\Control Panel\International key from the nl-NL locale defaults (sDecimal ",", sThousand ".", sList ";"). The inherited overrides are therefore destroyed on the first profile and Excel opens comma-separated CSVs as a single column. Because Set-Culture is a cmdlet that cannot run offline, the correction must also happen at first logon and strictly AFTER it: Windows executes RunOnce values in registry enumeration order, and registry values enumerate in insertion order rather than alphabetically, so authoring this entry after reg-region-format-nl in the catalog is what guarantees it runs last. Harmless (idempotent) when the regional-format entry is disabled: it just re-asserts the same values the DEFAULT hive already carries. Grade 2 because the RunOnce mechanism and the NLS value names are Microsoft-documented but the enumeration-order guarantee is observed behaviour, not a documented contract.'
+            Rationale      = 'reg-number-format-{decimal,thousands,list}-us write these values to the DEFAULT hive, which new profiles inherit — but reg-region-format-nl runs Set-Culture at first logon, and Set-Culture rewrites the ENTIRE HKCU\Control Panel\International key from the nl-NL locale defaults (sDecimal ",", sThousand ".", sList ";"). The inherited overrides are therefore destroyed on the first profile and Excel opens comma-separated CSVs as a single column. Because Set-Culture is a cmdlet that cannot run offline, the correction must also happen at first logon and strictly AFTER it: Windows executes RunOnce values in registry enumeration order, and registry values enumerate in the order they were written rather than alphabetically, so this entry declares RunAfter = reg-region-format-nl and the catalog loader orders the two accordingly. Harmless (idempotent) when the regional-format entry is disabled: it just re-asserts the same values the DEFAULT hive already carries. Grade 2 because the RunOnce mechanism and the NLS value names are Microsoft-documented but the enumeration-order behaviour is observed, not a documented contract.'
             Citation       = 'https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys'
             EvidenceGrade  = 2
             Reversible     = $true

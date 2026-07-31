@@ -28,6 +28,7 @@ explains the model and highlights the notable defaults.
     Reversal       = 'How to undo it.'
     DefaultEnabled = $true                         # grade-3 entries must be $false
     Profiles       = @('opinionated')              # optional: profile-membership tags (gaming | opinionated)
+    RunAfter       = @('reg-region-format-nl')     # optional: ids this entry must be applied after
     Condition      = @{ Script='...'; Description='...' }  # optional: hardware/machine applicability guard
     Arch           = @('amd64','arm64')
 }
@@ -70,8 +71,41 @@ rather than during the offline build.
 > `CurrentControlSet\` (`Resolve-OnlineRegistryPath`), so it always writes to the *active* control
 > set even when that is not `ControlSet001` (e.g. after a Last Known Good rollback).
 
-### `Condition` — hardware-specific entries
+### `RunAfter` — ordering between entries
 
+Most changes are independent, so the catalog is applied in authoring order. Where sequence
+*changes the outcome*, an entry declares its prerequisites instead of relying on where it happens
+to sit in the file:
+
+```powershell
+RunAfter = @('reg-region-format-nl')
+```
+
+[`Import-ChangeCatalog`](../src/WindowsIsoMaker/Private/Import-ChangeCatalog.ps1) validates every
+id against the full catalog (an unknown id is a load-time error) and then
+[`Resolve-CatalogOrder`](../src/WindowsIsoMaker/Private/Resolve-CatalogOrder.ps1) **stable
+topologically sorts** the catalog. Because that happens at load, the order holds everywhere: the
+offline build, `post-install.ps1`, and the manifest/BOM exports. "Stable" means entries that are
+not constrained keep their authoring order, so adding a `RunAfter` never silently shuffles the
+rest of the catalog.
+
+`RunAfter` is **ordering only**:
+
+- it never enables the referenced entry, and
+- a prerequisite that the architecture/profile selection filtered out simply imposes no constraint
+  (it cannot be violated if it never runs).
+
+Self-references and dependency cycles are rejected at load time.
+
+The motivating case is **first-logon `RunOnce` commands**. Windows executes `RunOnce` values in
+registry enumeration order, and registry values enumerate in the order they were written — *not*
+alphabetically — so a command that repairs what an earlier command overwrote must be written
+after it. `reg-region-format-nl` runs `Set-Culture`, which rewrites the whole
+`HKCU\Control Panel\International` key from the locale defaults; `reg-number-format-us-first-logon`
+therefore declares `RunAfter = @('reg-region-format-nl')` to restore the US number separators
+(so Excel keeps a comma CSV delimiter) once the regional format has been applied.
+
+### `Condition` — hardware-specific entries
 Some changes only make sense on particular hardware. Rather than growing a per-feature switch
 (forbidden by Principle III), an entry declares an optional `Condition`:
 

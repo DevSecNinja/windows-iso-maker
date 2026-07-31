@@ -6,6 +6,11 @@ function Import-ChangeCatalog {
         Reads every config/catalog.*.psd1 file (each returns a hashtable with an 'Entries'
         array) and returns a single flat array of catalog entry objects. The catalog is the
         data-driven source of every documented system change (Constitution Principle II).
+
+        Entries are returned in APPLY order: the authoring order of the files, adjusted by a stable
+        topological sort so every entry follows the ids it declares in `RunAfter` (see
+        Resolve-CatalogOrder). Ordering therefore happens once, at load, for every consumer —
+        offline build, online post-install, and the manifest/BOM exports alike.
     .PARAMETER CatalogDirectory
         Directory containing the catalog.*.psd1 files. Defaults to the repository config/ dir.
     .EXAMPLE
@@ -46,5 +51,17 @@ function Import-ChangeCatalog {
         }
     }
 
-    return $all.ToArray()
+    # A RunAfter id that does not exist anywhere in the catalog is always an authoring mistake
+    # (typo, or an entry that was renamed/removed): fail loudly here rather than silently dropping
+    # the ordering constraint and shipping an image whose changes ran in the wrong sequence.
+    $knownIds = @($all | ForEach-Object { [string]$_.Id })
+    foreach ($entry in $all) {
+        foreach ($dep in (Get-CatalogEntryRunAfter -Entry $entry)) {
+            if ($knownIds -notcontains $dep) {
+                throw "Catalog entry '$($entry.Id)' declares RunAfter = '$dep', which is not a known catalog id."
+            }
+        }
+    }
+
+    return Resolve-CatalogOrder -Catalog $all.ToArray()
 }
