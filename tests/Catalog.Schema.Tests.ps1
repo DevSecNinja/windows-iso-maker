@@ -73,7 +73,7 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
 
         It 'has a valid Type (optional, derived category)' {
             if ($Entry.ContainsKey('Type') -and $null -ne $Entry.Type) {
-                $Entry.Type | Should -BeIn @('Appx', 'Capability', 'Registry', 'OptionalFeature')
+                $Entry.Type | Should -BeIn @('Appx', 'Capability', 'Registry', 'OptionalFeature', 'ScheduledTask')
             }
         }
 
@@ -131,7 +131,7 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
         }
 
         It 'has a valid Action (dispatch key)' {
-            $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability', 'DisableOptionalFeature') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
+            $Entry.Action | Should -BeIn @('RemoveAppx', 'RemoveCapability', 'SetRegistry', 'EnableOptionalFeature', 'AddCapability', 'DisableOptionalFeature', 'RegisterScheduledTask') -Because 'Action is the Invoke-CatalogEntry dispatch key (schema v2 / FR-024)'
         }
 
         It 'has an EvidenceGrade of 1, 2, or 3' {
@@ -179,6 +179,36 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
                 if ($Entry.Target.ContainsKey('OnlyIfKeyExists')) {
                     $Entry.Target.OnlyIfKeyExists | Should -BeOfType [bool] -Because 'the optional Target OnlyIfKeyExists guard is a boolean'
                 }
+            }
+        }
+
+        It 'has a well-formed task Target when Action=RegisterScheduledTask' {
+            if ($Entry.Action -eq 'RegisterScheduledTask') {
+                $Entry.Target | Should -BeOfType [hashtable]
+                $Entry.Target.TaskName | Should -Not -BeNullOrEmpty -Because 'the task needs a name to be registered under'
+                $Entry.Target.Script | Should -Not -BeNullOrEmpty -Because 'a task without a payload script does nothing'
+
+                if ($Entry.Target.ContainsKey('TaskFolder')) {
+                    $Entry.Target.TaskFolder | Should -Not -BeNullOrEmpty -Because 'an explicit TaskFolder must name a folder'
+                }
+
+                @($Entry.Target.Triggers).Count | Should -BeGreaterThan 0 -Because 'a task with no trigger would never run'
+                foreach ($trigger in @($Entry.Target.Triggers)) {
+                    $trigger.Type | Should -BeIn @('Logon', 'Boot', 'Event') -Because "unsupported trigger Type '$($trigger.Type)'"
+                    $trigger.Keys | Should -Not -Contain 'Repeat' -Because 'a task that has to poll to notice its trigger condition does not belong in this catalog'
+                    if ($trigger.Type -eq 'Event') {
+                        $trigger.Log | Should -Not -BeNullOrEmpty -Because 'an Event trigger subscribes to a specific log'
+                        $trigger.Source | Should -Not -BeNullOrEmpty -Because 'an Event trigger filters on a provider name'
+                        $trigger.EventId | Should -Not -BeNullOrEmpty -Because 'an Event trigger filters on an event id'
+                    }
+                }
+
+                # The payload runs unattended on the target machine, where a syntax error would
+                # fail silently forever. Parse it here, where it is a merge-blocking failure.
+                $parseErrors = $null
+                [void][System.Management.Automation.Language.Parser]::ParseInput(
+                    $Entry.Target.Script, [ref]$null, [ref]$parseErrors)
+                $parseErrors | Should -BeNullOrEmpty -Because "the task payload must be valid PowerShell, got: $($parseErrors.Message -join '; ')"
             }
         }
     }

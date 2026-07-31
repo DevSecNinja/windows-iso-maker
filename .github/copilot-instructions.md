@@ -19,9 +19,16 @@ citation-backed system changes. The same code path runs locally and in GitHub Ac
   **config-file defaults → `WIM_*` env vars → explicit parameters.** `Get-BuildConfiguration`
   re-applies the full precedence chain.
 - **Data-driven change catalog.** All changes live in `config/catalog.*.psd1` (registry / appx /
-  capabilities), NOT inline. `Invoke-CatalogEntry` is the single dispatcher routing each entry by
-  its `Action` to a handler (`SetRegistry`→`Set-RegistryTweaks`, `RemoveAppx`/`RemoveCapability`→
-  `Remove-Bloatware`, `EnableOptionalFeature`/`AddCapability`→`Enable-WindowsFeature`).
+  capabilities / tasks), NOT inline. `Invoke-CatalogEntry` is the single dispatcher routing each
+  entry by its `Action` to a handler (`SetRegistry`→`Set-RegistryTweaks`, `RemoveAppx`/
+  `RemoveCapability`→`Remove-Bloatware`, `EnableOptionalFeature`/`AddCapability`→
+  `Enable-WindowsFeature`, `RegisterScheduledTask`→`Register-ScheduledTaskEntry`).
+- **Settings that outlive the run.** `RegisterScheduledTask` exists for settings Windows stores
+  per device (e.g. `FlipFlopWheel` mouse scroll direction), which a one-shot write can never apply
+  to devices connected later. Such entries carry a payload script + triggers and install a SYSTEM
+  task in the shared `\WindowsIsoMaker` Task Scheduler folder. Payloads must be convergent (check
+  state first, no-op when already correct) because they are self-triggering. An entry only belongs
+  here when Windows raises a real event to trigger on — if it would need polling, leave it out.
 - **Selection logic** lives in `Resolve-CatalogSelection.ps1`: `Profile`
   (`minimal`/`default`/`aggressive`/`gaming`/`opinionated`, unioned as a list) + `Toggles` map +
   `EnableCatalogId`/`DisableCatalogId` (explicit ids win). Note the schema `Category` field is for

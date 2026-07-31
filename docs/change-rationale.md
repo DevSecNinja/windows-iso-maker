@@ -6,6 +6,7 @@ The catalog lives in:
 - [config/catalog.appx.psd1](../config/catalog.appx.psd1) — provisioned app removals
 - [config/catalog.capabilities.psd1](../config/catalog.capabilities.psd1) — capabilities & optional features (incl. WSL)
 - [config/catalog.registry.psd1](../config/catalog.registry.psd1) — registry tweaks
+- [config/catalog.tasks.psd1](../config/catalog.tasks.psd1) — persistent helper tasks (settings that must be re-applied when a device appears)
 
 The catalog files themselves are the authoritative, always-up-to-date documentation: each
 entry states **what** it does, **why**, a **citation**, and an **evidence grade**. This page
@@ -16,8 +17,8 @@ explains the model and highlights the notable defaults.
 ```powershell
 @{
     Id             = 'reg-disable-recall'          # unique, stable id
-    Type           = 'Registry'                    # Appx | Capability | Registry | OptionalFeature (informational)
-    Action         = 'SetRegistry'                 # dispatch key: RemoveAppx | RemoveCapability | SetRegistry | EnableOptionalFeature | AddCapability | DisableOptionalFeature
+    Type           = 'Registry'                    # Appx | Capability | Registry | OptionalFeature | ScheduledTask (informational)
+    Action         = 'SetRegistry'                 # dispatch key: RemoveAppx | RemoveCapability | SetRegistry | EnableOptionalFeature | AddCapability | DisableOptionalFeature | RegisterScheduledTask
     Category       = 'Privacy & telemetry'         # required: semantic taxonomy (display/grouping only)
     Target         = @{ Hive='SOFTWARE'; Path='...'; Name='...'; Kind='DWord'; Value=1 }  # or a package/feature name string
     Description    = 'WHAT the change does.'       # required (Principle II)
@@ -71,6 +72,88 @@ rather than during the offline build.
 > `CurrentControlSet\` (`Resolve-OnlineRegistryPath`), so it always writes to the *active* control
 > set even when that is not `ControlSet001` (e.g. after a Last Known Good rollback).
 
+### `RegisterScheduledTask` — settings that must survive new devices
+
+A few settings cannot be applied once and left alone, because what they configure does not exist
+yet when the change is made:
+
+- **Mouse scroll direction** (`FlipFlopWheel`) is stored **per device instance** under
+  `SYSTEM\...\Enum\HID\<instance>\Device Parameters`. There is no machine-wide equivalent —
+  Windows' own *Scrolling direction* toggle writes that same per-device value. So writing it once
+  only reaches the mice enumerated at that moment; a mouse paired next week keeps the driver
+  default and scrolls the other way.
+
+Such settings need something that re-runs when the device shows up. An entry declares a small
+payload script plus the triggers that should re-run it:
+
+```powershell
+Target = @{
+    TaskName   = 'Reverse mouse scroll direction'
+    ScriptName = 'Set-ReverseMouseScroll.ps1'
+    Triggers   = @(
+        @{ Type = 'Event'; Log = 'Microsoft-Windows-Kernel-PnP/Configuration'; Source = 'Microsoft-Windows-Kernel-PnP'; EventId = 410; Delay = 'PT5S' }
+    )
+    Script     = @'
+# ... payload ...
+'@
+}
+```
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `TaskName` | yes | Task name, created inside the shared `\WindowsIsoMaker` Task Scheduler folder. |
+| `Script` | yes | The payload, run by `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File`. Parsed by the schema tests, so a syntax error is a merge-blocking failure rather than a task that fails silently forever. |
+| `ScriptName` | no | Payload filename under `%ProgramData%\WindowsIsoMaker\Tasks` (defaults to `<Id>.ps1`). |
+| `TaskFolder` | no | Overrides the `\WindowsIsoMaker` folder. |
+| `Triggers` | yes | One or more of `Event` (needs `Log`, `Source`, `EventId`), `Logon`, `Boot`; each accepts an optional `Delay` (xs:duration). |
+
+Tasks run as **SYSTEM**: they configure machine state and must work with nobody signed in. That
+also keeps them off the interactive desktop, so they can never flash a console window at the user.
+
+**Payloads must be convergent.** Each one checks current state first and does nothing when the
+machine already matches. That is what makes a device-arrival trigger safe: restarting a device to
+apply a change raises another arrival event, and the next run finds nothing to do and stops.
+
+**An entry belongs here only if Windows raises a real event to trigger on.** Not everything does —
+attaching a monitor, for instance, logs nothing at all, in Kernel-PnP or any other enabled log. The
+temptation is to fall back to a repeating trigger, but polling forever to notice a condition is a
+permanent cost and still reacts late, which is a bad trade for the kind of convenience tweak this
+catalog carries. Check for a real event first; if there is none, the change does not belong here.
+That is why there is no display-arrangement entry.
+
+#### Execution details worth knowing
+
+- **`RemoteSigned`, not `Bypass`.** Payloads are generated locally, so they carry no Mark of the
+  Web and run unsigned under `RemoteSigned`; signing them later — even with a certificate the
+  machine does not trust — changes nothing, because `RemoteSigned` only validates signatures on
+  files that came from elsewhere. `Bypass` would only add the ability to run a downloaded file,
+  which is the one case worth blocking. (`AllSigned` would break an untrusted-publisher signature,
+  so it is deliberately not used.)
+- **The payload directory is locked down.** Directories under `%ProgramData%` inherit an ACE
+  granting `BUILTIN\Users` write access, which is enough for a standard user to pre-create a
+  payload, become its `CREATOR OWNER`, and rewrite it later — code execution as SYSTEM. The
+  appliers therefore break inheritance and apply an explicit DACL (SYSTEM + Administrators full
+  control, Users read and execute) *after* writing.
+- **A SYSTEM task is only visible elevated.** `schtasks /query` as a normal user reports
+  *Access is denied* rather than "not found".
+
+The two paths differ only in *when* the task is registered:
+
+- **Post-install** ([`Register-OnlineScheduledTask`](../src/WindowsIsoMaker/Private/Invoke-OnlinePostInstall.ps1))
+  registers it immediately and runs it once, so devices already attached converge straight away.
+- **Offline build** ([`Register-ScheduledTaskEntry`](../src/WindowsIsoMaker/Public/Register-ScheduledTaskEntry.ps1))
+  cannot: the Task Scheduler service is not running and a task is not a plain file drop (it lives
+  in both `%SystemRoot%\System32\Tasks` and the `TaskCache` registry subtree, written together by
+  the service). So it stages the payload and XML into the image and arms a machine `RunOnce` that
+  registers the task at first logon — a one-shot whose only job is to create something permanent.
+
+To remove one, delete the task and its payload:
+
+```powershell
+schtasks /delete /tn "\WindowsIsoMaker\Reverse mouse scroll direction" /f
+Remove-Item "$env:ProgramData\WindowsIsoMaker\Tasks\Set-ReverseMouseScroll.ps1*"
+```
+
 ### `RunAfter` — ordering between entries
 
 Most changes are independent, so the catalog is applied in authoring order. Where sequence
@@ -115,6 +198,7 @@ name `!WimZzNumberFormatUS` sorts after `!WimRegionFormatNL` (which wins if exec
 lexical order). Prefer that pattern for any new ordering-sensitive `RunOnce` pair.
 
 ### `Condition` — hardware-specific entries
+
 Some changes only make sense on particular hardware. Rather than growing a per-feature switch
 (forbidden by Principle III), an entry declares an optional `Condition`:
 
@@ -165,9 +249,10 @@ from three inputs, in order of increasing precedence:
 1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming` / `opinionated`,
    where `gaming` is `default` minus the entries tagged `Profiles = @('gaming')` so Xbox / Game Bar
    are preserved, and `opinionated` is `aggressive` plus the entries tagged
-   `Profiles = @('opinionated')` personal-taste extras — reversed mouse scroll, Start web-search
-   off, lock-screen Spotlight off, a Surface-Laptop-only power button that does nothing instead of
-   sleeping, WSL, and the United States-International keyboard layout for English (US)).
+   `Profiles = @('opinionated')` personal-taste extras — reversed mouse scroll (via a helper task,
+   so mice paired later are covered too), Start web-search off, lock-screen Spotlight off, a
+   Surface-Laptop-only power button that does nothing instead of sleeping, WSL, and the United
+   States-International keyboard layout for English (US)).
    `Profile` also accepts a list to combine baselines (e.g. `gaming,opinionated`):
    the selected profiles are UNIONed, and when `gaming` is one of them the `Profiles = @('gaming')`
    entries stay preserved — so `gaming,opinionated` gives aggressive debloat + opinionated tweaks

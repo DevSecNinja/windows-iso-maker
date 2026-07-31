@@ -11,6 +11,7 @@ function Invoke-CatalogEntry {
             SetRegistry                        -> Set-RegistryTweaks
             EnableOptionalFeature / AddCapability -> Enable-WindowsFeature
             DisableOptionalFeature             -> Remove-Bloatware (disable + remove payload)
+            RegisterScheduledTask              -> Register-ScheduledTaskEntry
 
         Adding a new feature is a catalog edit (zero new code); adding a whole new category of
         change is one new Action value plus one handler branch here — never a new pipeline
@@ -91,8 +92,11 @@ function Invoke-CatalogEntry {
         { $_ -in @('EnableOptionalFeature', 'AddCapability') } {
             $results = @(Enable-WindowsFeature @handlerParams)
         }
+        'RegisterScheduledTask' {
+            $results = @(Register-ScheduledTaskEntry @handlerParams)
+        }
         default {
-            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability."
+            throw "Unknown catalog Action '$action' for entry '$($Entry.Id)'. Supported: RemoveAppx, RemoveCapability, DisableOptionalFeature, SetRegistry, EnableOptionalFeature, AddCapability, RegisterScheduledTask."
         }
     }
 

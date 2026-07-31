@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedUtc": "2026-07-13T17:11:16Z",
+  "generatedUtc": "2026-07-30T16:44:46Z",
   "moduleVersion": "1.0.0",
   "defaultProfile": "default",
   "profiles": [
@@ -22,7 +22,7 @@
     },
     {
       "name": "opinionated",
-      "description": "The aggressive set plus personal-taste extras (tagged Profiles=@('opinionated')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, and WSL."
+      "description": "The aggressive set plus personal-taste extras (tagged Profiles=@('opinionated')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, a Surface-Laptop-only power button that does nothing instead of sleeping, WSL, and OEM extras such as disabling the Waves MaxxAudio service."
     }
   ],
   "categories": [
@@ -33,15 +33,17 @@
     "Gaming",
     "Legacy components",
     "Personalization",
-    "Privacy & telemetry"
+    "Privacy & telemetry",
+    "System & recovery"
   ],
   "types": [
     "Appx",
     "Capability",
     "OptionalFeature",
-    "Registry"
+    "Registry",
+    "ScheduledTask"
   ],
-  "entryCount": 39,
+  "entryCount": 66,
   "entries": [
     {
       "id": "appx-clipchamp",
@@ -724,6 +726,51 @@
       ]
     },
     {
+      "id": "cap-powershell-ise",
+      "type": "Capability",
+      "action": "RemoveCapability",
+      "category": "Legacy components",
+      "target": "Microsoft.Windows.PowerShell.ISE",
+      "description": "Removes the Windows PowerShell ISE optional feature (Feature on Demand).",
+      "rationale": "The PowerShell ISE is a legacy editor that is no longer being developed (Microsoft recommends Visual Studio Code with the PowerShell extension, and it does not support PowerShell 7+). It ships as the Feature-on-Demand capability Microsoft.Windows.PowerShell.ISE and can be removed cleanly and reversibly. Kept opt-in (only removed by the aggressive/opinionated profiles) so environments that still use the ISE are unaffected.",
+      "citation": "https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/features-on-demand-non-language-fod",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Add-WindowsCapability -Online -Name Microsoft.Windows.PowerShell.ISE~~~~0.0.1.0 (source required).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "aggressive",
+        "opinionated"
+      ]
+    },
+    {
+      "id": "feature-remove-recall",
+      "type": "OptionalFeature",
+      "action": "DisableOptionalFeature",
+      "category": "Privacy & telemetry",
+      "target": "Recall",
+      "description": "Disables and removes the Windows Recall optional feature payload (the \"Recall\" component installed as a system component), going beyond the reg-disable-recall policy.",
+      "rationale": "reg-disable-recall sets the DisableAIDataAnalysis policy so Recall stops saving snapshots, but the Recall component itself remains installed. Microsoft documents removing the Recall bits entirely with `Disable-WindowsOptionalFeature -Online -FeatureName \"Recall\" -Remove` (offline equivalent: dism /Disable-Feature /FeatureName:Recall /Remove). This eliminates the component rather than only disabling it. Recall is an impactful first-party feature, so per the constitution this removal is opt-in and default OFF (delivered via the opinionated profile or an explicit EnableCatalogId).",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/manage-recall",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Enable-WindowsOptionalFeature -Online -FeatureName Recall (source required), or omit the feature-remove-recall catalog id.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.capabilities.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
       "id": "reg-disable-recall",
       "type": "Registry",
       "action": "SetRegistry",
@@ -756,8 +803,8 @@
       "category": "Personalization",
       "target": "SOFTWARE\\Policies\\Microsoft\\Dsh!AllowNewsAndInterests",
       "description": "Disables the Widgets board (weather/stock/news feed) via the AllowNewsAndInterests policy.",
-      "rationale": "The Widgets feed (weather, stocks, news) fetches internet content and adds taskbar surface area not wanted on managed builds. Microsoft documents AllowNewsAndInterests under Policies\\Microsoft\\Dsh as the control. Spec FR-007 mandates disabling weather/stock Widgets by default; reversible.",
-      "citation": "https://learn.microsoft.com/en-us/windows/client-management/manage-windows-widgets",
+      "rationale": "The Widgets feed (weather, stocks, news) fetches internet content and adds taskbar surface area not wanted on managed builds. The NewsAndInterests Policy CSP documents AllowNewsAndInterests with the exact registry mapping (SOFTWARE\\Policies\\Microsoft\\Dsh, 0 = not allowed) used here. Spec FR-007 mandates disabling weather/stock Widgets by default; reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-newsandinterests",
       "evidenceGrade": 1,
       "reversible": true,
       "reversal": "Set AllowNewsAndInterests to 1 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Dsh.",
@@ -782,8 +829,8 @@
       "category": "Bundled apps",
       "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent!DisableWindowsConsumerFeatures",
       "description": "Disables Windows consumer features (auto-installed suggested/promoted apps such as third-party games).",
-      "rationale": "The consumer content-delivery experience silently installs promoted third-party apps (e.g. Candy Crush) and suggestions. Disabling it prevents re-appearance of bloat after debloating and is the supported enterprise control.",
-      "citation": "https://learn.microsoft.com/en-us/windows/configuration/windows-spotlight",
+      "rationale": "The consumer content-delivery experience silently installs promoted third-party apps (e.g. Candy Crush) and suggestions. Disabling it prevents re-appearance of bloat after debloating and is the supported enterprise control. Microsoft documents the corresponding Experience/AllowWindowsConsumerFeatures policy (registry mapping SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent, DisableWindowsConsumerFeatures = 1).",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience",
       "evidenceGrade": 1,
       "reversible": true,
       "reversal": "Set DisableWindowsConsumerFeatures to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent.",
@@ -906,6 +953,32 @@
       ]
     },
     {
+      "id": "reg-disable-device-metadata-apps",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Bundled apps",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\Device Metadata!PreventDeviceMetadataFromNetwork",
+      "description": "Stops Windows from downloading device metadata and the vendor apps associated with it, which suppresses the \"get the companion app for your device\" toasts shown when a mouse, keyboard, headset or printer is connected.",
+      "rationale": "When a peripheral is attached, the Device Setup Manager fetches device metadata from Microsoft's device-metadata service and uses it to advertise and auto-download the vendor's companion app (for example the \"Power up your precision mouse with Microsoft Mouse and Keyboard Center\" toast for Surface/Microsoft mice, or vendor-app prompts for other peripherals). Microsoft documents the supported control as the DeviceInstallation/PreventDeviceMetadataFromNetwork policy (\"Prevent automatic download of applications associated with device metadata\", Computer Configuration > System > Device Installation), which maps to SOFTWARE\\Policies\\Microsoft\\Windows\\Device Metadata!PreventDeviceMetadataFromNetwork = 1 and overrides the per-machine Device Installation Settings dialog. Drivers still install normally through Windows Update; only the metadata-driven app download/advertising stops. Side effect: some devices show a generic icon/name in Devices and Printers instead of the vendor-supplied one. Fully reversible.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-deviceinstallation#preventdevicemetadatafromnetwork",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set PreventDeviceMetadataFromNetwork to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\Device Metadata, then re-enable \"Automatically download manufacturers' apps...\" in Device Installation Settings (Control Panel > System > Advanced system settings > Hardware).",
+      "defaultEnabled": true,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "minimal",
+        "default",
+        "aggressive",
+        "gaming",
+        "opinionated"
+      ]
+    },
+    {
       "id": "reg-disable-start-web-search",
       "type": "Registry",
       "action": "SetRegistry",
@@ -970,23 +1043,551 @@
       "profiles": []
     },
     {
-      "id": "reg-reverse-mouse-scroll",
+      "id": "reg-timezone-amsterdam",
       "type": "Registry",
       "action": "SetRegistry",
       "category": "Personalization",
-      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimReverseMouseScroll",
-      "description": "Reverses the mouse wheel scroll direction (macOS-style \"natural\" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.",
-      "rationale": "FlipFlopWheel is the Microsoft-documented per-device control that inverts wheel scroll direction (see Microsoft's \"How to reverse the mouse wheel scrolling direction\" whitepaper, wheel.docx). It lives under each mouse's SYSTEM\\...\\Enum\\HID\\<device>\\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (also a Microsoft-documented mechanism: https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. Kept opt-in (DefaultEnabled=$false) because reversed scrolling is a personal-taste preference, not a general improvement.",
-      "citation": "https://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx",
+      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimTimeZoneAmsterdam",
+      "description": "Sets the system time zone to (UTC+01:00) Amsterdam (\"W. Europe Standard Time\", DST-aware) via a first-boot RunOnce tzutil command.",
+      "rationale": "The time zone is a machine-wide setting whose registry representation (TimeZoneInformation: Bias/StandardBias/DaylightBias/TimeZoneKeyName/DynamicDaylightTimeDisabled) must be kept consistent; Microsoft's supported tool for changing it is tzutil.exe, which recomputes all of those values and the DST rules from the time-zone id. Because tzutil is a command (not a single value) and the offline image cannot run it, it is baked as a machine RunOnce (a Microsoft-documented mechanism) that runs at first logon. Standard users are granted SeTimeZonePrivilege by default, so it succeeds even when the first-logon context is not elevated. Kept opt-in (Profiles=opinionated) because a fixed time zone is a personal/deployment-specific preference.",
+      "citation": "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tzutil",
       "evidenceGrade": 1,
       "reversible": true,
-      "reversal": "Remove the !WimReverseMouseScroll value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot set FlipFlopWheel to 0 (or delete it) under each mouse's SYSTEM\\CurrentControlSet\\Enum\\HID\\<device>\\Device Parameters key.",
+      "reversal": "Remove the !WimTimeZoneAmsterdam value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot run tzutil /s with your preferred time-zone id (e.g. tzutil /s \"UTC\").",
       "defaultEnabled": false,
       "arch": [
         "amd64",
         "arm64"
       ],
       "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-region-format-nl",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimRegionFormatNL",
+      "description": "Sets the regional format to Dutch (Netherlands) — 24-hour HH:mm time and dd-MM-yyyy short date (e.g. 20:03 16-07-2026) — and the home location to the Netherlands, without changing the English UI language.",
+      "rationale": "The taskbar clock/date format is driven by the per-user \"region format\" (UserLocale) under HKCU\\Control Panel\\International, not the display language. Microsoft's supported cmdlets to set it are Set-Culture (region format) and Set-WinHomeLocation (Region > Country/region, GeoId 176 = Netherlands). nl-NL yields the 24-hour HH:mm time and dd-MM-yyyy short date the user wants. These are per-user, cannot be run against an offline image, and are applied via a first-boot RunOnce that runs in the logged-on user's context. The English (en-US) UI/system locale is intentionally left unchanged. Kept opt-in (Profiles=opinionated) as a personal/regional preference.",
+      "citation": "https://learn.microsoft.com/en-us/powershell/module/international/set-culture",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Remove the !WimRegionFormatNL value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot run Set-Culture -CultureInfo en-US (and Set-WinHomeLocation -GeoId 244 for the United States) to revert.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-keyboard-nl-en-intl",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimKeyboardNlEnIntl",
+      "description": "Sets exactly two input languages — English (en-US) and Dutch (nl-NL) — both bound to the United States-International keyboard layout (00020409), removing the stray plain-US (00000409) layout Windows often adds.",
+      "rationale": "The input-language list is a per-user setting managed through Microsoft's Set-WinUserLanguageList cmdlet; hand-editing its serialized HKCU\\Control Panel\\International\\User Profile blob is unreliable. Building the list with New-WinUserLanguageList and pinning each language's InputMethodTips to the US-International layout (LANGID:KLID = 0409:00020409 for English, 0413:00020409 for Dutch) guarantees both languages type on US-International and drops the default plain-US (0409:00000409) layout that is commonly added but unwanted. English is kept as the first entry so the display language remains English. Applied via a first-boot RunOnce in the user's context (cannot run against an offline image). Kept opt-in (Profiles=opinionated) as a personal keyboard preference.",
+      "citation": "https://learn.microsoft.com/en-us/powershell/module/international/set-winuserlanguagelist",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Remove the !WimKeyboardNlEnIntl value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot reset the list via Settings > Time & language > Language & region (or Set-WinUserLanguageList en-US -Force).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-dark-mode-apps",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize!AppsUseLightTheme",
+      "description": "Enables dark mode for apps (AppsUseLightTheme = 0) for new profiles and, via post-install, the current user.",
+      "rationale": "Windows stores the app/system theme per user under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize; AppsUseLightTheme = 0 selects the dark app theme (Microsoft documents these values in its theme-support guidance). Written to the DEFAULT hive so new profiles start in dark mode, and applied to the current user by the post-install path (Scope=Both). Community-documented for scripting (no single authoritative policy page), so EvidenceGrade 3 / opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-windows-themes",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set AppsUseLightTheme to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-dark-mode-system",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize!SystemUsesLightTheme",
+      "description": "Enables dark mode for the Windows shell/taskbar (SystemUsesLightTheme = 0) for new profiles and, via post-install, the current user.",
+      "rationale": "SystemUsesLightTheme = 0 selects the dark theme for the taskbar, Start and system surfaces (the companion to AppsUseLightTheme). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Community-documented for scripting, so EvidenceGrade 3 / opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-windows-themes",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set SystemUsesLightTheme to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-show-file-extensions",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!HideFileExt",
+      "description": "Shows known file-type extensions in File Explorer (HideFileExt = 0) for new profiles and, via post-install, the current user.",
+      "rationale": "HideFileExt lives per-user under Explorer\\Advanced; setting it to 0 makes File Explorer show extensions, which is a small security/clarity win (helps spot e.g. invoice.pdf.exe). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). The exact value is community-documented rather than in a single authoritative policy page, so it is opt-in.",
+      "citation": "Unverified",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set HideFileExt to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-number-format-decimal-us",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Control Panel\\International!sDecimal",
+      "description": "Sets the decimal symbol to a dot (sDecimal = \".\") so a comma can be used as the CSV list separator (US number formatting).",
+      "rationale": "sDecimal is the per-user NLS decimal-symbol override (LOCALE_SDECIMAL) under HKCU\\Control Panel\\International. Windows refuses to make the List separator equal the decimal symbol, so a comma CSV delimiter requires the decimal symbol to be a dot. Set to \".\" here (with sThousand=\",\" and sList=\",\") to give Excel comma-delimited CSVs without changing the display language. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both).",
+      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Set sDecimal back to \",\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-number-format-thousands-us",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Control Panel\\International!sThousand",
+      "description": "Sets the digit-grouping (thousands) symbol to a comma (sThousand = \",\") to complete US number formatting.",
+      "rationale": "sThousand is the per-user NLS thousands-separator override (LOCALE_STHOUSAND). With the decimal symbol changed to \".\", the thousands separator must move off \".\" (it may not equal the decimal); \",\" is the US convention. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both).",
+      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Set sThousand back to \".\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-number-format-list-us",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Control Panel\\International!sList",
+      "description": "Sets the list separator to a comma (sList = \",\") so Excel imports/exports CSV files with comma-delimited columns.",
+      "rationale": "sList is the per-user NLS list-separator override (LOCALE_SLIST); Excel uses it as the CSV column delimiter. Setting it to \",\" makes downloaded comma-separated CSVs open correctly (instead of the NL default \";\"). Requires sDecimal=\".\" (see reg-number-format-decimal-us) because Windows forbids sList == sDecimal. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both).",
+      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Set sList back to \";\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-clipboard-history-enable",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\System!AllowClipboardHistory",
+      "description": "Enables clipboard history (Win+V) via the AllowClipboardHistory policy.",
+      "rationale": "Clipboard history keeps the last clipboard items available via Win+V, a productivity feature. Microsoft documents AllowClipboardHistory under Policy CSP - System. Paired with reg-clipboard-no-cross-device it stays LOCAL only (no cloud roaming), which is the security-conscious configuration. Opt-in because storing clipboard history is a personal choice.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-system",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set AllowClipboardHistory to 0 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\System.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-clipboard-no-cross-device",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Privacy & telemetry",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Windows\\System!AllowCrossDeviceClipboard",
+      "description": "Disables cross-device (cloud) clipboard sync via the AllowCrossDeviceClipboard policy, keeping clipboard history local only.",
+      "rationale": "Cross-device clipboard roams clipboard contents to the Microsoft cloud/other devices, which is a privacy/security concern (copied secrets leave the machine). Microsoft documents AllowCrossDeviceClipboard under Policy CSP - System; setting it to 0 keeps clipboard history strictly local. Pairs with reg-clipboard-history-enable for \"local history, no cloud\". Opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-system",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set AllowCrossDeviceClipboard to 1 (or delete it) under SOFTWARE\\Policies\\Microsoft\\Windows\\System.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-show-hibernate-button",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings!ShowHibernateOption",
+      "description": "Adds Hibernate to the Start menu / Ctrl+Alt+Del power (Shut down or sign out) menu via ShowHibernateOption = 1.",
+      "rationale": "The Hibernate entry in the power flyout is controlled by ShowHibernateOption under Explorer\\FlyoutMenuSettings, which is the setting behind the \"Show hibernate in the power options menu\" administrative-template policy (Policy CSP - ADMX_WindowsExplorer). Enabling it surfaces the Hibernate button the user otherwise sets manually via Power Options. Requires hibernation to be enabled (reg-enable-hibernation). Opt-in.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-windowsexplorer",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set ShowHibernateOption to 0 (or delete it) under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-enable-hibernation",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SYSTEM\\ControlSet001\\Control\\Power!HibernateEnabled",
+      "description": "Enables hibernation (HibernateEnabled = 1), the machine-wide flag toggled by \"powercfg /hibernate on\".",
+      "rationale": "Hibernation is controlled machine-wide by HibernateEnabled under SYSTEM\\...\\Control\\Power; this is the value \"powercfg /hibernate on\" sets. Enabling it lets Windows create hiberfil.sys and offer Hibernate (surfaced in the menu by reg-show-hibernate-button). Reversible via powercfg /hibernate off. EvidenceGrade 2 (powercfg is the canonical documented tool; the registry value is its backing store).",
+      "citation": "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/powercfg-command-line-options",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Run \"powercfg /hibernate off\", or set HibernateEnabled to 0 under SYSTEM\\ControlSet001\\Control\\Power.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-power-button-no-action-ac",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280!ACSettingIndex",
+      "description": "On Surface Laptops only: makes pressing the power button do nothing while plugged in (power-button action = Take no action) instead of putting the machine to sleep.",
+      "rationale": "On Surface Laptops the power button sits on the outer edge of the top row, immediately next to Delete/Backspace, which is the reverse of most other laptops (for example Dell, where Delete is outboard of the power key). Muscle memory therefore sleeps the machine on a mis-press. Microsoft documents SelectPowerButtonActionPluggedIn (\"Select the Power button action (plugged in)\", Computer Configuration > System > Power Management > Button Settings) with the registry key Software\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280 and allowed values 0 = Take no action, 1 = Sleep (default), 2 = Hibernate, 3 = Shut down; the same GUID is documented as the PBUTTONACTION power setting in the OEM power-settings reference. Power.admx puts the plugged-in value in ACSettingIndex (the same page documents that value name for the sibling ACPromptForPasswordOnResume_2 policy under the identical key layout). Because the annoyance is specific to the Surface keyboard layout, the entry declares a Condition matching the documented Surface Laptop SMBIOS System SKU, so it is a no-op on other hardware. Holding the power button for several seconds still force-powers the machine off at firmware level, and Sleep/Shut down remain available from the Start menu, so nothing is lost. Kept opt-in (Profiles=opinionated) because it is a personal preference.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-power#selectpowerbuttonactionpluggedin",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set ACSettingIndex to 1 (Sleep, the Windows default) or delete the value/key under SOFTWARE\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280; with the policy removed the choice returns to Control Panel > Power Options > Choose what the power button does.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-power-button-no-action-dc",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SOFTWARE\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280!DCSettingIndex",
+      "description": "On Surface Laptops only: makes pressing the power button do nothing while on battery (power-button action = Take no action) instead of putting the machine to sleep.",
+      "rationale": "The on-battery counterpart of reg-power-button-no-action-ac: without it a Surface Laptop would still sleep on an accidental power-button press whenever it is unplugged, which is the common case for a laptop. Microsoft documents SelectPowerButtonActionOnBattery (\"Select the Power button action (on battery)\", Computer Configuration > System > Power Management > Button Settings) with the registry key Software\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280 and allowed values 0 = Take no action, 1 = Sleep (default), 2 = Hibernate, 3 = Shut down; Power.admx puts the on-battery value in DCSettingIndex (the same page documents that value name for the sibling DCPromptForPasswordOnResume_2 policy under the identical key layout). It carries the same documented Surface Laptop SMBIOS System SKU Condition as its plugged-in counterpart, so it is a no-op on other hardware. The lid-close action is deliberately left untouched, so closing the lid still sleeps the machine as usual. Kept opt-in (Profiles=opinionated) as a personal preference.",
+      "citation": "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-power#selectpowerbuttonactiononbattery",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set DCSettingIndex to 1 (Sleep, the Windows default) or delete the value/key under SOFTWARE\\Policies\\Microsoft\\Power\\PowerSettings\\7648EFA3-DD9C-4E3E-B566-50F929386280; with the policy removed the choice returns to Control Panel > Power Options > Choose what the power button does.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-time-dst-automatic",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SYSTEM\\ControlSet001\\Control\\TimeZoneInformation!DynamicDaylightTimeDisabled",
+      "description": "Ensures \"Adjust for daylight saving time automatically\" is ON (DynamicDaylightTimeDisabled = 0).",
+      "rationale": "The automatic DST adjustment is controlled machine-wide by DynamicDaylightTimeDisabled under SYSTEM\\...\\Control\\TimeZoneInformation; 0 = automatically adjust for DST (the Windows default). Set explicitly to guarantee it is on. The exact value name is community-documented rather than in a single authoritative policy page, so it is opt-in.",
+      "citation": "Unverified",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set DynamicDaylightTimeDisabled to 1 to stop auto-adjusting for DST, under SYSTEM\\ControlSet001\\Control\\TimeZoneInformation.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-time-sync-automatic",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SYSTEM\\ControlSet001\\Services\\W32Time!Start",
+      "description": "Sets the Windows Time service (W32Time) to start automatically so time is kept in sync (\"Set time automatically\").",
+      "rationale": "The \"Set time automatically\" toggle relies on the Windows Time service running and syncing via NTP. Setting the W32Time service Start type to 2 (Automatic) under SYSTEM\\...\\Services\\W32Time ensures the service runs and keeps the clock synced. Microsoft documents the Windows Time service and its settings. The precise mapping of the Settings toggle to Start=2 is inferred/community-documented, so it is opt-in and should be validated on first boot.",
+      "citation": "https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set the W32Time service Start value back to 3 (Manual/trigger-start, the default) under SYSTEM\\ControlSet001\\Services\\W32Time.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-timezone-automatic",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "System & recovery",
+      "target": "SYSTEM\\ControlSet001\\Services\\tzautoupdate!Start",
+      "description": "Enables \"Set time zone automatically\" by setting the tzautoupdate service Start to 3 (demand/enabled). Requires Location services to be on.",
+      "rationale": "The \"Set time zone automatically\" toggle is backed by the tzautoupdate service; Start = 3 enables it (Start = 4 disables it). It only actually updates the time zone when Location services are enabled, because it derives the zone from location. The value is community-documented (no single authoritative policy page) and depends on Location being on, so it is opt-in and should be validated on first boot.",
+      "citation": "Unverified",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set the tzautoupdate service Start value to 4 (disabled) under SYSTEM\\ControlSet001\\Services\\tzautoupdate.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-waves-audio-service",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Bundled apps",
+      "target": "SYSTEM\\ControlSet001\\Services\\WavesSysSvc!Start",
+      "description": "Disables the OEM-bundled \"Waves Audio Services\" service (WavesSysSvc) by setting its Start value to 4 (Disabled). Only applied when the service is actually present, so it normally takes effect through post-install.ps1 on the installed machine; the running instance keeps going until the next reboot.",
+      "rationale": "WavesSysSvc is the service behind Waves MaxxAudio, pre-installed by OEMs such as Dell alongside the Realtek audio driver. Owners repeatedly report the MaxxAudio service pegging a core (70-90% CPU) indefinitely, keeping fans spinning; disabling the service stops that at the cost of the MaxxAudio enhancements (and, on some models, the headphone/speaker auto-switch prompt) while Windows keeps working with the standard audio driver. Setting a service Start value to 4 under SYSTEM\\...\\Services\\<Name> is the documented way to disable a service (SERVICE_DISABLED). The cited source is an OEM support forum thread that establishes the high-CPU behaviour but not the fix, and the trade-off is user-visible, so this is EvidenceGrade 3 and strictly opt-in (part of the opinionated profile only). Because the service key does not exist in a clean Windows image, the Target sets OnlyIfKeyExists so the entry reports NotApplicable rather than fabricating an orphan Services key.",
+      "citation": "https://www.dell.com/community/en/conversations/windows-general/waves-maxxaudio-service-70-90-of-cpu-on-windows-11/647f9984f4ccf8a8dece3709",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Restore the previous Start value for WavesSysSvc under SYSTEM\\ControlSet001\\Services\\WavesSysSvc (typically 2 = Automatic; check your OEM build before changing it) — or set \"Waves Audio Services\" back to its original startup type in services.msc — and reboot. Reinstall the OEM Waves MaxxAudio package if it was removed.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-openssh-agent",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Development",
+      "target": "SYSTEM\\ControlSet001\\Services\\ssh-agent!Start",
+      "description": "Disables the built-in \"OpenSSH Authentication Agent\" service (ssh-agent) by setting its Start value to 4 (Disabled), so a third-party SSH agent such as 1Password can own the OpenSSH named pipe.",
+      "rationale": "The Windows OpenSSH Authentication Agent serves keys over the named pipe \\\\.\\pipe\\openssh-ssh-agent. Third-party agents (1Password, and equally KeePassXC or Bitwarden) reuse that same pipe, so when the built-in ssh-agent service is running it takes the pipe first and clients silently talk to the wrong agent — 1Password's own Windows setup guide therefore instructs you to stop the service and set its Startup type to Disabled. Setting the service Start value to 4 under SYSTEM\\...\\Services\\ssh-agent is the documented registry representation of \"Disabled\" (SERVICE_DISABLED) and is exactly what services.msc writes. Stock Windows 11 already ships ssh-agent as Disabled, so offline this is a guarantee rather than a change; it mainly matters through post-install.ps1 on machines where something (a dev tool, Git for Windows setup, or a previous manual \"sc config ssh-agent start=auto\") turned it on. Grade 2: the disable step is documented by 1Password (reputable third-party) rather than by Microsoft, and the Start=4 mapping is Microsoft-documented service configuration. Kept opt-in (Profiles=opinionated) because it breaks the native ssh-agent workflow for anyone not using a third-party agent.",
+      "citation": "https://www.1password.dev/ssh/get-started#check-if-the-openssh-authentication-agent-service-is-installed-and-running",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Set the ssh-agent service Start value back to 3 (Manual) — or 2 (Automatic) if you want it to start on boot — under SYSTEM\\ControlSet001\\Services\\ssh-agent, or set \"OpenSSH Authentication Agent\" back to Manual/Automatic in services.msc, then start the service.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-hide-taskbar-search",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Search!SearchboxTaskbarMode",
+      "description": "Hides the taskbar search box/icon (SearchboxTaskbarMode = 0 = Hide) for new profiles and, via post-install, the current user.",
+      "rationale": "The taskbar search presentation is the per-user SearchboxTaskbarMode value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Search; Microsoft documents the modes (0 = Hide, 1 = icon, 2 = icon+label, 3 = box) alongside the ConfigureSearchOnTaskbarMode policy. 0 removes the search UI from the taskbar. Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Kept opt-in as a personal-taste taskbar preference.",
+      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Set SearchboxTaskbarMode to 3 (search box, the default) or delete it under Software\\Microsoft\\Windows\\CurrentVersion\\Search in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-disable-task-view",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!ShowTaskViewButton",
+      "description": "Removes the Task View button from the taskbar (ShowTaskViewButton = 0) for new profiles and, via post-install, the current user.",
+      "rationale": "The Task View taskbar button is the per-user ShowTaskViewButton value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced, documented by Microsoft in the Windows 11 settings reference; 0 hides it (Win+Tab still works). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Opt-in personal-taste preference.",
+      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
+      "evidenceGrade": 1,
+      "reversible": true,
+      "reversal": "Set ShowTaskViewButton to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-show-hidden-items",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!Hidden",
+      "description": "Shows hidden files and folders in File Explorer (Hidden = 1) for new profiles and, via post-install, the current user.",
+      "rationale": "The \"show hidden files\" toggle is the per-user Hidden value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced (1 = show, 2 = do not show). Showing hidden items is a developer/power-user convenience. Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). The exact value is community-documented rather than in a single authoritative policy page, so it is opt-in.",
+      "citation": "Unverified",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set Hidden to 2 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "reg-spotlight-desktop-background",
+      "type": "Registry",
+      "action": "SetRegistry",
+      "category": "Personalization",
+      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers!BackgroundType",
+      "description": "Selects Windows Spotlight as the desktop background (BackgroundType = 3) for new profiles and, via post-install, the current user (best-effort).",
+      "rationale": "Microsoft documents the desktop background kind as the Personalization WallpaperKind enumeration where Spotlight = 3 (settings reference). That enum is exposed through the Personalization CSP; the per-user HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers\\BackgroundType value mirrors it, so BackgroundType = 3 selects the daily Windows Spotlight image. There is no single authoritative registry-only citation for activating desktop Spotlight (it is CSP-driven), so this is a best-effort, community-territory tweak (EvidenceGrade 3, opt-in) that may require an Explorer restart or sign-in to take effect. Written to the DEFAULT hive for new profiles and the current user (Scope=Both).",
+      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
+      "evidenceGrade": 3,
+      "reversible": true,
+      "reversal": "Set BackgroundType to 1 (Image) or your preferred kind, or delete it, under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers in HKCU and the default-user hive, then reselect a background in Settings > Personalization > Background.",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.registry.psd1",
+      "profiles": [
+        "opinionated"
+      ]
+    },
+    {
+      "id": "task-reverse-mouse-scroll",
+      "type": "ScheduledTask",
+      "action": "RegisterScheduledTask",
+      "category": "Personalization",
+      "target": "\\WindowsIsoMaker\\Reverse mouse scroll direction",
+      "description": "Installs a scheduled task that reverses the mouse wheel scroll direction (macOS-style \"natural\" scrolling) on every mouse, including mice paired after the image was built or after post-install ran.",
+      "rationale": "FlipFlopWheel is the Microsoft-documented control that inverts wheel scroll direction (see Microsoft's \"How to reverse the mouse wheel scrolling direction\" whitepaper, wheel.docx), but it is stored per device instance under SYSTEM\\...\\Enum\\HID\\<device>\\Device Parameters. There is no machine-wide equivalent — Windows' own Settings toggle writes the same per-device value — so any one-shot application (a first-boot RunOnce, a single post-install run) only reaches the devices enumerated at that moment and silently misses every mouse connected afterwards. A Task Scheduler task triggered by Kernel-PnP event 410 (\"Device ... was started\") re-applies the value whenever a mouse appears, and pnputil /restart-device makes it take effect without waiting for a reboot. It runs as SYSTEM because it writes machine state (HKLM) and must work with no user signed in. Kept opt-in (Profiles=opinionated) because reversed scrolling is a personal-taste preference, not a general improvement.",
+      "citation": "https://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx",
+      "evidenceGrade": 2,
+      "reversible": true,
+      "reversal": "Delete the scheduled task (\"schtasks /delete /tn \\WindowsIsoMaker\\Reverse mouse scroll direction /f\"), remove %ProgramData%\\WindowsIsoMaker\\Tasks\\Set-ReverseMouseScroll.ps1 and its .task.xml, then set FlipFlopWheel to 0 under each mouse's SYSTEM\\CurrentControlSet\\Enum\\HID\\<device>\\Device Parameters key (or use Settings > Bluetooth & devices > Mouse > Scrolling direction).",
+      "defaultEnabled": false,
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "sourceFile": "catalog.tasks.psd1",
       "profiles": [
         "opinionated"
       ]

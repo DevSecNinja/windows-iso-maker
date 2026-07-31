@@ -275,35 +275,6 @@
             Arch           = @('amd64', 'arm64')
         },
 
-        # --- Personalization: macOS-style "natural" (reversed) mouse scrolling -----------
-        # FlipFlopWheel lives per-device under SYSTEM\...\Enum\HID\<device>\Device Parameters,
-        # which do not exist in a generalized offline image (PnP populates them at first boot).
-        # So we bake a machine RunOnce command that, on first boot, sets FlipFlopWheel=1 on every
-        # enumerated HID mouse device. FlipFlopWheel is documented by Microsoft (wheel.docx),
-        # so EvidenceGrade 1; kept opt-in (DefaultEnabled=$false) as a personal-taste preference.
-        @{
-            Id             = 'reg-reverse-mouse-scroll'
-            Type           = 'Registry'
-            Action         = 'SetRegistry'
-            Category       = 'Personalization'
-            Profiles       = @('opinionated')
-            Target         = @{
-                Hive  = 'SOFTWARE'
-                Path  = 'Microsoft\Windows\CurrentVersion\RunOnce'
-                Name  = '!WimReverseMouseScroll'
-                Kind  = 'String'
-                Value = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Get-ChildItem -Path ''HKLM:\SYSTEM\CurrentControlSet\Enum\HID'' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq ''Device Parameters'' } | ForEach-Object { New-ItemProperty -Path $_.PSPath -Name ''FlipFlopWheel'' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue }"'
-            }
-            Description    = 'Reverses the mouse wheel scroll direction (macOS-style "natural" scrolling) by setting FlipFlopWheel=1 on every HID mouse via a first-boot RunOnce command.'
-            Rationale      = 'FlipFlopWheel is the Microsoft-documented per-device control that inverts wheel scroll direction (see Microsoft''s "How to reverse the mouse wheel scrolling direction" whitepaper, wheel.docx). It lives under each mouse''s SYSTEM\...\Enum\HID\<device>\Device Parameters key, which is only populated by PnP at first boot and therefore cannot be written into a generalized offline image. Baking a machine RunOnce (also a Microsoft-documented mechanism: https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) that sets FlipFlopWheel=1 on all enumerated HID mice at first logon is the reliable, reversible way to apply it. Kept opt-in (DefaultEnabled=$false) because reversed scrolling is a personal-taste preference, not a general improvement.'
-            Citation       = 'https://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx'
-            EvidenceGrade  = 1
-            Reversible     = $true
-            Reversal       = 'Remove the !WimReverseMouseScroll value under SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce before first boot, or after boot set FlipFlopWheel to 0 (or delete it) under each mouse''s SYSTEM\CurrentControlSet\Enum\HID\<device>\Device Parameters key.'
-            DefaultEnabled = $false
-            Arch           = @('amd64', 'arm64')
-        },
-
         # --- Personalization: Europe/Amsterdam time zone ---------------------------------
         # The time zone is a system-wide setting driven by tzutil (which recomputes the
         # TimeZoneInformation biases/DST rules) rather than a single registry value, so it is
@@ -844,6 +815,33 @@ $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
             Reversal       = 'Restore the previous Start value for WavesSysSvc under SYSTEM\ControlSet001\Services\WavesSysSvc (typically 2 = Automatic; check your OEM build before changing it) — or set "Waves Audio Services" back to its original startup type in services.msc — and reboot. Reinstall the OEM Waves MaxxAudio package if it was removed.'
             DefaultEnabled = $false
             Unverified     = $true
+            Arch           = @('amd64', 'arm64')
+        },
+
+        # Built-in OpenSSH agent disable, for setups where a third-party agent (1Password,
+        # KeePassXC, ...) owns the \\.\pipe\openssh-ssh-agent named pipe. OnlyIfKeyExists guards
+        # the (unlikely) case of an image with the OpenSSH Client capability removed.
+        @{
+            Id             = 'reg-disable-openssh-agent'
+            Type           = 'Registry'
+            Action         = 'SetRegistry'
+            Category       = 'Development'
+            Profiles       = @('opinionated')
+            Target         = @{
+                Hive            = 'SYSTEM'
+                Path            = 'ControlSet001\Services\ssh-agent'
+                Name            = 'Start'
+                Kind            = 'DWord'
+                Value           = 4
+                OnlyIfKeyExists = $true
+            }
+            Description    = 'Disables the built-in "OpenSSH Authentication Agent" service (ssh-agent) by setting its Start value to 4 (Disabled), so a third-party SSH agent such as 1Password can own the OpenSSH named pipe.'
+            Rationale      = 'The Windows OpenSSH Authentication Agent serves keys over the named pipe \\.\pipe\openssh-ssh-agent. Third-party agents (1Password, and equally KeePassXC or Bitwarden) reuse that same pipe, so when the built-in ssh-agent service is running it takes the pipe first and clients silently talk to the wrong agent — 1Password''s own Windows setup guide therefore instructs you to stop the service and set its Startup type to Disabled. Setting the service Start value to 4 under SYSTEM\...\Services\ssh-agent is the documented registry representation of "Disabled" (SERVICE_DISABLED) and is exactly what services.msc writes. Stock Windows 11 already ships ssh-agent as Disabled, so offline this is a guarantee rather than a change; it mainly matters through post-install.ps1 on machines where something (a dev tool, Git for Windows setup, or a previous manual "sc config ssh-agent start=auto") turned it on. Grade 2: the disable step is documented by 1Password (reputable third-party) rather than by Microsoft, and the Start=4 mapping is Microsoft-documented service configuration. Kept opt-in (Profiles=opinionated) because it breaks the native ssh-agent workflow for anyone not using a third-party agent.'
+            Citation       = 'https://www.1password.dev/ssh/get-started#check-if-the-openssh-authentication-agent-service-is-installed-and-running'
+            EvidenceGrade  = 2
+            Reversible     = $true
+            Reversal       = 'Set the ssh-agent service Start value back to 3 (Manual) — or 2 (Automatic) if you want it to start on boot — under SYSTEM\ControlSet001\Services\ssh-agent, or set "OpenSSH Authentication Agent" back to Manual/Automatic in services.msc, then start the service.'
+            DefaultEnabled = $false
             Arch           = @('amd64', 'arm64')
         },
 

@@ -50,6 +50,36 @@ Invoke-PostInstallSetup -Profile aggressive -WhatIf
 | `RemoveAppx`            | De-provisions in the image                   | **De-provisions** (new profiles) **and uninstalls** it for the **current user**        |
 | `RemoveCapability`      | `dism /Image:` remove                        | `dism /online` remove                                                                  |
 | `EnableOptionalFeature` / `AddCapability` | `dism /Image:` (staged)   | `dism /online` (a **reboot** may be required to finish, e.g. WSL — see [wsl.md](wsl.md)) |
+| `RegisterScheduledTask` | Stages the payload into the image and arms a first-boot `RunOnce` to register it | **Registers the task immediately** into the `\WindowsIsoMaker` folder **and runs it once**, so devices already attached are handled straight away |
+
+### Settings that need a helper task
+
+Some settings cannot be written once and left alone, because Windows stores them **per device**
+rather than machine-wide. Mouse scroll direction is the clearest example: `FlipFlopWheel` lives
+under each mouse's own `Enum\HID\<instance>\Device Parameters` key — the same value Windows'
+*Scrolling direction* toggle writes — so applying it once only covers the mice connected at that
+moment, and a mouse paired afterwards keeps scrolling the other way.
+
+Entries with `Action = RegisterScheduledTask` close that gap: they install a small payload plus a
+task that re-applies the setting when the relevant device shows up. Running `post-install.ps1`
+registers the task and runs it once immediately, so you do not have to wait for the next trigger.
+Everything the tool installs this way lives in the `\WindowsIsoMaker` Task Scheduler folder and
+under `%ProgramData%\WindowsIsoMaker\Tasks` (which is locked down to SYSTEM and Administrators,
+since a SYSTEM task executes what it finds there):
+
+```powershell
+schtasks /query /tn "\WindowsIsoMaker\" /fo list
+```
+
+> A task running as SYSTEM is only visible to an **elevated** session — querying it as a normal
+> user returns *Access is denied*, not "not found".
+
+These tasks are triggered by real Windows events (device arrival), never by polling — see
+[change-rationale.md](change-rationale.md#registerscheduledtask--settings-that-must-survive-new-devices)
+for why a change that would need a repeating trigger is deliberately left out of the catalog.
+
+See [change-rationale.md](change-rationale.md#registerscheduledtask--settings-that-must-survive-new-devices)
+for the full schema and how to remove one.
 
 ### Hardware-specific entries
 
