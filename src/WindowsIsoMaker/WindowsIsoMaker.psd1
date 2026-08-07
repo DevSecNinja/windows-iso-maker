@@ -24,6 +24,7 @@
         'Register-ScheduledTaskEntry',
         'New-AutounattendXml',
         'New-BootableIso',
+        'New-PostInstallUsb',
         'Compress-BuildArtifact',
         'Test-ImageIntegrity',
         'Export-ImageBom',

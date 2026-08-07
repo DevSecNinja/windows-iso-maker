@@ -47,6 +47,34 @@ evidence-graded and reversible** (grade-3/community changes are never on by defa
 be run **hands-off** (auto local or Entra account, generic/genuine product key, opt-in Hyper-V or
 VMware boot test) and **repeatably** (locally or in CI, amd64 and arm64), not clicked through once by hand.
 
+## Three ways to use this tool
+
+There is more than one way to end up with a clean, documented Windows 11. Pick the one that fits
+how much effort you want to spend up front — all three apply the **same** cited, evidence-graded
+[change catalog](docs/change-rationale.md).
+
+| # | Way | You do | Effort | Best when |
+|---|-----|--------|--------|-----------|
+| **1** | **Post-install on an existing PC**<br>[`post-install.ps1`](docs/post-install.md) | Install/reset Windows however you like, sign in, run one elevated command | Lowest | The machine already exists, or you just reset it. |
+| **2** | **Prepare a USB stick**<br>[`prepare-usb.ps1`](docs/usb.md) | Flash a **stock** ISO (e.g. from Visual Studio) to a stick, point this at the stick once | Low | New machines from your own media. Setup stays interactive; the catalog applies itself at first logon. |
+| **3** | **Build a custom ISO**<br>[`build.ps1`](docs/usage.md) | Service the image offline with DISM and repackage it | Highest | You want the very **first boot** already clean, an unattended install, and SBOM/provenance artifacts. |
+
+Ways 1 and 2 are the everyday paths and are the most widely applicable — they work with any Windows
+11 media and need no ADK. Way 3 is the fully reproducible, auditable pipeline (and the one CI
+exercises); it takes the most setup, so reach for it when the image itself is the deliverable.
+
+```powershell
+# 1 — apply the catalog to THIS machine (elevated)
+./post-install.ps1 -Profile opinionated -WhatIf   # preview
+./post-install.ps1 -Profile opinionated
+
+# 2 — prepare a USB stick you already flashed with a stock Windows 11 ISO
+./prepare-usb.ps1 -Path E: -Profile opinionated
+
+# 3 — build a custom ISO
+./build.ps1 -Edition Pro -IsoPath 'C:\isos\Win11_24H2_Business_x64.iso' -UseGenericProductKey
+```
+
 ## Quick start (local, on Windows)
 
 Requires Windows with administrator rights, PowerShell 5.1+/7+, and the Windows ADK
@@ -83,12 +111,28 @@ subscription) instead of a custom ISO? Run the same catalog directly on the mach
 ./post-install.ps1 -Profile opinionated
 ```
 
+### Installing from your own ISO? Put the toolkit on the USB stick
+
+Flash your stock Windows 11 ISO to a USB stick as usual, then prepare that stick once. Windows Setup
+stays completely interactive (edition, partitioning, OOBE, Entra ID sign-in — **nothing is wiped**);
+the catalog is then applied at the first logon. See [docs/usb.md](docs/usb.md), which also covers the
+case where that automatic run can't fire (the first account must be a local administrator).
+
+```powershell
+# Validate the stick and show what would be staged — writes nothing
+./prepare-usb.ps1 -Path E: -Profile opinionated -WhatIf
+
+# Prepare it
+./prepare-usb.ps1 -Path E: -Profile opinionated
+```
+
 ## Documentation
 
 | Topic | Doc |
 |-------|-----|
 | Local usage & configuration | [docs/usage.md](docs/usage.md) |
 | Post-install (existing machine) | [docs/post-install.md](docs/post-install.md) |
+| USB stick (stock ISO + post-install) | [docs/usb.md](docs/usb.md) |
 | Change catalog & rationale | [docs/change-rationale.md](docs/change-rationale.md) |
 | Evidence grading | [docs/evidence-grading.md](docs/evidence-grading.md) |
 | CI / GitHub Actions | [docs/ci.md](docs/ci.md) |
@@ -102,9 +146,10 @@ subscription) instead of a custom ISO? Run the same catalog directly on the mach
 ```
 build.ps1                     # Thin local entry point -> Invoke-IsoBuild
 post-install.ps1              # Thin local entry point -> Invoke-PostInstallSetup (apply to a running PC)
+prepare-usb.ps1               # Thin local entry point -> New-PostInstallUsb (stage the toolkit on a USB stick)
 config/                       # build.config.psd1 + catalog.*.psd1 (the change catalog)
 src/WindowsIsoMaker/          # The PowerShell module (Public/ + Private/)
-templates/autounattend/       # Autounattend.xml template
+templates/autounattend/       # Autounattend.xml templates (full build + minimal first-logon)
 tests/                        # Pester v5 tests (incl. the catalog documentation gate)
 .github/workflows/            # ci.yml (lint+test+SBOM) and build-image.yml (manual matrix)
 specs/                        # Spec-Driven Development artifacts (spec, plan, tasks, ...)
