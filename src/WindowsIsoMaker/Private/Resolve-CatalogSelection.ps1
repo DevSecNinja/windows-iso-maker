@@ -25,10 +25,10 @@ function Resolve-CatalogSelection {
                            never additive features such as WSL, which stay strictly opt-in).
             * gaming     — the default set MINUS entries tagged Profiles=@('gaming') (Xbox Game Bar /
                            Xbox provisioned apps), so gaming functionality is preserved.
-            * opinionated— the aggressive set PLUS personal-taste extras tagged Profiles=@('opinionated')
-                           (reversed mouse scroll, Start web-search off, lock-screen Spotlight off,
-                           WSL + Virtual Machine Platform). These grade-3/additive opt-ins are in no
-                           other profile, so this is the maintainer's "kitchen sink" preference set.
+            * opinionated— the aggressive set PLUS machine-wide/admin extras tagged
+                           Profiles=@('opinionated') (reversed mouse scroll, Start web-search off,
+                           clipboard policies, Recall removal, WSL + Virtual Machine Platform,
+                           services/time/hibernation settings, and Surface power policies).
 
         Any id referenced by Toggles/EnableCatalogId/DisableCatalogId that does not exist in the
         catalog raises a terminating error. A selected entry whose `RunAfter` prerequisite was NOT
@@ -222,9 +222,9 @@ function Test-CatalogEntryInProfile {
             return $isDefault
         }
         'opinionated' {
-            # The 'aggressive' baseline PLUS personal-taste extras tagged Profiles=@('opinionated')
-            # (reversed mouse scroll, Start web-search off, lock-screen Spotlight off, WSL +
-            # Virtual Machine Platform). Those grade-3/additive opt-ins appear in no other profile.
+            # The 'aggressive' baseline PLUS machine-wide/admin extras tagged
+            # Profiles=@('opinionated'), such as reversed mouse scroll, Start web-search off,
+            # clipboard policies, Recall removal, WSL, and system/service settings.
             if ((Get-CatalogEntryProfileTag -Entry $Entry) -contains 'opinionated') { return $true }
             # Fall through to the aggressive baseline.
             if ($isDefault) { return $true }

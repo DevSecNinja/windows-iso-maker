@@ -201,7 +201,7 @@ Describe 'Get-BuildConfiguration' {
         }
     }
 
-    Context 'Profile combinations and opinionated keyboard layout' {
+    Context 'Profile combinations and keyboard layout' {
         It 'accepts a list of profiles and stores them joined' {
             $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'gaming', 'opinionated'
             $cfg.Profile | Should -Be 'gaming, opinionated'
@@ -214,9 +214,9 @@ Describe 'Get-BuildConfiguration' {
             $ids | Should -Contain 'task-reverse-mouse-scroll'
         }
 
-        It 'defaults to United States-International keyboard under opinionated' {
+        It 'keeps the plain US keyboard under opinionated' {
             $cfg = Get-BuildConfiguration -Path $script:DefaultConfig -Profile 'opinionated'
-            $cfg.Autounattend.KeyboardLayout | Should -Be '0409:00020409'
+            $cfg.Autounattend.KeyboardLayout | Should -Be '0409:00000409'
         }
 
         It 'keeps the plain US keyboard for non-opinionated profiles' {
@@ -224,7 +224,7 @@ Describe 'Get-BuildConfiguration' {
             $cfg.Autounattend.KeyboardLayout | Should -Be '0409:00000409'
         }
 
-        It 'still honours an explicit KeyboardLayout in the config under opinionated' {
+        It 'honours an explicit KeyboardLayout in the config under opinionated' {
             $customConfig = Join-Path $script:TempRoot 'kbd.psd1'
             @"
 @{

@@ -42,7 +42,7 @@ function Export-CatalogManifest {
         [ordered]@{ Name = 'default';     Description = 'Balanced baseline: every catalog entry marked DefaultEnabled (the recommended starting point).' }
         [ordered]@{ Name = 'aggressive';  Description = 'Most debloat: the default set plus opt-in grade 1-2 app/capability removals (never community-graded).' }
         [ordered]@{ Name = 'gaming';      Description = 'The default set, but Xbox / Game Bar entries (tagged Profiles=@(''gaming'')) are preserved.' }
-        [ordered]@{ Name = 'opinionated'; Description = 'The aggressive set plus personal-taste extras (tagged Profiles=@(''opinionated'')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, a Surface-Laptop-only power button that does nothing instead of sleeping, WSL, and OEM extras such as disabling the Waves MaxxAudio service.' }
+        [ordered]@{ Name = 'opinionated'; Description = 'The aggressive set plus machine-wide/admin extras (tagged Profiles=@(''opinionated'')): reversed mouse scroll, Start web-search and cloud clipboard policies, Recall removal, WSL, services/time/hibernation settings, and Surface power policies.' }
     )
     $profileNames = @($profiles | ForEach-Object { $_.Name })
 
