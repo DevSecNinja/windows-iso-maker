@@ -29,7 +29,7 @@ explains the model and highlights the notable defaults.
     Reversal       = 'How to undo it.'
     DefaultEnabled = $true                         # grade-3 entries must be $false
     Profiles       = @('opinionated')              # optional: profile-membership tags (gaming | opinionated)
-    RunAfter       = @('reg-region-format-nl')     # optional: ids this entry must be applied after
+    RunAfter       = @('catalog-prerequisite')     # optional: ids this entry must be applied after
     Condition      = @{ Script='...'; Description='...' }  # optional: hardware/machine applicability guard
     Arch           = @('amd64','arm64')
 }
@@ -161,7 +161,7 @@ Most changes are independent, so the catalog is applied in authoring order. Wher
 to sit in the file:
 
 ```powershell
-RunAfter = @('reg-region-format-nl')
+RunAfter = @('catalog-prerequisite')
 ```
 
 [`Import-ChangeCatalog`](../src/WindowsIsoMaker/Private/Import-ChangeCatalog.ps1) validates every
@@ -187,15 +187,6 @@ cross-hive constraint.
   no longer does what its rationale promises.
 
 Self-references and dependency cycles are rejected at load time.
-
-The motivating case is **first-logon `RunOnce` commands**. `reg-region-format-nl` runs
-`Set-Culture`, which rewrites the whole `HKCU\Control Panel\International` key from the locale
-defaults, so `reg-number-format-us-first-logon` has to restore the US number separators (which keep
-Excel on a comma CSV delimiter) *after* it. Windows does not contractually document the order in
-which `RunOnce` values execute, so that entry is ordered belt-and-braces: `RunAfter` guarantees its
-value is **written** last (which wins if execution follows enumeration/write order), and its value
-name `!WimZzNumberFormatUS` sorts after `!WimRegionFormatNL` (which wins if execution follows
-lexical order). Prefer that pattern for any new ordering-sensitive `RunOnce` pair.
 
 ### `Condition` — hardware-specific entries
 
@@ -249,10 +240,10 @@ from three inputs, in order of increasing precedence:
 1. `Profile` — the baseline set (`minimal` / `default` / `aggressive` / `gaming` / `opinionated`,
    where `gaming` is `default` minus the entries tagged `Profiles = @('gaming')` so Xbox / Game Bar
    are preserved, and `opinionated` is `aggressive` plus the entries tagged
-   `Profiles = @('opinionated')` personal-taste extras — reversed mouse scroll (via a helper task,
-   so mice paired later are covered too), Start web-search off, lock-screen Spotlight off, a
-   Surface-Laptop-only power button that does nothing instead of sleeping, WSL, and the United
-   States-International keyboard layout for English (US)).
+   `Profiles = @('opinionated')` machine-wide/admin extras — reversed mouse scroll (via a SYSTEM
+   helper task, so mice paired later are covered too), Start web-search and clipboard policies,
+   Recall removal, WSL/Virtual Machine Platform, services/time/hibernation settings, and Surface
+   power policies).
    `Profile` also accepts a list to combine baselines (e.g. `gaming,opinionated`):
    the selected profiles are UNIONed, and when `gaming` is one of them the `Profiles = @('gaming')`
    entries stay preserved — so `gaming,opinionated` gives aggressive debloat + opinionated tweaks
@@ -261,6 +252,11 @@ from three inputs, in order of increasing precedence:
 3. `EnableCatalogId` / `DisableCatalogId` — explicit ids always win.
 
 Entries not applicable to the target `Architecture` are skipped automatically.
+
+Current-user, non-admin Windows personalization is intentionally outside this catalog. It moved to
+the [DevSecNinja/dotfiles](https://github.com/DevSecNinja/dotfiles) chezmoi configuration in
+[dotfiles PR #711](https://github.com/DevSecNinja/dotfiles/pull/711); windows-iso-maker retains
+machine-wide, offline-servicing, policy, elevation-requiring, and SYSTEM-task changes.
 
 ## Notable defaults
 

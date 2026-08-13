@@ -23,7 +23,7 @@ parameters and `WIM_*` environment variables exist only as optional last-mile ov
 | Field | Meaning |
 |-------|---------|
 | `Edition` / `Language` / `Release` / `Architecture` | Base image selection. `Architecture` is `amd64` or `arm64`. **Only the Home SKUs** (Home, Home N, Home Single Language) come from the Fido consumer ISO — cached once per architecture/release. **Every other edition** (Pro, Education, Enterprise, LTSC, IoT, ...) only installs and activates from the **business/volume ISO** (retail generic keys and volume/GVLK keys are not interchangeable), which Fido can't download; supply `IsoPath` with the matching business-editions ISO (e.g. from a Visual Studio / volume-licensing subscription). |
-| `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + personal-taste extras: reversed scroll, Start web-search off, Spotlight off, WSL, and the United States-International keyboard layout for English (US)). Accepts a list to combine profiles, e.g. `@('gaming','opinionated')` — the baselines are UNIONed and `gaming` keeps the gaming stack. |
+| `Profile` | Baseline change set: `minimal` (fewest changes), `default` (balanced), `aggressive` (most debloat), `gaming` (keeps Xbox/Game Bar), or `opinionated` (aggressive + machine-wide/admin extras: reversed scroll, Start web-search and clipboard policies, Recall removal, WSL, services/time/hibernation settings, and Surface power policies). Accepts a list to combine profiles, e.g. `@('gaming','opinionated')` — the baselines are UNIONed and `gaming` keeps the gaming stack. |
 | `Toggles` | Per-id override map, e.g. `@{ 'appx-todos' = $false; 'feature-wsl' = $true }`. |
 | `EnableCatalogId` / `DisableCatalogId` | Force-enable / force-disable specific entries by `Id` (explicit ids win). |
 | `Autounattend` | Install/OOBE-time options (see [autounattend.md](autounattend.md)). |
@@ -98,8 +98,8 @@ $env:WIM_CONFIG_PATH = 'config/build.arm64.psd1'; ./build.ps1
 # Gaming profile: full debloat but preserve Xbox Game Bar and the Xbox provisioned apps
 ./build.ps1 -Profile gaming
 
-# Game PC: aggressive debloat + opinionated tweaks (reversed scroll, US-International keyboard,
-# WSL, ...) while keeping the whole Xbox / Game Bar gaming stack
+# Game PC: aggressive debloat + machine-wide opinionated settings (reversed scroll, WSL, ...)
+# while keeping the whole Xbox / Game Bar gaming stack
 ./build.ps1 -Profile gaming,opinionated
 
 # Opt in to Edge + OneDrive removal and enable WSL
