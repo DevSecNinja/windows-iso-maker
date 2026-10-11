@@ -3,8 +3,8 @@
 .SYNOPSIS
     Tests for Resolve-CatalogSelection / Test-CatalogEntryInProfile, focused on the profile
     baselines (minimal | default | aggressive | gaming | opinionated). The 'gaming' profile keeps
-    gaming components (tagged Profiles=@('gaming')); 'opinionated' adds the maintainer's personal-taste
-    extras (tagged Profiles=@('opinionated'), e.g. reversed mouse scroll + WSL) on top of the aggressive
+    gaming components (tagged Profiles=@('gaming')); 'opinionated' adds machine-wide/admin extras
+    (tagged Profiles=@('opinionated'), e.g. reversed mouse scroll + WSL) on top of the aggressive
     baseline.
 #>
 
@@ -75,9 +75,53 @@ Describe 'Opinionated profile baseline' {
             $opinionatedIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile opinionated | ForEach-Object { $_.Id })
             $aggressiveIds = @(Resolve-CatalogSelection -Catalog $catalog -Architecture amd64 -Profile aggressive | ForEach-Object { $_.Id })
 
-            foreach ($id in @('task-reverse-mouse-scroll', 'reg-disable-start-web-search', 'reg-disable-lockscreen-spotlight', 'feature-wsl', 'feature-vmplatform')) {
-                $opinionatedIds | Should -Contain $id -Because 'the opinionated profile enables the personal-taste extras'
+            $retainedIds = @(
+                'reg-disable-start-web-search',
+                'reg-clipboard-history-enable',
+                'reg-clipboard-no-cross-device',
+                'reg-show-hibernate-button',
+                'reg-enable-hibernation',
+                'reg-power-button-no-action-ac',
+                'reg-power-button-no-action-dc',
+                'reg-time-dst-automatic',
+                'reg-time-sync-automatic',
+                'reg-timezone-automatic',
+                'reg-timezone-amsterdam',
+                'reg-disable-waves-audio-service',
+                'reg-disable-openssh-agent',
+                'feature-remove-recall',
+                'feature-wsl',
+                'feature-vmplatform',
+                'task-reverse-mouse-scroll'
+            )
+            foreach ($id in $retainedIds) {
+                $opinionatedIds | Should -Contain $id -Because 'the opinionated profile retains machine-wide/admin extras'
                 $aggressiveIds | Should -Not -Contain $id -Because 'those extras are only in the opinionated profile'
+            }
+        }
+    }
+
+    It 'does not include current-user personalization migrated to dotfiles' {
+        InModuleScope WindowsIsoMaker {
+            $catalogIds = @(Import-ChangeCatalog | ForEach-Object { $_.Id })
+            $migratedIds = @(
+                'reg-dark-mode-apps',
+                'reg-dark-mode-system',
+                'reg-disable-lockscreen-spotlight',
+                'reg-disable-task-view',
+                'reg-hide-taskbar-search',
+                'reg-show-file-extensions',
+                'reg-show-hidden-items',
+                'reg-spotlight-desktop-background',
+                'reg-region-format-nl',
+                'reg-keyboard-nl-en-intl',
+                'reg-number-format-decimal-us',
+                'reg-number-format-thousands-us',
+                'reg-number-format-list-us',
+                'reg-number-format-us-first-logon'
+            )
+            foreach ($id in $migratedIds) {
+                $catalogIds | Should -Not -Contain $id
             }
         }
     }
@@ -112,7 +156,7 @@ Describe 'Combining profiles (union with gaming veto)' {
 
             # Opinionated extras are included.
             foreach ($id in @('task-reverse-mouse-scroll', 'feature-wsl', 'feature-vmplatform', 'reg-disable-start-web-search')) {
-                $comboIds | Should -Contain $id -Because 'opinionated in the combination adds its personal-taste extras'
+                $comboIds | Should -Contain $id -Because 'opinionated in the combination adds its machine-wide/admin extras'
             }
 
             # Aggressive/default non-gaming debloat still applies.

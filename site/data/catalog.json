@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedUtc": "2026-07-31T08:09:54Z",
+  "generatedUtc": "2026-08-13T08:54:04Z",
   "moduleVersion": "1.0.0",
   "defaultProfile": "default",
   "profiles": [
@@ -22,7 +22,7 @@
     },
     {
       "name": "opinionated",
-      "description": "The aggressive set plus personal-taste extras (tagged Profiles=@('opinionated')): reversed mouse scroll, Start web-search off, lock-screen Spotlight off, a Surface-Laptop-only power button that does nothing instead of sleeping, WSL, and OEM extras such as disabling the Waves MaxxAudio service."
+      "description": "The aggressive set plus machine-wide/admin extras (tagged Profiles=@('opinionated')): reversed mouse scroll, Start web-search and cloud clipboard policies, Recall removal, WSL, services/time/hibernation settings, and Surface power policies."
     }
   ],
   "categories": [
@@ -43,7 +43,7 @@
     "Registry",
     "ScheduledTask"
   ],
-  "entryCount": 67,
+  "entryCount": 53,
   "entries": [
     {
       "id": "appx-clipchamp",
@@ -1001,28 +1001,6 @@
       ]
     },
     {
-      "id": "reg-disable-lockscreen-spotlight",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager!RotatingLockScreenOverlayEnabled",
-      "description": "Disables Windows Spotlight lock-screen \"fun facts/ads\" overlays for new user profiles.",
-      "rationale": "Spotlight lock-screen overlays surface suggestions/ads. Applied to the DEFAULT hive so new profiles inherit it. The specific per-user ContentDeliveryManager value is community-documented (EvidenceGrade 3), so it is opt-in only.",
-      "citation": "https://learn.microsoft.com/en-us/answers/questions/1326668/how-to-disable-windows-spotlight-via-registry",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set RotatingLockScreenOverlayEnabled to 1 (or delete it) under DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
       "id": "remove-onedrive",
       "type": "Registry",
       "action": "SetRegistry",
@@ -1054,204 +1032,6 @@
       "evidenceGrade": 1,
       "reversible": true,
       "reversal": "Remove the !WimTimeZoneAmsterdam value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot run tzutil /s with your preferred time-zone id (e.g. tzutil /s \"UTC\").",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-region-format-nl",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimRegionFormatNL",
-      "description": "Sets the regional format to Dutch (Netherlands) — 24-hour HH:mm time and dd-MM-yyyy short date (e.g. 20:03 16-07-2026) — and the home location to the Netherlands, without changing the English UI language.",
-      "rationale": "The taskbar clock/date format is driven by the per-user \"region format\" (UserLocale) under HKCU\\Control Panel\\International, not the display language. Microsoft's supported cmdlets to set it are Set-Culture (region format) and Set-WinHomeLocation (Region > Country/region, GeoId 176 = Netherlands). nl-NL yields the 24-hour HH:mm time and dd-MM-yyyy short date the user wants. These are per-user, cannot be run against an offline image, and are applied via a first-boot RunOnce that runs in the logged-on user's context. The English (en-US) UI/system locale is intentionally left unchanged. Kept opt-in (Profiles=opinionated) as a personal/regional preference. NOTE: Set-Culture rewrites the whole HKCU\\Control Panel\\International key from the locale defaults, so it also resets sDecimal/sThousand/sList — reg-number-format-us-first-logon declares RunAfter on this entry and restores them.",
-      "citation": "https://learn.microsoft.com/en-us/powershell/module/international/set-culture",
-      "evidenceGrade": 1,
-      "reversible": true,
-      "reversal": "Remove the !WimRegionFormatNL value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot run Set-Culture -CultureInfo en-US (and Set-WinHomeLocation -GeoId 244 for the United States) to revert.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-keyboard-nl-en-intl",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimKeyboardNlEnIntl",
-      "description": "Sets exactly two input languages — English (en-US) and Dutch (nl-NL) — both bound to the United States-International keyboard layout (00020409), removing the stray plain-US (00000409) layout Windows often adds.",
-      "rationale": "The input-language list is a per-user setting managed through Microsoft's Set-WinUserLanguageList cmdlet; hand-editing its serialized HKCU\\Control Panel\\International\\User Profile blob is unreliable. Building the list with New-WinUserLanguageList and pinning each language's InputMethodTips to the US-International layout (LANGID:KLID = 0409:00020409 for English, 0413:00020409 for Dutch) guarantees both languages type on US-International and drops the default plain-US (0409:00000409) layout that is commonly added but unwanted. English is kept as the first entry so the display language remains English. Applied via a first-boot RunOnce in the user's context (cannot run against an offline image). Kept opt-in (Profiles=opinionated) as a personal keyboard preference.",
-      "citation": "https://learn.microsoft.com/en-us/powershell/module/international/set-winuserlanguagelist",
-      "evidenceGrade": 1,
-      "reversible": true,
-      "reversal": "Remove the !WimKeyboardNlEnIntl value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot reset the list via Settings > Time & language > Language & region (or Set-WinUserLanguageList en-US -Force).",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-dark-mode-apps",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize!AppsUseLightTheme",
-      "description": "Enables dark mode for apps (AppsUseLightTheme = 0) for new profiles and, via post-install, the current user.",
-      "rationale": "Windows stores the app/system theme per user under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize; AppsUseLightTheme = 0 selects the dark app theme (Microsoft documents these values in its theme-support guidance). Written to the DEFAULT hive so new profiles start in dark mode, and applied to the current user by the post-install path (Scope=Both). Community-documented for scripting (no single authoritative policy page), so EvidenceGrade 3 / opt-in.",
-      "citation": "https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-windows-themes",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set AppsUseLightTheme to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-dark-mode-system",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize!SystemUsesLightTheme",
-      "description": "Enables dark mode for the Windows shell/taskbar (SystemUsesLightTheme = 0) for new profiles and, via post-install, the current user.",
-      "rationale": "SystemUsesLightTheme = 0 selects the dark theme for the taskbar, Start and system surfaces (the companion to AppsUseLightTheme). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Community-documented for scripting, so EvidenceGrade 3 / opt-in.",
-      "citation": "https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-windows-themes",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set SystemUsesLightTheme to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-show-file-extensions",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!HideFileExt",
-      "description": "Shows known file-type extensions in File Explorer (HideFileExt = 0) for new profiles and, via post-install, the current user.",
-      "rationale": "HideFileExt lives per-user under Explorer\\Advanced; setting it to 0 makes File Explorer show extensions, which is a small security/clarity win (helps spot e.g. invoice.pdf.exe). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). The exact value is community-documented rather than in a single authoritative policy page, so it is opt-in.",
-      "citation": "Unverified",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set HideFileExt to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-number-format-decimal-us",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Control Panel\\International!sDecimal",
-      "description": "Sets the decimal symbol to a dot (sDecimal = \".\") so a comma can be used as the CSV list separator (US number formatting).",
-      "rationale": "sDecimal is the per-user NLS decimal-symbol override (LOCALE_SDECIMAL) under HKCU\\Control Panel\\International. Windows refuses to make the List separator equal the decimal symbol, so a comma CSV delimiter requires the decimal symbol to be a dot. Set to \".\" here (with sThousand=\",\" and sList=\",\") to give Excel comma-delimited CSVs without changing the display language. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both).",
-      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
-      "evidenceGrade": 2,
-      "reversible": true,
-      "reversal": "Set sDecimal back to \",\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-number-format-thousands-us",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Control Panel\\International!sThousand",
-      "description": "Sets the digit-grouping (thousands) symbol to a comma (sThousand = \",\") to complete US number formatting.",
-      "rationale": "sThousand is the per-user NLS thousands-separator override (LOCALE_STHOUSAND). With the decimal symbol changed to \".\", the thousands separator must move off \".\" (it may not equal the decimal); \",\" is the US convention. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both).",
-      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
-      "evidenceGrade": 2,
-      "reversible": true,
-      "reversal": "Set sThousand back to \".\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-number-format-list-us",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Control Panel\\International!sList",
-      "description": "Sets the list separator to a comma (sList = \",\") so Excel imports/exports CSV files with comma-delimited columns.",
-      "rationale": "sList is the per-user NLS list-separator override (LOCALE_SLIST); Excel uses it as the CSV column delimiter. Setting it to \",\" makes downloaded comma-separated CSVs open correctly (instead of the NL default \";\"). Requires sDecimal=\".\" (see reg-number-format-decimal-us) because Windows forbids sList == sDecimal. Applied to new profiles (DEFAULT hive) and the current user (Scope=Both). On the FIRST profile these values are destroyed again by reg-region-format-nl's Set-Culture, so reg-number-format-us-first-logon re-applies them after it.",
-      "citation": "https://learn.microsoft.com/en-us/windows/win32/intl/locale-custom-constants",
-      "evidenceGrade": 2,
-      "reversible": true,
-      "reversal": "Set sList back to \";\" (the NL default) under Control Panel\\International in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-number-format-us-first-logon",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce!!WimZzNumberFormatUS",
-      "description": "Re-applies the US number format (sDecimal \".\", sThousand \",\", sList \",\") to the first logged-on user after the regional-format RunOnce, so Excel keeps a comma CSV delimiter.",
-      "rationale": "reg-number-format-{decimal,thousands,list}-us write these values to the DEFAULT hive, which new profiles inherit — but reg-region-format-nl runs Set-Culture at first logon, and Set-Culture rewrites the ENTIRE HKCU\\Control Panel\\International key from the nl-NL locale defaults (sDecimal \",\", sThousand \".\", sList \";\"). The inherited overrides are therefore destroyed on the first profile and Excel opens comma-separated CSVs as a single column. Because Set-Culture is a cmdlet that cannot run offline, the correction must also happen at first logon and strictly AFTER it. Windows does not contractually document the order in which RunOnce values execute, so this entry is ordered belt-and-braces: it declares RunAfter = reg-region-format-nl (so the catalog loader always WRITES it after, which wins if values are executed in enumeration/write order) AND its value name sorts after !WimRegionFormatNL (which wins if they are executed in lexical order). Harmless (idempotent) when the regional-format entry is disabled: it just re-asserts the same values the DEFAULT hive already carries. Grade 2 because the RunOnce mechanism and the NLS value names are Microsoft-documented but the execution-order behaviour is observed, not a documented contract.",
-      "citation": "https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys",
-      "evidenceGrade": 2,
-      "reversible": true,
-      "reversal": "Remove the !WimZzNumberFormatUS value under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce before first boot, or after boot set sDecimal=\",\", sThousand=\".\" and sList=\";\" under HKCU\\Control Panel\\International to restore the NL defaults.",
       "defaultEnabled": false,
       "arch": [
         "amd64",
@@ -1494,94 +1274,6 @@
       "evidenceGrade": 2,
       "reversible": true,
       "reversal": "Set the ssh-agent service Start value back to 3 (Manual) — or 2 (Automatic) if you want it to start on boot — under SYSTEM\\ControlSet001\\Services\\ssh-agent, or set \"OpenSSH Authentication Agent\" back to Manual/Automatic in services.msc, then start the service.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-hide-taskbar-search",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Search!SearchboxTaskbarMode",
-      "description": "Hides the taskbar search box/icon (SearchboxTaskbarMode = 0 = Hide) for new profiles and, via post-install, the current user.",
-      "rationale": "The taskbar search presentation is the per-user SearchboxTaskbarMode value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Search; Microsoft documents the modes (0 = Hide, 1 = icon, 2 = icon+label, 3 = box) alongside the ConfigureSearchOnTaskbarMode policy. 0 removes the search UI from the taskbar. Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Kept opt-in as a personal-taste taskbar preference.",
-      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
-      "evidenceGrade": 2,
-      "reversible": true,
-      "reversal": "Set SearchboxTaskbarMode to 3 (search box, the default) or delete it under Software\\Microsoft\\Windows\\CurrentVersion\\Search in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-disable-task-view",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!ShowTaskViewButton",
-      "description": "Removes the Task View button from the taskbar (ShowTaskViewButton = 0) for new profiles and, via post-install, the current user.",
-      "rationale": "The Task View taskbar button is the per-user ShowTaskViewButton value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced, documented by Microsoft in the Windows 11 settings reference; 0 hides it (Win+Tab still works). Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). Opt-in personal-taste preference.",
-      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
-      "evidenceGrade": 1,
-      "reversible": true,
-      "reversal": "Set ShowTaskViewButton to 1 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-show-hidden-items",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced!Hidden",
-      "description": "Shows hidden files and folders in File Explorer (Hidden = 1) for new profiles and, via post-install, the current user.",
-      "rationale": "The \"show hidden files\" toggle is the per-user Hidden value under HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced (1 = show, 2 = do not show). Showing hidden items is a developer/power-user convenience. Written to the DEFAULT hive for new profiles and applied to the current user by post-install (Scope=Both). The exact value is community-documented rather than in a single authoritative policy page, so it is opt-in.",
-      "citation": "Unverified",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set Hidden to 2 (or delete it) under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced in HKCU and the default-user hive.",
-      "defaultEnabled": false,
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "sourceFile": "catalog.registry.psd1",
-      "profiles": [
-        "opinionated"
-      ]
-    },
-    {
-      "id": "reg-spotlight-desktop-background",
-      "type": "Registry",
-      "action": "SetRegistry",
-      "category": "Personalization",
-      "target": "DEFAULT\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers!BackgroundType",
-      "description": "Selects Windows Spotlight as the desktop background (BackgroundType = 3) for new profiles and, via post-install, the current user (best-effort).",
-      "rationale": "Microsoft documents the desktop background kind as the Personalization WallpaperKind enumeration where Spotlight = 3 (settings reference). That enum is exposed through the Personalization CSP; the per-user HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers\\BackgroundType value mirrors it, so BackgroundType = 3 selects the daily Windows Spotlight image. There is no single authoritative registry-only citation for activating desktop Spotlight (it is CSP-driven), so this is a best-effort, community-territory tweak (EvidenceGrade 3, opt-in) that may require an Explorer restart or sign-in to take effect. Written to the DEFAULT hive for new profiles and the current user (Scope=Both).",
-      "citation": "https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-windows-11",
-      "evidenceGrade": 3,
-      "reversible": true,
-      "reversal": "Set BackgroundType to 1 (Image) or your preferred kind, or delete it, under Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers in HKCU and the default-user hive, then reselect a background in Settings > Personalization > Background.",
       "defaultEnabled": false,
       "arch": [
         "amd64",

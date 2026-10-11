@@ -41,7 +41,7 @@ function Resolve-CatalogOrder {
         values were written, NOT alphabetically). Rather than relying on the implicit order entries
         happen to be authored in, an entry declares its prerequisites explicitly:
 
-            RunAfter = @('reg-region-format-nl')
+            RunAfter = @('catalog-prerequisite')
 
         This function turns those declarations into a concrete apply order using a STABLE
         topological sort: among the entries whose prerequisites are all satisfied it always picks

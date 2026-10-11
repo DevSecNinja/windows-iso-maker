@@ -46,9 +46,7 @@
         LocalAccountName = 'Admin'        # local account username (no password stored in the file)
         Locale           = 'en-US'        # UI / system language (kept English (United States))
         UserLocale       = 'nl-NL'         # region format for dates/times/numbers = Dutch (Netherlands)
-        # KeyboardLayout: input locale. Left unset so the profile-driven default applies:
-        #   most profiles => '0409:00000409' (US); the 'opinionated' profile => '0409:00020409'
-        #   (United States-International, so English (US) types on US-International). Uncomment to pin.
+        # KeyboardLayout: input locale. Left unset to use '0409:00000409' (US). Uncomment to pin.
         # KeyboardLayout   = '0409:00000409'
         TimeZone         = 'W. Europe Standard Time' # Amsterdam (UTC+01:00, DST-aware)
         DiskId           = 0              # target disk for the default single-partition layout

@@ -80,9 +80,8 @@
 .PARAMETER Profile
     Debloat/customization profile(s) to apply for this run, overriding the config's Profile. Accepts
     a list to combine baselines (e.g. -Profile gaming,opinionated). Because a quick boot test reuses
-    the already-serviced media\ folder, this does NOT re-run debloat; it re-derives the answer file,
-    so profile-driven Autounattend settings (e.g. the opinionated United States-International
-    keyboard) are reflected in the boot test.
+    the already-serviced media\ folder, this does NOT re-run debloat; it only re-derives the answer
+    file from the resolved configuration.
 
 .EXAMPLE
     ./scripts/Invoke-QuickBootTest.ps1
