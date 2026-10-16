@@ -54,8 +54,8 @@
                 Pester           = '5.5.0'
                 PSScriptAnalyzer = '1.21.0'
                 WindowsAdk       = '10.1.22621' # Deployment Tools (oscdimg)
-                FidoTag          = 'v1.70'
-                FidoCommit       = '3d47260b8915385c58e20c73e24b36e9a9536f3f'
+                FidoTag          = 'v1.71'
+                FidoCommit       = '61668a81d1d9be66fae413352591196a780168a7'
             }
         }
     }
