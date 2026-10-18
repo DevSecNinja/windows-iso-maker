@@ -14,6 +14,14 @@ Two different layers configure the image:
 | DISM offline servicing | Image build time | Remove provisioned apps, apply registry hive tweaks, enable optional features (e.g. WSL). |
 | **Autounattend.xml** | Install / OOBE time | Select the edition + install target, skip OOBE prompts, set locale/keyboard/timezone, disk layout, create a local account **or present the Entra ID sign-in**, run first-logon/SetupComplete commands. |
 
+> **Not to be confused with the minimal first-logon answer file.** `prepare-usb.ps1` writes a
+> *different*, deliberately tiny answer file to a **stock** USB stick — it carries only an
+> `oobeSystem` `FirstLogonCommands` block (template
+> [`firstlogon.xml.template`](../templates/autounattend/firstlogon.xml.template)) so Setup stays
+> fully interactive and **no disk is repartitioned**. The full file described on this page — with
+> `DiskConfiguration`, `WillWipeDisk` and edition selection — is only ever placed on an ISO this
+> tool builds. See [usb.md](usb.md).
+
 ## Why per-architecture
 
 The unattend `<component>` elements carry a `processorArchitecture` attribute that differs

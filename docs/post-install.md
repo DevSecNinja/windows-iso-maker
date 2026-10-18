@@ -16,6 +16,10 @@ audit trail — directly to the running system.
 > catalog entry (see [change-rationale.md](change-rationale.md)). Nothing new is invented for the
 > online path; it is the identical selection logic (`Resolve-CatalogSelection`) applied online.
 
+> 💡 **Installing from your own USB stick?** [`prepare-usb.ps1`](usb.md) stages this same toolkit
+> onto the stick and can run it automatically at the first logon, so you don't have to fetch the
+> repo on the new machine.
+
 ## Quick start
 
 Run from an **elevated** PowerShell session (Administrator):
