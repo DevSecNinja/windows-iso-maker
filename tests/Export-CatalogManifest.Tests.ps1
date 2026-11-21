@@ -27,7 +27,7 @@ Describe 'Export-CatalogManifest' {
     }
 
     It 'reports an entry count that matches the entries array' {
-        $script:Manifest.entryCount | Should -BeGreaterThan 0
+        $script:Manifest.entryCount | Should -Be 53
         $script:Manifest.entryCount | Should -Be $script:Manifest.entries.Count
     }
 

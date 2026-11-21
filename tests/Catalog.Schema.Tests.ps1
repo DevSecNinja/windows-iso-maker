@@ -250,6 +250,29 @@ Describe 'Change catalog: documentation-backed changes (Principle II)' {
                 }
             }
         }
+
+        It 'excludes current-user personalization owned by DevSecNinja/dotfiles' {
+            $ids = @($script:RuntimeEntries | ForEach-Object { $_.Id })
+            $migratedIds = @(
+                'reg-dark-mode-apps',
+                'reg-dark-mode-system',
+                'reg-disable-lockscreen-spotlight',
+                'reg-disable-task-view',
+                'reg-hide-taskbar-search',
+                'reg-show-file-extensions',
+                'reg-show-hidden-items',
+                'reg-spotlight-desktop-background',
+                'reg-region-format-nl',
+                'reg-keyboard-nl-en-intl',
+                'reg-number-format-decimal-us',
+                'reg-number-format-thousands-us',
+                'reg-number-format-list-us',
+                'reg-number-format-us-first-logon'
+            )
+            foreach ($id in $migratedIds) {
+                $ids | Should -Not -Contain $id
+            }
+        }
     }
 
     Context 'Merge-blocking gate proves undocumented entries fail (FR-009, SC-004)' {

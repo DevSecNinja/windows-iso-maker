@@ -34,7 +34,7 @@ Autounattend = @{
     LocalAccountName   = 'Admin'        # username (NO password is stored in the file)
     Locale             = 'en-US'        # UI / system language
     UserLocale         = 'en-US'        # region format (dates/times/numbers); defaults to Locale
-    KeyboardLayout     = '0409:00000409'  # input locale; 'opinionated' profile defaults to '0409:00020409' (US-International)
+    KeyboardLayout     = '0409:00000409'  # input locale; set explicitly to choose another layout
     TimeZone           = 'UTC'          # e.g. 'W. Europe Standard Time'
     ProductKey         = ''             # edition selector (see below)
     DiskId             = 0
@@ -165,11 +165,9 @@ the consumer ISO, or a business edition (Pro, Education, ...) off a business/vol
 `-Profile`, and `-Hypervisor` (`HyperV` | `VMware`) overrides, so you can test the hands-off path with
 `-Edition Home -UseGenericProductKey` and do a keyed build with `-ProductKey '<your-key>'`. Use
 `-Hypervisor VMware` to run the quick boot test under VMware Workstation (NAT-connected, real DNS).
-`-Profile` accepts one or more profiles (e.g.
-`-Profile gaming,opinionated`);
-because a quick boot test reuses the already-serviced `media\` folder it does **not** re-run debloat,
-but it re-derives the answer file, so profile-driven `Autounattend` settings (such as the opinionated
-United States-International keyboard) are reflected in the boot test.
+`-Profile` accepts one or more profiles (e.g. `-Profile gaming,opinionated`). Because a quick boot
+test reuses the already-serviced `media\` folder it does **not** re-run debloat; it only re-derives
+the answer file from the resolved configuration.
 
 To boot-test several editions at once, pass `-Isolated` to each parallel window. Isolated runs get a
 uniquely-named `Autounattend-<tag>.xml` and ISO, and ISO authoring is serialized with a named mutex

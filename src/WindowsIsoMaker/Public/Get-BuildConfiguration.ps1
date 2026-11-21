@@ -251,8 +251,7 @@ function Get-BuildConfiguration {
 
     # --- 9. Resolve the Autounattend sub-config (merge over documented defaults). ---
     $autounattend = Resolve-AutounattendConfig -FileValue $resolved['Autounattend'] `
-        -Language $resolved['Language'] -Architecture $resolved['Architecture'] `
-        -Profile $profileList
+        -Language $resolved['Language'] -Architecture $resolved['Architecture']
 
     # --- 10. Emit the BuildConfiguration object. ---
     return [pscustomobject]@{
@@ -295,29 +294,16 @@ function Resolve-AutounattendConfig {
     .PARAMETER Architecture
         The resolved architecture (recorded for reference; the XML processorArchitecture is
         set by New-AutounattendXml).
-    .PARAMETER Profile
-        The resolved profile list. When it includes 'opinionated' the default keyboard layout
-        becomes United States-International (0409:00020409) instead of plain US, matching the
-        opinionated preference to always type on US-International. An explicit KeyboardLayout in
-        the config file still wins.
     .OUTPUTS
         System.Collections.Hashtable
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidAssignmentToAutomaticVariable', 'Profile',
-        Justification = 'Profile is the domain term for the catalog profile; it is only read here, never reassigned.')]
     param(
         [Parameter()] $FileValue,
         [Parameter(Mandatory = $true)] [string] $Language,
-        [Parameter(Mandatory = $true)] [string] $Architecture,
-        [Parameter()] [string[]] $Profile = @('default')
+        [Parameter(Mandatory = $true)] [string] $Architecture
     )
-
-    # Opinionated builds default to the United States-International keyboard layout so that
-    # English (United States) also types on US-International (dead keys for accents), rather than
-    # the plain US layout. An explicit Autounattend.KeyboardLayout in the config file overrides it.
-    $defaultKeyboard = if ($Profile -contains 'opinionated') { '0409:00020409' } else { '0409:00000409' }
 
     $defaults = @{
         Enabled               = $true
@@ -327,7 +313,7 @@ function Resolve-AutounattendConfig {
         CreateLocalAccount    = $true
         LocalAccountName      = 'Admin'
         Locale                = $Language
-        KeyboardLayout        = $defaultKeyboard
+        KeyboardLayout        = '0409:00000409'
         TimeZone              = 'UTC'
         DiskId                = 0
         FirstLogonCommands    = @()
