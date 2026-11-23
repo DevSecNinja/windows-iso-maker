@@ -59,43 +59,21 @@ jobs:
           $cfg.Run.Exit = $false
           $cfg.Run.PassThru = $true
           $cfg.TestResult.Enabled = $true
-          $cfg.TestResult.OutputFormat = 'NUnitXml'
+          $cfg.TestResult.OutputFormat = 'JUnitXml'
           $cfg.TestResult.OutputPath = 'tests/TestResults.xml'
           $cfg.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $cfg
 
-          # Native GitHub job summary (Markdown table) — no extra action/dependency needed;
-          # shows up directly on the run page instead of being buried in a downloaded artifact.
-          $icon = if ($result.FailedCount -eq 0) { '✅' } else { '❌' }
-          @(
-              "## $icon Pester Test Results"
-              ''
-              '| Metric | Count |'
-              '| --- | --- |'
-              "| Total | $($result.TotalCount) |"
-              "| ✅ Passed | $($result.PassedCount) |"
-              "| ❌ Failed | $($result.FailedCount) |"
-              "| ⏭️ Skipped | $($result.SkippedCount) |"
-              "| ⏱️ Duration | $($result.Duration) |"
-          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-
-          # Inline annotations for failures (surfaces on the PR "Files changed" / Checks tab).
-          if ($result.FailedCount -gt 0) {
-              "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              "### ❌ Failed tests" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              foreach ($test in $result.Failed) {
-                  $message = $test.ErrorRecord.Exception.Message -replace '\r?\n', ' '
-                  $file = $test.ScriptBlock.File
-                  $line = $test.ScriptBlock.StartPosition.StartLine
-                  "- **$($test.ExpandedPath)** — $message" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-                  Write-Host "::error file=$file,line=$line::$($test.ExpandedPath): $message"
-              }
-          }
-
           if ($result.FailedCount -gt 0) {
               throw "Pester reported $($result.FailedCount) failing test(s)."
           }
+
+      - name: Publish test results
+        if: always()
+        uses: DevSecNinja/.github/actions/test-report@5452dbd33d61b4fc58b1780f57e0b60ff131be75 # v4.10.0
+        with:
+          paths: tests/TestResults.xml
+          title: Pester
 
       - name: Upload test results
         if: ${{ always() }}
